@@ -9,6 +9,14 @@ export interface Env {
 
 type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;
 
+// Import handlers
+import {
+  validateManifestHandler,
+  getManifest,
+  getCapsuleBundle,
+} from "./handlers/manifest";
+import { importGithub, importZip } from "./handlers/import";
+
 const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "POST", pattern: /^\/manifest\/validate$/, handler: validateManifestHandler },
   { method: "POST", pattern: /^\/import\/github$/, handler: importGithub },
