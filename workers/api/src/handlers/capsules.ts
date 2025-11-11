@@ -1,0 +1,363 @@
+import type { Env } from "../index";
+import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
+import {
+  uploadCapsuleBundle,
+  verifyCapsuleIntegrity,
+  getCapsuleMetadata,
+  type CapsuleFile,
+} from "../storage/r2";
+import {
+  getUserPlan,
+  getUserStorageUsage,
+  checkBundleSize,
+  checkStorageQuota,
+} from "../storage/quotas";
+import { requireAuth, type AuthenticatedUser } from "../auth";
+
+type Handler = (
+  req: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  params: Record<string, string>,
+  user?: AuthenticatedUser
+) => Promise<Response>;
+
+function json(data: unknown, status = 200, init?: ResponseInit) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+    ...init,
+  });
+}
+
+/**
+ * POST /capsules/publish
+ * Publish a complete capsule bundle to R2 and create D1 record
+ * Based on mvp-plan.md Phase 2 Publish flow
+ */
+export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params, user) => {
+  try {
+    // Parse multipart form data
+    const formData = await req.formData();
+
+    // Get manifest
+    const manifestFile = formData.get("manifest") as File;
+    if (!manifestFile) {
+      return json({ error: "Missing manifest file" }, 400);
+    }
+
+    const manifestText = await manifestFile.text();
+    const manifestData = JSON.parse(manifestText);
+
+    // Validate manifest
+    const validation = validateManifest(manifestData);
+    if (!validation.valid) {
+      return json(
+        {
+          error: "Invalid manifest",
+          errors: validation.errors,
+          warnings: validation.warnings,
+        },
+        400
+      );
+    }
+
+    const manifest = manifestData as Manifest;
+
+    // Collect all files
+    const files: CapsuleFile[] = [];
+    let totalSize = 0;
+
+    for (const [key, value] of formData.entries()) {
+      if (key === "manifest") continue; // Already processed
+
+      if (value instanceof File) {
+        const content = await value.arrayBuffer();
+        const size = content.byteLength;
+        totalSize += size;
+
+        files.push({
+          path: key,
+          content,
+          contentType: value.type || "application/octet-stream",
+          size,
+        });
+      }
+    }
+
+    // Add manifest to files
+    const manifestContent = new TextEncoder().encode(manifestText);
+    files.push({
+      path: "manifest.json",
+      content: manifestContent,
+      contentType: "application/json",
+      size: manifestContent.byteLength,
+    });
+    totalSize += manifestContent.byteLength;
+
+    // Check quotas
+    const userPlan = await getUserPlan(user.userId, env);
+
+    // Check bundle size
+    const bundleSizeCheck = checkBundleSize(userPlan, totalSize);
+    if (!bundleSizeCheck.allowed) {
+      return json(
+        {
+          error: "Bundle size limit exceeded",
+          reason: bundleSizeCheck.reason,
+          bundleSize: totalSize,
+          limit: bundleSizeCheck.limits?.maxBundleSize,
+        },
+        400
+      );
+    }
+
+    // Check storage quota
+    const currentUsage = await getUserStorageUsage(user.userId, env);
+    const storageCheck = checkStorageQuota(userPlan, currentUsage, totalSize);
+    if (!storageCheck.allowed) {
+      return json(
+        {
+          error: "Storage quota exceeded",
+          reason: storageCheck.reason,
+          currentUsage,
+          additionalSize: totalSize,
+          limit: storageCheck.limits?.maxStorage,
+        },
+        400
+      );
+    }
+
+    // Upload to R2
+    const uploadResult = await uploadCapsuleBundle(
+      env.R2,
+      files,
+      manifest,
+      user.userId
+    );
+
+    // Verify integrity
+    const integrityOk = await verifyCapsuleIntegrity(
+      env.R2,
+      uploadResult.contentHash,
+      uploadResult.contentHash
+    );
+
+    if (!integrityOk) {
+      return json({ error: "Integrity verification failed" }, 500);
+    }
+
+    // Create D1 record
+    const capsuleId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO capsules (id, owner_id, manifest_json, hash, created_at) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(
+        capsuleId,
+        user.userId,
+        manifestText,
+        uploadResult.contentHash,
+        Math.floor(Date.now() / 1000)
+      )
+      .run();
+
+    // Create asset records
+    for (const file of files) {
+      await env.DB.prepare(
+        "INSERT INTO assets (id, capsule_id, key, size) VALUES (?, ?, ?, ?)"
+      )
+        .bind(crypto.randomUUID(), capsuleId, file.path, file.size)
+        .run();
+    }
+
+    return json({
+      success: true,
+      capsuleId,
+      contentHash: uploadResult.contentHash,
+      totalSize: uploadResult.totalSize,
+      fileCount: uploadResult.fileCount,
+      warnings: validation.warnings,
+    });
+  } catch (error) {
+    console.error("Publish error:", error);
+    return json(
+      {
+        error: "Failed to publish capsule",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * GET /capsules/:id
+ * Get capsule details with integrity verification
+ */
+export const getCapsule: Handler = async (req, env, ctx, params) => {
+  const capsuleId = params.p1;
+
+  try {
+    // Get from D1
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM capsules WHERE id = ? LIMIT 1"
+    )
+      .bind(capsuleId)
+      .all();
+
+    if (!results || results.length === 0) {
+      return json({ error: "Capsule not found" }, 404);
+    }
+
+    const capsule = results[0];
+    const contentHash = capsule.hash as string;
+
+    // Verify integrity
+    const integrityOk = await verifyCapsuleIntegrity(
+      env.R2,
+      contentHash,
+      contentHash
+    );
+
+    if (!integrityOk) {
+      return json(
+        {
+          error: "Integrity verification failed",
+          capsuleId,
+          warning: "This capsule may have been tampered with",
+        },
+        500
+      );
+    }
+
+    // Get metadata from R2
+    const metadata = await getCapsuleMetadata(env.R2, contentHash);
+
+    return json({
+      id: capsule.id,
+      ownerId: capsule.owner_id,
+      manifest: JSON.parse(capsule.manifest_json as string),
+      contentHash,
+      createdAt: capsule.created_at,
+      metadata,
+      verified: true,
+    });
+  } catch (error) {
+    return json(
+      {
+        error: "Failed to retrieve capsule",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+};
+
+/**
+ * GET /capsules/:id/verify
+ * Verify capsule integrity without returning full data
+ */
+export const verifyCapsule: Handler = async (req, env, ctx, params) => {
+  const capsuleId = params.p1;
+
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT hash FROM capsules WHERE id = ? LIMIT 1"
+    )
+      .bind(capsuleId)
+      .all();
+
+    if (!results || results.length === 0) {
+      return json({ error: "Capsule not found" }, 404);
+    }
+
+    const contentHash = results[0].hash as string;
+    const verified = await verifyCapsuleIntegrity(env.R2, contentHash, contentHash);
+
+    return json({
+      capsuleId,
+      contentHash,
+      verified,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    return json(
+      {
+        error: "Verification failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+};
+
+/**
+ * GET /user/quota
+ * Get current user's quota usage and limits
+ */
+export const getUserQuota: Handler = requireAuth(async (req, env, ctx, params, user) => {
+  try {
+    const plan = await getUserPlan(user.userId, env);
+    const storageUsage = await getUserStorageUsage(user.userId, env);
+
+    // Get run count for current month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const timestamp = Math.floor(startOfMonth.getTime() / 1000);
+
+    const { results: runResults } = await env.DB.prepare(`
+      SELECT COUNT(*) as count
+      FROM runs
+      WHERE user_id = ? AND started_at >= ?
+    `)
+      .bind(user.userId, timestamp)
+      .all();
+
+    const runsThisMonth = (runResults?.[0]?.count as number) || 0;
+
+    const limits = {
+      free: {
+        maxBundleSize: 25 * 1024 * 1024,
+        maxRuns: 5_000,
+        maxStorage: 1 * 1024 * 1024 * 1024,
+      },
+      creator: {
+        maxBundleSize: 25 * 1024 * 1024,
+        maxRuns: 50_000,
+        maxStorage: 10 * 1024 * 1024 * 1024,
+      },
+      pro: {
+        maxBundleSize: 100 * 1024 * 1024,
+        maxRuns: 250_000,
+        maxStorage: 50 * 1024 * 1024 * 1024,
+      },
+      team: {
+        maxBundleSize: 250 * 1024 * 1024,
+        maxRuns: 1_000_000,
+        maxStorage: 250 * 1024 * 1024 * 1024,
+      },
+    };
+
+    return json({
+      plan,
+      usage: {
+        storage: storageUsage,
+        runsThisMonth,
+      },
+      limits: limits[plan],
+      percentUsed: {
+        storage: (storageUsage / limits[plan].maxStorage) * 100,
+        runs: (runsThisMonth / limits[plan].maxRuns) * 100,
+      },
+    });
+  } catch (error) {
+    return json(
+      {
+        error: "Failed to get quota",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+});

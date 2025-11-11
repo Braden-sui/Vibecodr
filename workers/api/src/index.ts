@@ -13,9 +13,12 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "POST", pattern: /^\/manifest\/validate$/, handler: validateManifestHandler },
   { method: "POST", pattern: /^\/import\/github$/, handler: importGithub },
   { method: "POST", pattern: /^\/import\/zip$/, handler: importZip },
-  { method: "POST", pattern: /^\/capsules\/(\w+)\/publish$/, handler: publishCapsule },
-  { method: "GET", pattern: /^\/capsules\/(\w+)\/manifest$/, handler: getManifest },
-  { method: "GET", pattern: /^\/capsules\/(\w+)\/bundle$/, handler: getCapsuleBundle },
+  { method: "POST", pattern: /^\/capsules\/publish$/, handler: publishCapsule },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)$/, handler: getCapsule },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/verify$/, handler: verifyCapsule },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: getManifest },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/bundle$/, handler: getCapsuleBundle },
+  { method: "GET", pattern: /^\/user\/quota$/, handler: getUserQuota },
   { method: "POST", pattern: /^\/runs\/(\w+)\/logs$/, handler: appendRunLogs },
   { method: "GET", pattern: /^\/posts$/, handler: getPosts },
   { method: "POST", pattern: /^\/posts$/, handler: createPost },
@@ -55,6 +58,13 @@ import {
   getCapsuleBundle,
 } from "./handlers/manifest";
 
+import {
+  publishCapsule,
+  getCapsule,
+  verifyCapsule,
+  getUserQuota,
+} from "./handlers/capsules";
+
 // Handlers (stubs)
 const importGithub: Handler = async (req) => {
   // TODO: Accept GitHub URL, fetch repo, analyze structure
@@ -64,11 +74,6 @@ const importGithub: Handler = async (req) => {
 const importZip: Handler = async (req) => {
   // TODO: Accept multipart ZIP, enqueue build, emit draft capsule
   return json({ ok: false, todo: "import zip not implemented" }, 501);
-};
-
-const publishCapsule: Handler = async (_req, _env, _ctx, params) => {
-  // TODO: Validate manifest and assets in R2; create immutable record
-  return json({ ok: false, capsuleId: params.p1, todo: "publish not implemented" }, 501);
 };
 
 const appendRunLogs: Handler = async (_req, _env, _ctx, params) => {
