@@ -15,7 +15,9 @@
   "dependencies": {
     "drizzle-orm": "^0.33.0",
     "zod": "^3.23.0",
-    "@vibecodr/shared": "workspace:*"
+    "@vibecodr/shared": "workspace:*",
+    "esbuild-wasm": "^0.24.0",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",

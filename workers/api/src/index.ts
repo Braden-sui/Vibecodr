@@ -9,6 +9,14 @@ export interface Env {
 
 type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;
 
+// Import handlers
+import {
+  validateManifestHandler,
+  getManifest,
+  getCapsuleBundle,
+} from "./handlers/manifest";
+import { importGithub, importZip } from "./handlers/import";
+
 const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "POST", pattern: /^\/manifest\/validate$/, handler: validateManifestHandler },
   { method: "POST", pattern: /^\/import\/github$/, handler: importGithub },
@@ -47,24 +55,6 @@ export default {
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" }, ...init });
 }
-
-// Import handlers
-import {
-  validateManifestHandler,
-  getManifest,
-  getCapsuleBundle,
-} from "./handlers/manifest";
-
-// Handlers (stubs)
-const importGithub: Handler = async (req) => {
-  // TODO: Accept GitHub URL, fetch repo, analyze structure
-  return json({ ok: false, todo: "import github not implemented" }, 501);
-};
-
-const importZip: Handler = async (req) => {
-  // TODO: Accept multipart ZIP, enqueue build, emit draft capsule
-  return json({ ok: false, todo: "import zip not implemented" }, 501);
-};
 
 const publishCapsule: Handler = async (_req, _env, _ctx, params) => {
   // TODO: Validate manifest and assets in R2; create immutable record
