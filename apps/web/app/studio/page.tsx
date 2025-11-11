@@ -1,25 +1,39 @@
-// Route: /studio — Creation hub with tabs
-// Responsibilities
-// - Nav across Import, Params, Files, Publish
-// - Show current capsule draft status
-// TODOs
-// - Link to subroutes; persist draft in D1; show validation status
+"use client";
 
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { StudioShell } from "@/components/Studio/StudioShell";
+import { ImportTab } from "@/components/Studio/ImportTab";
+import { ParamsTab } from "@/components/Studio/ParamsTab";
+import { FilesTab } from "@/components/Studio/FilesTab";
+import { PublishTab } from "@/components/Studio/PublishTab";
+import type { CapsuleDraft } from "@/components/Studio/StudioShell";
 
+/**
+ * Studio Index - Main capsule creation workflow
+ * Tabs: Import → Params → Files → Publish
+ * Based on mvp-plan.md Phase 2 Studio requirements
+ */
 export default function StudioIndex() {
+  const router = useRouter();
+  const [currentTab, setCurrentTab] = useState<"import" | "params" | "files" | "publish">(
+    "import"
+  );
+
+  // TODO: Load draft from localStorage or API
+  const [draft, setDraft] = useState<CapsuleDraft | undefined>(undefined);
+
+  const handleTabChange = (tab: string) => {
+    setCurrentTab(tab as any);
+  };
+
   return (
-    <section>
-      <h1>Studio</h1>
-      <p>Quickly import, tweak, and publish a capsule.</p>
-      <ul>
-        <li><Link href="/studio/import">Import</Link></li>
-        <li><Link href="/studio/params">Params</Link></li>
-        <li><Link href="/studio/files">Files</Link></li>
-        <li><Link href="/studio/publish">Publish</Link></li>
-      </ul>
-      <p>TODO: display draft capsule info and validation results here.</p>
-    </section>
+    <StudioShell currentTab={currentTab} draft={draft} onTabChange={handleTabChange}>
+      {currentTab === "import" && <ImportTab />}
+      {currentTab === "params" && <ParamsTab />}
+      {currentTab === "files" && <FilesTab />}
+      {currentTab === "publish" && <PublishTab />}
+    </StudioShell>
   );
 }
 
