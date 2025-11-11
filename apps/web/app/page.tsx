@@ -1,51 +1,169 @@
-// Route: / — Feed (Latest + Following)
-// Responsibilities
-// - Display App and Report cards with badges (runner, net, params)
-// - Hover preview: preboot capsule manifest (stubbed)
-// - Actions: run (open Player), remix, like, comment
-// TODOs
-// - Hook to API: GET /posts?mode=latest|following
-// - Preload manifests for in-viewport cards via IntersectionObserver
-// - Optimistic UI for likes/follows
-// - Pagination/infinite scroll
-
-import Link from "next/link";
+import { FeedCard } from "@/components/FeedCard";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function FeedPage() {
-  // Placeholder data. Replace with API data fetching.
+  // TODO: Fetch from API: GET /posts?mode=latest|following
   const mockPosts = [
-    { id: "1", type: "app", title: "Boids Sim", author: "@marta", badges: ["client-static", "no-net", "2 params"] },
-    { id: "2", type: "report", title: "Notes on a Tiny Paint App", author: "@tom", badges: ["3 snapshots"] }
+    {
+      id: "1",
+      type: "app" as const,
+      title: "Interactive Boids Simulation",
+      description: "Watch flocking behavior emerge with adjustable parameters",
+      author: {
+        id: "user1",
+        handle: "marta",
+        name: "Marta Chen",
+        avatarUrl: "/avatars/marta.png",
+      },
+      capsule: {
+        id: "capsule1",
+        runner: "client-static" as const,
+        capabilities: {
+          net: [],
+          storage: false,
+          workers: false,
+        },
+        params: [{ name: "count" }, { name: "speed" }],
+      },
+      tags: ["simulation", "canvas", "animation"],
+      stats: {
+        runs: 342,
+        comments: 12,
+        likes: 89,
+        remixes: 5,
+      },
+      createdAt: "2025-11-10T15:30:00Z",
+    },
+    {
+      id: "2",
+      type: "report" as const,
+      title: "Building a Tiny Paint App",
+      description: "A walkthrough of creating a minimal canvas-based drawing tool",
+      author: {
+        id: "user2",
+        handle: "tom",
+        name: "Tom Anderson",
+        avatarUrl: "/avatars/tom.png",
+      },
+      tags: ["tutorial", "canvas", "beginner"],
+      stats: {
+        runs: 0,
+        comments: 8,
+        likes: 45,
+        remixes: 0,
+      },
+      createdAt: "2025-11-10T12:00:00Z",
+    },
+    {
+      id: "3",
+      type: "app" as const,
+      title: "Weather Dashboard",
+      description: "Real-time weather data with beautiful visualizations",
+      author: {
+        id: "user3",
+        handle: "sarah_dev",
+        name: "Sarah Johnson",
+        avatarUrl: "/avatars/sarah.png",
+      },
+      capsule: {
+        id: "capsule3",
+        runner: "client-static" as const,
+        capabilities: {
+          net: ["api.openweathermap.org"],
+          storage: true,
+          workers: false,
+        },
+        params: [{ name: "city" }, { name: "units" }],
+      },
+      tags: ["weather", "api", "data-viz"],
+      stats: {
+        runs: 523,
+        comments: 24,
+        likes: 156,
+        remixes: 12,
+      },
+      createdAt: "2025-11-09T18:45:00Z",
+    },
+    {
+      id: "4",
+      type: "app" as const,
+      title: "Markdown Preview Editor",
+      description: "Write and preview markdown in real-time with syntax highlighting",
+      author: {
+        id: "user4",
+        handle: "alex_codes",
+        name: "Alex Rivera",
+        avatarUrl: "/avatars/alex.png",
+      },
+      capsule: {
+        id: "capsule4",
+        runner: "webcontainer" as const,
+        capabilities: {
+          net: ["cdn.jsdelivr.net"],
+          storage: true,
+          workers: false,
+        },
+        params: [{ name: "theme" }],
+      },
+      tags: ["markdown", "editor", "productivity"],
+      stats: {
+        runs: 789,
+        comments: 34,
+        likes: 234,
+        remixes: 18,
+      },
+      createdAt: "2025-11-09T10:20:00Z",
+    },
   ];
+
   return (
-    <section>
-      <h1>Vibecodr Feed</h1>
-      <p>Latest runnable apps and reports. Hover to preview, click to run.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-        {mockPosts.map((p) => (
-          <article key={p.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-            <div style={{ height: 140, background: "#fafafa", borderRadius: 8, marginBottom: 8 }}>
-              {/* TODO: Hover preview: preload and mount capsule preview */}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <strong>{p.title}</strong>
-              <span style={{ color: "#666" }}>{p.author}</span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {p.badges.map((b) => (
-                  <span key={b} style={{ fontSize: 12, background: "#f3f3f3", borderRadius: 6, padding: "2px 6px" }}>{b}</span>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Link href={`/player/${p.id}`}>Run</Link>
-                <a href="#" onClick={(e) => e.preventDefault()}>Remix</a>
-                <a href="#" onClick={(e) => e.preventDefault()}>Like</a>
-                <Link href={`/post/${p.id}`}>Open</Link>
-              </div>
-            </div>
-          </article>
-        ))}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Vibecodr Feed</h1>
+          <p className="text-muted-foreground">
+            Discover runnable apps and reports from the community
+          </p>
+        </div>
+        <Button>Create New</Button>
       </div>
-    </section>
+
+      {/* Feed Tabs */}
+      <Tabs defaultValue="latest" className="w-full">
+        <TabsList>
+          <TabsTrigger value="latest">Latest</TabsTrigger>
+          <TabsTrigger value="following">Following</TabsTrigger>
+          <TabsTrigger value="trending" disabled>
+            Trending
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="latest" className="mt-6">
+          <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {mockPosts.map((post) => (
+              <FeedCard key={post.id} post={post} />
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="following" className="mt-6">
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <p className="text-muted-foreground">
+              Follow makers to see their posts here!
+            </p>
+            <Button className="mt-4" variant="outline">
+              Discover Makers
+            </Button>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* TODO: Implement infinite scroll / pagination */}
+      {/* TODO: Implement hover preview with IntersectionObserver */}
+      {/* TODO: Connect to real API */}
+    </div>
   );
 }
 

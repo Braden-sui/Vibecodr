@@ -1,0 +1,26 @@
+{
+  "name": "vibecodr",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "prettier": "^3.3.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.5",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0"
+  },
+  "packageManager": "npm@10.0.0",
+  "workspaces": [
+    "apps/*",
+    "workers/*",
+    "packages/*"
+  ]
+}
