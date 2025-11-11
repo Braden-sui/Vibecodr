@@ -59,8 +59,18 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   // Runs & Logs
   { method: "POST", pattern: /^\/runs\/(\w+)\/logs$/, handler: appendRunLogs },
 
-  // Moderation & Proxy
+  // Moderation
   { method: "POST", pattern: /^\/moderation\/report$/, handler: reportContent },
+  { method: "GET", pattern: /^\/moderation\/reports$/, handler: getModerationReports },
+  { method: "POST", pattern: /^\/moderation\/reports\/([^\/]+)\/resolve$/, handler: resolveModerationReport },
+  { method: "POST", pattern: /^\/moderation\/filter-content$/, handler: filterContent },
+
+  // Embeds & SEO
+  { method: "GET", pattern: /^\/oembed$/, handler: oEmbedHandler },
+  { method: "GET", pattern: /^\/e\/([^\/]+)$/, handler: embedIframeHandler },
+  { method: "GET", pattern: /^\/og-image\/([^\/]+)$/, handler: ogImageHandler },
+
+  // Network Proxy
   { method: "GET", pattern: /^\/proxy$/, handler: netProxy }
 ];
 
@@ -125,6 +135,21 @@ import {
   checkFollowing,
   checkLiked,
 } from "./handlers/profiles";
+
+import {
+  reportContent,
+  getModerationReports,
+  resolveModerationReport,
+  filterContent,
+} from "./handlers/moderation";
+
+import { netProxy } from "./handlers/proxy";
+
+import {
+  oEmbedHandler,
+  embedIframeHandler,
+  ogImageHandler,
+} from "./handlers/embeds";
 
 // Handlers (stubs)
 const importGithub: Handler = async (req) => {
@@ -232,18 +257,5 @@ const getPosts: Handler = async (req, env) => {
 const createPost: Handler = async (_req) => {
   // TODO: Create App or Report post
   return json({ ok: false, todo: "create post not implemented" }, 501);
-};
-
-const reportContent: Handler = async (_req) => {
-  // TODO: Create moderation report and enqueue review
-  return json({ ok: false, todo: "moderation report not implemented" }, 501);
-};
-
-const netProxy: Handler = async (req, env) => {
-  // TODO: Enforce per-capsule host allowlist and rate limits.
-  const url = new URL(req.url);
-  const target = url.searchParams.get("url");
-  if (!target) return json({ error: "missing url" }, 400);
-  return json({ ok: false, target, todo: "proxy not implemented" }, 501);
 };
 

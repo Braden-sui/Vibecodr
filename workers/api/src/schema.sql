@@ -94,3 +94,36 @@ CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
 
+-- Moderation tables
+CREATE TABLE IF NOT EXISTS moderation_reports (
+  id TEXT PRIMARY KEY,
+  reporter_id TEXT NOT NULL REFERENCES users(id),
+  target_type TEXT NOT NULL CHECK (target_type IN ('post', 'comment')),
+  target_id TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'inappropriate', 'copyright', 'other')),
+  details TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'resolved', 'dismissed')),
+  resolved_by TEXT REFERENCES users(id),
+  resolved_at INTEGER,
+  resolution_action TEXT CHECK (resolution_action IN ('dismiss', 'quarantine', 'remove')),
+  resolution_notes TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
+CREATE TABLE IF NOT EXISTS moderation_audit_log (
+  id TEXT PRIMARY KEY,
+  moderator_id TEXT NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  notes TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_moderation_reports_status ON moderation_reports(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_moderation_reports_target ON moderation_reports(target_type, target_id);
+
+-- TODO: Migration needed to add quarantined column to posts and comments tables
+-- ALTER TABLE posts ADD COLUMN quarantined INTEGER DEFAULT 0;
+-- ALTER TABLE comments ADD COLUMN quarantined INTEGER DEFAULT 0;
+
