@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT,
   avatar_url TEXT,
   bio TEXT,
+  plan TEXT DEFAULT 'free' CHECK (plan IN ('free', 'creator', 'pro', 'team')),
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS posts (
   author_id TEXT NOT NULL REFERENCES users(id),
   type TEXT NOT NULL CHECK (type IN ('app','report')),
   capsule_id TEXT REFERENCES capsules(id),
+  title TEXT,
+  description TEXT,
+  tags TEXT,
   report_md TEXT,
   cover_key TEXT,
   created_at INTEGER DEFAULT (strftime('%s','now'))
