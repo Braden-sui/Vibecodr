@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReportButton } from "@/components/ReportButton";
 
 export interface FeedCardProps {
   post: {
@@ -57,6 +59,7 @@ let activePreviewCount = 0;
 const MAX_ACTIVE_PREVIEWS = 2;
 
 export function FeedCard({ post }: FeedCardProps) {
+  const router = useRouter();
   const isApp = post.type === "app";
   const [isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
@@ -139,6 +142,84 @@ export function FeedCard({ post }: FeedCardProps) {
     setIsRunning(true);
     if (!previewLoaded) {
       activePreviewCount++;
+    }
+  };
+
+  // Optimistic UI state for like
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(post.stats.likes);
+  const [isLiking, setIsLiking] = useState(false);
+
+  const handleLike = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isLiking) return;
+
+    // Optimistic update
+    const wasLiked = liked;
+    const prevCount = likeCount;
+    setLiked(!liked);
+    setLikeCount(liked ? likeCount - 1 : likeCount + 1);
+    setIsLiking(true);
+
+    try {
+      // TODO: Replace with actual API call using auth token
+      const method = wasLiked ? "DELETE" : "POST";
+      const response = await fetch(`/api/posts/${post.id}/like`, {
+        method,
+        headers: {
+          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to like post");
+      }
+    } catch (error) {
+      // Revert on error
+      setLiked(wasLiked);
+      setLikeCount(prevCount);
+      console.error("Failed to like post:", error);
+    } finally {
+      setIsLiking(false);
+    }
+  };
+
+  const handleComment = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    router.push(`/player/${post.id}?tab=comments`);
+  };
+
+  const handleRemix = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isApp && post.capsule) {
+      router.push(`/studio?remixFrom=${post.capsule.id}`);
+    }
+  };
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const url = `${window.location.origin}/player/${post.id}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: post.title,
+          text: post.description,
+          url,
+        });
+      } catch (error) {
+        // User cancelled or error occurred
+      }
+    } else {
+      // Fallback: copy to clipboard
+      await navigator.clipboard.writeText(url);
+      // TODO: Show toast notification
     }
   };
 
@@ -304,11 +385,21 @@ export function FeedCard({ post }: FeedCardProps) {
       <CardFooter className="justify-between border-t pt-3">
         {/* Actions */}
         <div className="flex gap-4 text-sm text-muted-foreground">
-          <button className="flex items-center gap-1 transition-colors hover:text-foreground">
-            <Heart className="h-4 w-4" />
-            <span>{post.stats.likes}</span>
+          <button
+            onClick={handleLike}
+            disabled={isLiking}
+            className={cn(
+              "flex items-center gap-1 transition-colors hover:text-foreground",
+              liked && "text-red-500 hover:text-red-600"
+            )}
+          >
+            <Heart className={cn("h-4 w-4", liked && "fill-current")} />
+            <span>{likeCount}</span>
           </button>
-          <button className="flex items-center gap-1 transition-colors hover:text-foreground">
+          <button
+            onClick={handleComment}
+            className="flex items-center gap-1 transition-colors hover:text-foreground"
+          >
             <MessageCircle className="h-4 w-4" />
             <span>{post.stats.comments}</span>
           </button>
@@ -321,11 +412,12 @@ export function FeedCard({ post }: FeedCardProps) {
         </div>
 
         <div className="flex gap-2">
-          <Button variant="ghost" size="icon">
+          <ReportButton targetType="post" targetId={post.id} variant="icon" />
+          <Button variant="ghost" size="icon" onClick={handleShare}>
             <Share2 className="h-4 w-4" />
           </Button>
           {isApp && (
-            <Button variant="outline" size="sm" className="gap-1">
+            <Button variant="outline" size="sm" className="gap-1" onClick={handleRemix}>
               <GitFork className="h-3 w-3" />
               Remix
             </Button>

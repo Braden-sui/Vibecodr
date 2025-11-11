@@ -2,6 +2,7 @@ import React from "react";
 import "./globals.css";
 import { ClerkProvider, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
+import { NotificationBell } from "@/components/Notifications";
 
 export const metadata = {
   title: "Vibecodr",
@@ -25,8 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/report/new" className="hover:text-primary">
                 New Report
               </Link>
-              <div className="ml-auto flex items-center gap-4">
+              <div className="ml-auto flex items-center gap-2">
                 <SignedIn>
+                  <NotificationBell />
                   <UserButton afterSignOutUrl="/" />
                 </SignedIn>
                 <SignedOut>

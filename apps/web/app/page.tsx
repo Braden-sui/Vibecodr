@@ -1,9 +1,17 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import { FeedCard } from "@/components/FeedCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sparkles } from "lucide-react";
 
 export default function FeedPage() {
-  // TODO: Fetch from API: GET /posts?mode=latest|following
+  const [mode, setMode] = useState<"latest" | "following">("latest");
+  const [posts, setPosts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Mock data for when API is not available
   const mockPosts = [
     {
       id: "1",
@@ -117,6 +125,37 @@ export default function FeedPage() {
     },
   ];
 
+  useEffect(() => {
+    fetchPosts();
+  }, [mode]);
+
+  const fetchPosts = async () => {
+    setIsLoading(true);
+    try {
+      // TODO: Get current user ID from auth for following mode
+      const userId = "user-id-placeholder";
+      const url = mode === "following"
+        ? `/api/posts?mode=following&userId=${userId}&limit=20`
+        : "/api/posts?mode=latest&limit=20";
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        // Fallback to mock data if API fails
+        setPosts(mockPosts);
+        return;
+      }
+
+      const data = await response.json();
+      setPosts(data.posts || []);
+    } catch (error) {
+      console.error("Failed to fetch posts:", error);
+      // Fallback to mock data
+      setPosts(mockPosts);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -131,7 +170,7 @@ export default function FeedPage() {
       </div>
 
       {/* Feed Tabs */}
-      <Tabs defaultValue="latest" className="w-full">
+      <Tabs value={mode} onValueChange={(v) => setMode(v as "latest" | "following")} className="w-full">
         <TabsList>
           <TabsTrigger value="latest">Latest</TabsTrigger>
           <TabsTrigger value="following">Following</TabsTrigger>
@@ -141,28 +180,50 @@ export default function FeedPage() {
         </TabsList>
 
         <TabsContent value="latest" className="mt-6">
-          <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            {mockPosts.map((post) => (
-              <FeedCard key={post.id} post={post} />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex h-64 items-center justify-center">
+              <p className="text-muted-foreground">Loading posts...</p>
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed">
+              <Sparkles className="h-8 w-8 text-muted-foreground" />
+              <p className="text-muted-foreground">No posts yet</p>
+            </div>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+              {posts.map((post) => (
+                <FeedCard key={post.id} post={post} />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="following" className="mt-6">
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-muted-foreground">
-              Follow makers to see their posts here!
-            </p>
-            <Button className="mt-4" variant="outline">
-              Discover Makers
-            </Button>
-          </div>
+          {isLoading ? (
+            <div className="flex h-64 items-center justify-center">
+              <p className="text-muted-foreground">Loading following feed...</p>
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-muted-foreground">
+                Follow makers to see their posts here!
+              </p>
+              <Button className="mt-4" variant="outline">
+                Discover Makers
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+              {posts.map((post) => (
+                <FeedCard key={post.id} post={post} />
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
       {/* TODO: Implement infinite scroll / pagination */}
       {/* TODO: Implement hover preview with IntersectionObserver */}
-      {/* TODO: Connect to real API */}
     </div>
   );
 }
