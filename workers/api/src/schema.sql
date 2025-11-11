@@ -71,3 +71,26 @@ CREATE TABLE IF NOT EXISTS remixes (
   PRIMARY KEY (child_capsule_id, parent_capsule_id)
 );
 
+CREATE TABLE IF NOT EXISTS likes (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  post_id TEXT NOT NULL REFERENCES posts(id),
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (user_id, post_id)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL CHECK (type IN ('like','comment','follow','remix')),
+  actor_id TEXT NOT NULL REFERENCES users(id),
+  post_id TEXT REFERENCES posts(id),
+  comment_id TEXT REFERENCES comments(id),
+  read INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
+

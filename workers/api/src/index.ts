@@ -10,18 +10,56 @@ export interface Env {
 type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;
 
 const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
+  // Manifest & Import
   { method: "POST", pattern: /^\/manifest\/validate$/, handler: validateManifestHandler },
   { method: "POST", pattern: /^\/import\/github$/, handler: importGithub },
   { method: "POST", pattern: /^\/import\/zip$/, handler: importZip },
+
+  // Capsules
   { method: "POST", pattern: /^\/capsules\/publish$/, handler: publishCapsule },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)$/, handler: getCapsule },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/verify$/, handler: verifyCapsule },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: getManifest },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/bundle$/, handler: getCapsuleBundle },
+
+  // User & Quota
   { method: "GET", pattern: /^\/user\/quota$/, handler: getUserQuota },
-  { method: "POST", pattern: /^\/runs\/(\w+)\/logs$/, handler: appendRunLogs },
+
+  // Profiles
+  { method: "GET", pattern: /^\/users\/([^\/]+)$/, handler: getUserProfile },
+  { method: "GET", pattern: /^\/users\/([^\/]+)\/posts$/, handler: getUserPosts },
+  { method: "GET", pattern: /^\/users\/([^\/]+)\/check-following$/, handler: checkFollowing },
+
+  // Follows
+  { method: "POST", pattern: /^\/users\/([^\/]+)\/follow$/, handler: followUser },
+  { method: "DELETE", pattern: /^\/users\/([^\/]+)\/follow$/, handler: unfollowUser },
+  { method: "GET", pattern: /^\/users\/([^\/]+)\/followers$/, handler: getUserFollowers },
+  { method: "GET", pattern: /^\/users\/([^\/]+)\/following$/, handler: getUserFollowing },
+
+  // Posts & Feed
   { method: "GET", pattern: /^\/posts$/, handler: getPosts },
   { method: "POST", pattern: /^\/posts$/, handler: createPost },
+
+  // Likes
+  { method: "POST", pattern: /^\/posts\/([^\/]+)\/like$/, handler: likePost },
+  { method: "DELETE", pattern: /^\/posts\/([^\/]+)\/like$/, handler: unlikePost },
+  { method: "GET", pattern: /^\/posts\/([^\/]+)\/likes$/, handler: getPostLikes },
+  { method: "GET", pattern: /^\/posts\/([^\/]+)\/check-liked$/, handler: checkLiked },
+
+  // Comments
+  { method: "POST", pattern: /^\/posts\/([^\/]+)\/comments$/, handler: createComment },
+  { method: "GET", pattern: /^\/posts\/([^\/]+)\/comments$/, handler: getPostComments },
+  { method: "DELETE", pattern: /^\/comments\/([^\/]+)$/, handler: deleteComment },
+
+  // Notifications
+  { method: "GET", pattern: /^\/notifications$/, handler: getNotifications },
+  { method: "POST", pattern: /^\/notifications\/mark-read$/, handler: markNotificationsRead },
+  { method: "GET", pattern: /^\/notifications\/unread-count$/, handler: getUnreadCount },
+
+  // Runs & Logs
+  { method: "POST", pattern: /^\/runs\/(\w+)\/logs$/, handler: appendRunLogs },
+
+  // Moderation & Proxy
   { method: "POST", pattern: /^\/moderation\/report$/, handler: reportContent },
   { method: "GET", pattern: /^\/proxy$/, handler: netProxy }
 ];
@@ -65,6 +103,29 @@ import {
   getUserQuota,
 } from "./handlers/capsules";
 
+import {
+  likePost,
+  unlikePost,
+  getPostLikes,
+  followUser,
+  unfollowUser,
+  getUserFollowers,
+  getUserFollowing,
+  createComment,
+  getPostComments,
+  deleteComment,
+  getNotifications,
+  markNotificationsRead,
+  getUnreadCount,
+} from "./handlers/social";
+
+import {
+  getUserProfile,
+  getUserPosts,
+  checkFollowing,
+  checkLiked,
+} from "./handlers/profiles";
+
 // Handlers (stubs)
 const importGithub: Handler = async (req) => {
   // TODO: Accept GitHub URL, fetch repo, analyze structure
@@ -82,11 +143,12 @@ const appendRunLogs: Handler = async (_req, _env, _ctx, params) => {
 };
 
 const getPosts: Handler = async (req, env) => {
-  // GET /posts?mode=latest|following&limit=20&offset=0
+  // GET /posts?mode=latest|following&limit=20&offset=0&userId=...
   const url = new URL(req.url);
   const mode = url.searchParams.get("mode") || "latest";
   const limit = parseInt(url.searchParams.get("limit") || "20");
   const offset = parseInt(url.searchParams.get("offset") || "0");
+  const userId = url.searchParams.get("userId"); // For following mode
 
   try {
     let query = `
@@ -99,41 +161,60 @@ const getPosts: Handler = async (req, env) => {
       LEFT JOIN capsules c ON p.capsule_id = c.id
     `;
 
+    let bindings: any[] = [];
+
     if (mode === "following") {
-      // TODO: Add following logic
+      if (!userId) {
+        return json({ error: "userId required for following mode" }, 400);
+      }
       query += ` WHERE p.author_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)`;
+      bindings.push(userId);
     }
 
     query += ` ORDER BY p.created_at DESC LIMIT ? OFFSET ?`;
+    bindings.push(limit, offset);
 
-    const { results } = await env.DB.prepare(query).bind(limit, offset).all();
+    const { results } = await env.DB.prepare(query).bind(...bindings).all();
 
-    const posts = results?.map((row: any) => ({
-      id: row.id,
-      type: row.type,
-      title: row.title,
-      description: row.description,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      author: {
-        id: row.author_id,
-        handle: row.author_handle,
-        name: row.author_name,
-        avatarUrl: row.author_avatar,
-      },
-      capsule: row.capsule_id
-        ? {
-            id: row.capsule_id,
-            ...JSON.parse(row.manifest_json),
-          }
-        : null,
-      createdAt: row.created_at,
-      // TODO: Add stats from aggregated queries
-      stats: {
-        runs: 0,
-        comments: 0,
-        likes: 0,
-        remixes: 0,
-      },
+    // Fetch stats for each post
+    const posts = await Promise.all((results || []).map(async (row: any) => {
+      const [likeCount, commentCount, runCount, remixCount] = await Promise.all([
+        env.DB.prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?")
+          .bind(row.id).first(),
+        env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?")
+          .bind(row.id).first(),
+        row.capsule_id ? env.DB.prepare("SELECT COUNT(*) as count FROM runs WHERE capsule_id = ?")
+          .bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
+        row.capsule_id ? env.DB.prepare("SELECT COUNT(*) as count FROM remixes WHERE parent_capsule_id = ?")
+          .bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
+      ]);
+
+      return {
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        description: row.description,
+        tags: row.tags ? JSON.parse(row.tags) : [],
+        author: {
+          id: row.author_id,
+          handle: row.author_handle,
+          name: row.author_name,
+          avatarUrl: row.author_avatar,
+        },
+        capsule: row.capsule_id
+          ? {
+              id: row.capsule_id,
+              ...JSON.parse(row.manifest_json),
+            }
+          : null,
+        createdAt: row.created_at,
+        stats: {
+          runs: runCount?.count || 0,
+          comments: commentCount?.count || 0,
+          likes: likeCount?.count || 0,
+          remixes: remixCount?.count || 0,
+        },
+      };
     }));
 
     return json({ posts, mode, limit, offset });
