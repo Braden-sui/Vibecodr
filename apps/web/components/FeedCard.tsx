@@ -17,6 +17,7 @@ import {
   Sliders,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReportButton } from "@/components/ReportButton";
 
 export interface FeedCardProps {
   post: {
@@ -258,6 +259,7 @@ export function FeedCard({ post }: FeedCardProps) {
         </div>
 
         <div className="flex gap-2">
+          <ReportButton targetType="post" targetId={post.id} variant="icon" />
           <Button variant="ghost" size="icon" onClick={handleShare}>
             <Share2 className="h-4 w-4" />
           </Button>
