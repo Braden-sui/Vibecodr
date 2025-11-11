@@ -1,0 +1,25 @@
+{
+  "name": "vibecodr-api",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:migrate": "wrangler d1 execute vibecodr-d1 --file=./drizzle/migrations/*.sql"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.33.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "drizzle-kit": "^0.24.0",
+    "typescript": "^5.4.5",
+    "wrangler": "^3.78.0"
+  }
+}
