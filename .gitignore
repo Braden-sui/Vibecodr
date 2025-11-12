@@ -45,3 +45,6 @@ drizzle/migrations/*.sql.js
 .dev.vars
 
 .env
+
+
+.clerk/
