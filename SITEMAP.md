@@ -8,6 +8,8 @@ This document lists the major surfaces and their purpose. Each route in apps/web
   - Preloads capsule manifests for cards in viewport
 - /player/[postId]
   - Full-screen Player: sandboxed iframe, params drawer, remix, comments
+- /live
+  - Phase 5 beta hub with waitlisted sessions, live minutes context, and waitlist dialog
 - /studio
   - Creation hub with tabs: Import, Params, Files, Publish
 - /post/[id]
@@ -29,6 +31,6 @@ API (Cloudflare Worker, workers/api):
 - POST /posts → create a new post (app/report)
 - POST /moderation/report → flag content
 - GET /proxy?host=… → allowlist network proxy
+- POST /live/waitlist → requests access to limited live minutes during Phase 5 beta
 
 DB (D1, workers/api/src/schema.sql): users, capsules, assets, posts, runs, comments, follows, remixes.
-

@@ -13,7 +13,7 @@ export default function PlayerPage({ params }: { params: { postId: string } }) {
   const { postId } = params;
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState({ fps: 0, memory: 0, bootTime: 0 });
-  const [params, setParams] = useState<Record<string, unknown>>({});
+  const [capsuleParams, setCapsuleParams] = useState<Record<string, unknown>>({});
 
   // TODO: Fetch post data from API
   const mockPost = {
@@ -118,10 +118,10 @@ The algorithm implements three rules:
           <div className="flex-1 p-4">
             <PlayerIframe
               capsuleId={mockPost.capsule.id}
-              params={params}
+              params={capsuleParams}
               onReady={() => setIsRunning(true)}
               onLog={(log) => console.log("Capsule log:", log)}
-              onStats={(s) => setStats(s)}
+              onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
             />
           </div>
 

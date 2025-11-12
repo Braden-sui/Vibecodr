@@ -2,30 +2,28 @@ import { describe, it, expect } from "vitest";
 import { manifestSchema, validateManifest, type Manifest } from "./manifest";
 
 describe("Manifest Validation", () => {
+  const baseManifest: Manifest = {
+    version: "1.0",
+    runner: "client-static",
+    entry: "index.html",
+  };
+
   describe("manifestSchema", () => {
     it("should validate a minimal valid manifest", () => {
-      const manifest: Manifest = {
-        version: "1.0",
-        runner: "client-static",
-        entry: "index.html",
-      };
-
-      const result = manifestSchema.safeParse(manifest);
+      const result = manifestSchema.safeParse(baseManifest);
       expect(result.success).toBe(true);
     });
 
     it("should validate manifest with all param types", () => {
       const manifest: Manifest = {
-        version: "1.0",
-        runner: "client-static",
-        entry: "index.html",
+        ...baseManifest,
         params: [
-          { name: "count", type: "slider", defaultValue: 50, min: 0, max: 100, step: 1 },
-          { name: "enabled", type: "toggle", defaultValue: true },
-          { name: "mode", type: "select", defaultValue: "normal", options: ["fast", "normal", "slow"] },
-          { name: "name", type: "text", defaultValue: "Hello" },
-          { name: "opacity", type: "number", defaultValue: 0.5, min: 0, max: 1, step: 0.1 },
-          { name: "color", type: "color", defaultValue: "#ff0000" },
+          { name: "count", type: "slider", default: 50, min: 0, max: 100, step: 1 },
+          { name: "enabled", type: "toggle", default: true },
+          { name: "mode", type: "select", default: "normal", options: ["fast", "normal", "slow"] },
+          { name: "name", type: "text", default: "Hello" },
+          { name: "opacity", type: "number", default: 0.5, min: 0, max: 1, step: 0.1 },
+          { name: "color", type: "color", default: "#ff0000" },
         ],
       };
 
@@ -35,13 +33,15 @@ describe("Manifest Validation", () => {
 
     it("should validate manifest with capabilities", () => {
       const manifest: Manifest = {
-        version: "1.0",
-        runner: "client-static",
-        entry: "index.html",
+        ...baseManifest,
         capabilities: {
-          net: ["api.example.com", "*.cdn.com"],
+          net: ["api.example.com", "cdn.example.com"],
           storage: true,
           workers: true,
+          concurrency: {
+            previews: 1,
+            player: 2,
+          },
         },
       };
 
@@ -79,7 +79,7 @@ describe("Manifest Validation", () => {
         params: Array.from({ length: 21 }, (_, i) => ({
           name: `param${i}`,
           type: "text" as const,
-          defaultValue: "test",
+          default: "test",
         })),
       };
 
@@ -92,9 +92,7 @@ describe("Manifest Validation", () => {
         version: "1.0",
         runner: "client-static",
         entry: "index.html",
-        params: [
-          { name: "count", type: "slider", defaultValue: 50 },
-        ],
+        params: [{ name: "count", type: "slider", default: 50 }],
       };
 
       const result = manifestSchema.safeParse(manifest);
@@ -106,25 +104,31 @@ describe("Manifest Validation", () => {
         version: "1.0",
         runner: "client-static",
         entry: "index.html",
-        params: [
-          { name: "mode", type: "select", defaultValue: "fast" },
-        ],
+        params: [{ name: "mode", type: "select", default: "fast" }],
       };
 
       const result = manifestSchema.safeParse(manifest);
       expect(result.success).toBe(false);
     });
+
+    it("should require edgeWorker config for worker-edge runner", () => {
+      const manifest: Manifest = {
+        ...baseManifest,
+        runner: "worker-edge",
+        edgeWorker: {
+          entry: "worker.ts",
+          concurrency: 2,
+        },
+      };
+
+      const result = manifestSchema.safeParse(manifest);
+      expect(result.success).toBe(true);
+    });
   });
 
   describe("validateManifest", () => {
     it("should return valid result for good manifest", () => {
-      const manifest: Manifest = {
-        version: "1.0",
-        runner: "client-static",
-        entry: "index.html",
-      };
-
-      const result = validateManifest(manifest);
+      const result = validateManifest(baseManifest);
       expect(result.valid).toBe(true);
       expect(result.errors).toBeUndefined();
     });
@@ -141,19 +145,29 @@ describe("Manifest Validation", () => {
       expect(result.errors?.length).toBeGreaterThan(0);
     });
 
-    it("should warn about storage capability without explicit grant", () => {
+    it("should reject worker-edge manifest without configuration", () => {
       const manifest: Manifest = {
-        version: "1.0",
-        runner: "client-static",
-        entry: "index.html",
-        capabilities: {
-          storage: true,
+        ...baseManifest,
+        runner: "worker-edge",
+      };
+
+      const result = validateManifest(manifest);
+      expect(result.valid).toBe(false);
+      expect(result.errors?.some((err) => err.path === "edgeWorker")).toBe(true);
+    });
+
+    it("should provide warning when live waitlist missing plan", () => {
+      const manifest: Manifest = {
+        ...baseManifest,
+        live: {
+          enabled: true,
+          waitlistOnly: true,
         },
       };
 
       const result = validateManifest(manifest);
       expect(result.valid).toBe(true);
-      // Storage warning would be in warnings array if implemented
+      expect(result.warnings).toBeDefined();
     });
   });
 });
