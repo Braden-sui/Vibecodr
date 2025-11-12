@@ -81,7 +81,7 @@ const plans = [
       "SSO & advanced security",
     ],
     cta: "Upgrade to Team",
-    disabled: false,
+    disabled: true,
   },
 ];
 

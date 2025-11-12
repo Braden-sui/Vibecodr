@@ -2,16 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FeedCard } from "@/components/FeedCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Filter, Search, Sparkles, Tag as TagIcon } from "lucide-react";
+import { Filter, Sparkles, Tag as TagIcon } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
 
 type FeedMode = "latest" | "following" | "foryou";
 
-const availableTags = ["ai", "visualization", "canvas", "cli", "webcontainer", "live", "data"];
+const availableTags = ["ai", "visualization", "canvas", "cli", "webcontainer", "data"];
 
 const fallbackPosts = [
     {
@@ -137,6 +137,12 @@ export default function FeedPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+
+  // Keep searchTerm synced with URL `q`
+  useEffect(() => {
+    setSearchTerm(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   useEffect(() => {
     fetchPosts();
@@ -173,7 +179,11 @@ export default function FeedPage() {
         params.set("tags", selectedTags.join(","));
       }
 
-      const response = await fetch(`/api/posts?${params.toString()}`);
+      const response = await fetch(`/api/posts?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${userId}`,
+        },
+      });
       if (!response.ok) {
         setPosts(fallbackPosts);
         return;
@@ -286,24 +296,6 @@ export default function FeedPage() {
       </div>
 
       <div className="space-y-4 rounded-xl border p-4">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex w-full max-w-xl items-center gap-2 rounded-full border px-3 py-1.5">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by capsule, author, or capability"
-              className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-          <Link href="/live">
-            <Button variant="outline" className="gap-2">
-              <Sparkles className="h-4 w-4 text-amber-500" />
-              View Live Capsules
-            </Button>
-          </Link>
-        </div>
-
         <div className="space-y-2">
           <p className="flex items-center gap-2 text-sm font-medium">
             <Filter className="h-4 w-4" />

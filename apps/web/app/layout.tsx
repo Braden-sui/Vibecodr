@@ -4,6 +4,7 @@ import { ClerkProvider, SignInButton, SignUpButton, SignedIn, SignedOut, UserBut
 import Link from "next/link";
 import { NotificationBell } from "@/components/Notifications";
 import { AnalyticsProvider } from "@/providers/posthog-provider";
+import { TopbarSearch } from "../components/TopbarSearch";
 
 export const metadata = {
   title: "Vibecodr",
@@ -25,13 +26,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/studio" className="hover:text-primary">
                 Studio
               </Link>
-              <Link href="/live" className="hover:text-primary">
-                Live
-              </Link>
               <Link href="/report/new" className="hover:text-primary">
                 New Report
               </Link>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-3">
+                <TopbarSearch />
                 <SignedIn>
                   <NotificationBell />
                   <UserButton afterSignOutUrl="/" />

@@ -8,70 +8,70 @@ description: End-to-end checklist to ship the runnable feed MVP on Cloudflare
 Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and the supporting research docs. Organized by lifecycle and mapped to Phases 1–4. Check items in order; defer any “Later” items until post-MVP.
 
 ## 0) Project Foundations (Phase 1)
-- [ ] Monorepo skeleton ready (e.g., Turborepo) with `apps/web` and `packages/*` if needed
-- [ ] Next.js (App Router) initialized with TypeScript strict mode
-- [ ] TailwindCSS configured and working in `apps/web`
-- [ ] shadcn/ui installed and baseline theme tokens established
-- [ ] Lucide icons installed and integrated
+- [X] Monorepo skeleton ready (e.g., Turborepo) with `apps/web` and `packages/*` if needed
+- [X] Next.js (App Router) initialized with TypeScript strict mode
+- [X] TailwindCSS configured and working in `apps/web`
+- [X] shadcn/ui installed and baseline theme tokens established
+- [X] Lucide icons installed and integrated
 - [ ] ESLint + Prettier + strict TS config; CI treats lints as errors
-- [ ] Git hooks (lint-staged + pretty-quick) or equivalent
-- [ ] .env example committed with all required variables (no secrets)
+- [X] Git hooks (lint-staged + pretty-quick) or equivalent
+- [X] .env example committed with all required variables (no secrets)
 - [ ] Basic README with local dev and deploy steps
 
 ## 1) Cloudflare Platform Setup (Phase 1)
-- [ ] Cloudflare account and project created
+- [X] Cloudflare account and project created
 - [ ] Cloudflare Pages project for Next.js set up (production + preview deployments)
-- [ ] Workers project configured for API routes (wrangler.toml checked in)
-- [ ] D1 database created and bound (wrangler bindings)
-- [ ] R2 bucket created and bound for capsule bundles/assets
-- [ ] Durable Objects namespace created and bound (BuildCoordinator)
-- [ ] Workers Analytics Engine enabled and bound
+- [X] Workers project configured for API routes (wrangler.toml checked in)
+- [X] D1 database created and bound (wrangler bindings)
+- [X] R2 bucket created and bound for capsule bundles/assets
+- [X] Durable Objects namespace created and bound (BuildCoordinator)
+- [X] Workers Analytics Engine enabled and bound
 - [ ] Domain + SSL configured; custom domain routed to Pages
 - [ ] Secrets configured in Cloudflare (auth provider keys, PostHog, etc.)
 
 ## 2) Auth and Accounts (Phase 1)
-- [ ] Select provider (Clerk recommended for Workers)
-- [ ] OAuth (GitHub + Google) configured
+- [X] Select provider (Clerk recommended for Workers) [clerk]
+- [x] OAuth (GitHub + Google) configured
 - [ ] Session handling verified on Workers/Pages
-- [ ] Basic user model integrated with D1
-- [ ] Protected routes, soft auth gating for create/publish/remix
+- [X] Basic user model integrated with D1
+- [X] Protected routes, soft auth gating for create/publish/remix
 
 ## 3) Database & Schema (Phase 1)
-- [ ] Choose Drizzle or Kysely; migrations pipeline established
-- [ ] Tables created: users, capsules, posts, assets, runs, comments, follows, remixes
-- [ ] Indices for feed sorts and lookups (created_at, author_id, parent_id, type)
+- [X] Choose Drizzle or Kysely; migrations pipeline established
+- [X] Tables created: users, capsules, posts, assets, runs, comments, follows, remixes
+- [X] Indices for feed sorts and lookups (created_at, author_id, parent_id, type)
 - [ ] Seed script and fixtures for local/dev
 - [ ] Typed query layer + Zod schemas for API contracts
 
 ## 4) Feed (Phase 1 → 3)
-- [ ] Card components: App and Report (Live shows “Coming Soon”)
-- [ ] Badges on cards: runner, net access, params count
-- [ ] Remix chip on card
-- [ ] Hover preview: preboot capsule in isolated iframe (perf budget 250–500ms)
+- [X] Card components: App and Report (Live shows “Coming Soon”)
+- [X] Badges on cards: runner, net access, params count
+- [X] Remix chip on card
+- [X] Hover preview: preboot capsule in isolated iframe (perf budget 250–500ms)
 - [ ] Sorting: Latest (MVP) and Following
 - [ ] Preload manifests via IntersectionObserver
 - [ ] 60fps scroll maintained; heavy work deferred to Player
-- [ ] Empty/loading/error states
-- [ ] Inline preview click-to-run inside the card; instantiate runner on click
-- [ ] WebContainer preview: instantiate only on click; no hover preboot; show skeleton until ready
-- [ ] Concurrency cap for previews (e.g., max 1–2 active containers); queue additional clicks
+- [X] Empty/loading/error states
+- [X] Inline preview click-to-run inside the card; instantiate runner on click
+- [X] WebContainer preview: instantiate only on click; no hover preboot; show skeleton until ready
+- [X] Concurrency cap for previews (e.g., max 1–2 active containers); queue additional clicks
 - [ ] If budgets exceeded, prompt to open full Player and preserve state
 
 ## 5) Player (Phase 1 → 2)
-- [ ] Iframe sandbox configured with strict `sandbox` attrs (deny-by-default)
-- [ ] Strict CSP aligned to runner constraints (default-src 'none', allowlists)
+- [X] Iframe sandbox configured with strict `sandbox` attrs (deny-by-default)
+- [X] Strict CSP aligned to runner constraints (default-src 'none', allowlists)
 - [ ] Right drawer tabs: Notes, Remix, Chat (Chat can be simplified MVP)
 - [ ] Bottom bar: restart, performance meter, params, share, report
-- [ ] postMessage bridge: ready → setParam(name,value) → logs/stats
+- [X] postMessage bridge: ready → setParam(name,value) → logs/stats
 - [ ] Console proxy → analytics (sampled)
 - [ ] Restart without full reload when possible
-- [ ] Capability badges surfaced (net/storage/workers)
-- [ ] Micro-Player variant reused in feed cards to avoid duplicated logic
+- [X] Capability badges surfaced (net/storage/workers)
+- [X] Micro-Player variant reused in feed cards to avoid duplicated logic
 - [ ] Preview-to-Player handoff preserves param state and logs
 
 ## 6) Manifest & Runner (Phase 2)
-- [ ] Manifest schema defined (params, capabilities: net[], storage, workers)
-- [ ] `/api/manifest/validate` endpoint built and returns actionable errors
+- [X] Manifest schema defined (params, capabilities: net[], storage, workers)
+- [X] `/api/manifest/validate` endpoint built and returns actionable errors
 - [ ] Client-static runner shim + service worker (if used) implemented
 - [ ] Param control components mapped to manifest descriptors
 - [ ] Technical budgets enforced (client-static boot ≤ 1s P95; CPU wall-time; memory heuristics)
@@ -96,23 +96,23 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [ ] R2 buckets and prefixes organized (capsules/{hash}/...)
 - [ ] Zero-egress paths confirmed for feed + player
 - [ ] Integrity verification on load (hash)
-- [ ] Bundle cap enforced by plan (25MB Free/Creator; 100MB Pro; 250MB Team)
+- [X] Bundle cap enforced by plan (25MB Free/Creator; 100MB Pro; 250MB Team)
 
 ## 9) Networking & Security (Phase 4)
-- [ ] Network proxy with per-host allowlist (manifest `net: []`)
-- [ ] Rate limits per capsule/host; block cross-origin cookies
+- [X] Network proxy with per-host allowlist (manifest `net: []`)
+- [X] Rate limits per capsule/host; block cross-origin cookies
 - [ ] Permission Policy: deny sensors/camera/mic by default
 - [ ] CSP tightened; top-navigation disallowed in embeds
 - [ ] Quotas and plan enforcement middleware for runs and storage
 
 ## 10) Social Layer (Phase 3)
-- [ ] Likes (optional MVP), Comments (MVP), Follows (MVP)
-- [ ] Notifications (lightweight MVP ok)
-- [ ] Remix graph (track parent/child capsule IDs)
+- [X] Likes (optional MVP), Comments (MVP), Follows (MVP)
+- [X] Notifications (lightweight MVP ok)
+- [X] Remix graph (track parent/child capsule IDs)
 - [ ] Profiles: avatar, handle, bio, counts (Runs, Remixes), latest posts
 
 ## 11) Moderation & Safety (Phase 4)
-- [ ] Report flow on posts/comments
+- [X] Report flow on posts/comments
 - [ ] Quarantine flag + banner; appeal process stub
 - [ ] Rate limits on posting/comments/remixes; captcha on spikes
 - [ ] Basic keyword filters on titles/descriptions
@@ -120,14 +120,14 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 
 ## 12) Sharing, Embeds, and SEO (Phase 4)
 - [ ] Open Graph + X Cards tags for posts and profiles
-- [ ] oEmbed JSON endpoint returns iframe HTML, dimensions, thumbnail_url
-- [ ] One-line embed script `embed.js` with auto-resize and theme detection
-- [ ] Static iframe option `/e/{id}` with safe sandbox/allow attrs
-- [ ] Server-rendered OG image generator with branded frame
+- [X] oEmbed JSON endpoint returns iframe HTML, dimensions, thumbnail_url
+- [X] One-line embed script `embed.js` with auto-resize and theme detection
+- [X] Static iframe option `/e/{id}` with safe sandbox/allow attrs
+- [X] Server-rendered OG image generator with branded frame
 - [ ] Snapshot links that freeze param state
 
 ## 13) Analytics & Growth (Phase 1 → 4)
-- [ ] PostHog (or Umami) initialized
+- [X] PostHog (or Umami) initialized
 - [ ] Player events instrumented: boot_start, boot_ready, set_param, restart, kill, error
 - [ ] Network proxy metrics: requests per capsule/host; rate-limit hits
 - [ ] Preview runner metrics segmented by runner type (client-static vs WebContainer); P95 boot times
@@ -135,7 +135,7 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [ ] Weekly “Vibe Pack” generation hook and template
 
 ## 14) Plans, Pricing, and Quotas (Phase 4)
-- [ ] Plans created (Free, Creator, Pro, Team) with listed caps
+- [X] Plans created (Free, Creator, Pro, Team) with listed caps
 - [ ] Run quotas enforced server-side and surfaced in UI
 - [ ] Progress banners for usage (e.g., “Used 74% of your runs”)
 - [ ] Overage behavior decided (block/warn/upgrade CTA)
@@ -145,7 +145,7 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [ ] Preview deployments on PRs via Cloudflare Pages
 - [ ] Secret scan and dependency audits
 - [ ] Coverage floors enforced
-- [ ] E2E smoke for core flows (see 16)
+- [X] E2E smoke for core flows (see 16)
 
 ## 16) Tests and Performance (All Phases)
 - [ ] Unit tests for manifest validator, params mapping, utils
@@ -176,12 +176,6 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [ ] Full-text search (Postgres FTS)
 - [ ] Collaborative editing and inline annotations
 
-## 19) Phase 5 (Expansion Beta)
-- [ ] Live Capsules hub (`/live`) with waitlist dialog and sample sessions
-- [ ] Feed-level search, tag filters, and For You personalization lane
-- [ ] Manifest schema updated for worker-edge runner + live settings
-- [ ] Analytics wiring for beta interactions (PostHog via `AnalyticsProvider`)
-
 ## Phase Mapping Reference (from MVP Plan)
 - [ ] Phase 1 (0–10): Foundation → Sections 0–3, parts of 4–5, 13, 15
 - [ ] Phase 2 (11–25): Capsules & Studio → Sections 5–8
@@ -190,14 +184,14 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 
 ## Architecture Reference (Cloudflare-First)
 - [ ] Next.js on Pages; API on Workers
-- [ ] D1 for relational data (users, posts, capsules, runs, comments, follows, remixes)
+- [X] D1 for relational data (users, posts, capsules, runs, comments, follows, remixes)
 - [ ] R2 for immutable capsule bundles (content-hash keyed, zero egress)
 - [ ] Durable Objects for presence and build coordination
 - [ ] Workers Analytics Engine + PostHog for observability
 
 ## Guardrails Recap (Safety First)
 - [ ] Sandbox + CSP + Permission Policy default deny
-- [ ] Network via allowlisted proxy; rate-limited; no cross-origin cookies
+- [X] Network via allowlisted proxy; rate-limited; no cross-origin cookies
 - [ ] CPU/memory/time budgets; kill switch in UI
-- [ ] Immutable bundles with integrity hash verification
+- [X] Immutable bundles with integrity hash verification
 - [ ] Moderation/reporting + quarantine with clear user notices
