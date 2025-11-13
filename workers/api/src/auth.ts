@@ -29,6 +29,8 @@ type JwksCacheEntry = {
   expiresAt: number;
 };
 
+type ClerkJwk = JsonWebKey & { kid?: string };
+
 const jwksCache = new Map<string, JwksCacheEntry>();
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -134,8 +136,8 @@ async function verifyClerkJwt(token: string, env: Env): Promise<{ header: JwtHea
   const valid = await crypto.subtle.verify(
     { name: "RSASSA-PKCS1-v1_5" },
     key,
-    signatureBytes,
-    data
+    signatureBytes as unknown as BufferSource,
+    data as unknown as BufferSource
   );
 
   if (!valid) {
@@ -181,7 +183,13 @@ function enforceAudience(payload: ClerkJwtPayload, audienceEnv?: string) {
   if (!audienceEnv) {
     return;
   }
-  const allowedAudiences = audienceEnv
+
+  const normalized = audienceEnv.trim();
+  if (!normalized || normalized === "[]") {
+    return;
+  }
+
+  const allowedAudiences = normalized
     .split(",")
     .map((aud) => aud.trim())
     .filter(Boolean);
@@ -225,7 +233,7 @@ async function refreshJwks(issuer: string): Promise<JwksCacheEntry> {
     throw new Error(`Failed to download Clerk JWKS (${res.status})`);
   }
 
-  const body = (await res.json()) as { keys?: JsonWebKey[] };
+  const body = (await res.json()) as { keys?: ClerkJwk[] };
   if (!Array.isArray(body.keys)) {
     throw new Error("Malformed Clerk JWKS response");
   }
