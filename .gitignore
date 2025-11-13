@@ -41,11 +41,12 @@ next-env.d.ts
 drizzle/migrations/*.sql.js
 
 # Wrangler
-.wrangler/
+
 .dev.vars
 
 .env
 
+.wrangler/
 
 .clerk/
 
