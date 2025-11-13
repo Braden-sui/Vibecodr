@@ -61,9 +61,9 @@ export async function generateBundleHash(files: CapsuleFile[]): Promise<string> 
   // Concatenate all file hashes
   const fileHashes = await Promise.all(
     sortedFiles.map(async (file) => {
-      const content = typeof file.content === "string"
+      const content: string | ArrayBuffer = typeof file.content === "string"
         ? file.content
-        : new Uint8Array(file.content);
+        : file.content;
       return await generateContentHash(content);
     })
   );
@@ -142,18 +142,25 @@ export async function uploadCapsuleBundle(
   // Upload all files
   const uploadPromises = files.map(async (file) => {
     const key = getCapsuleKey(contentHash, file.path);
-    const content = typeof file.content === "string"
+
+    // Body to upload
+    const body: ArrayBuffer | Uint8Array = typeof file.content === "string"
       ? new TextEncoder().encode(file.content)
       : file.content;
 
-    await r2.put(key, content, {
+    await r2.put(key, body, {
       httpMetadata: {
         contentType: file.contentType,
       },
       customMetadata: {
         path: file.path,
         size: file.size.toString(),
-        hash: await generateContentHash(content),
+        // Hash must use string or ArrayBuffer (not Uint8Array)
+        hash: await generateContentHash(
+          typeof file.content === "string"
+            ? file.content
+            : file.content
+        ),
       },
     });
   });

@@ -3,14 +3,19 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
+    "wrangler": "wrangler",
     "dev": "wrangler dev",
+    "dev:api": "wrangler dev --config wrangler.toml --assets assets",
     "deploy": "wrangler deploy",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:migrate": "wrangler d1 execute vibecodr-d1 --file=./drizzle/migrations/*.sql"
+    "db:migrate": "wrangler d1 execute vibecodr-d1 --file=./drizzle/migrations/*.sql",
+    "d1:apply:remote": "wrangler d1 execute vibecodr-d1 --remote --file ./src/schema.sql",
+    "d1:apply:local": "wrangler d1 execute vibecodr-d1 --local --file ./src/schema.sql",
+    "d1:apply": "pnpm run d1:apply:remote && pnpm run d1:apply:local"
   },
   "dependencies": {
     "drizzle-orm": "^0.33.0",
@@ -23,6 +28,8 @@
     "@cloudflare/workers-types": "^4.20241127.0",
     "drizzle-kit": "^0.24.0",
     "typescript": "^5.4.5",
-    "wrangler": "^3.78.0"
+    "vitest": "^2.0.0",
+    "@types/node": "^20.0.0",
+    "wrangler": "^4.47.0"
   }
 }

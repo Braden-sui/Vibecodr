@@ -13,6 +13,7 @@ import {
   checkStorageQuota,
 } from "../storage/quotas";
 import { requireAuth, type AuthenticatedUser } from "../auth";
+import { incrementUserCounters } from "./counters";
 
 type Handler = (
   req: Request,
@@ -41,11 +42,12 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     const formData = await req.formData();
 
     // Get manifest
-    const manifestFile = formData.get("manifest") as File;
-    if (!manifestFile) {
+    const manifestEntry = formData.get("manifest");
+    if (!manifestEntry || typeof (manifestEntry as any).text !== "function") {
       return json({ error: "Missing manifest file" }, 400);
     }
 
+    const manifestFile = manifestEntry as unknown as File;
     const manifestText = await manifestFile.text();
     const manifestData = JSON.parse(manifestText);
 
@@ -71,29 +73,31 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     for (const [key, value] of formData.entries()) {
       if (key === "manifest") continue; // Already processed
 
-      if (value instanceof File) {
-        const content = await value.arrayBuffer();
+      const fileLike = value as any;
+      if (fileLike && typeof fileLike.arrayBuffer === "function") {
+        const content = await fileLike.arrayBuffer();
         const size = content.byteLength;
         totalSize += size;
 
         files.push({
           path: key,
           content,
-          contentType: value.type || "application/octet-stream",
+          contentType: (fileLike.type as string) || "application/octet-stream",
           size,
         });
       }
     }
 
     // Add manifest to files
-    const manifestContent = new TextEncoder().encode(manifestText);
+    const manifestBytes = new TextEncoder().encode(manifestText);
+    const manifestContent = manifestBytes.buffer as ArrayBuffer;
     files.push({
       path: "manifest.json",
       content: manifestContent,
       contentType: "application/json",
-      size: manifestContent.byteLength,
+      size: manifestBytes.byteLength,
     });
-    totalSize += manifestContent.byteLength;
+    totalSize += manifestBytes.byteLength;
 
     // Check quotas
     const userPlan = await getUserPlan(user.userId, env);
@@ -168,6 +172,30 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
       )
         .bind(crypto.randomUUID(), capsuleId, file.path, file.size)
         .run();
+    }
+
+    // Optional remix tracking
+    try {
+      const parentCapsuleId = (formData.get("parentCapsuleId") || formData.get("remixOf")) as string | null;
+      if (parentCapsuleId && parentCapsuleId.trim()) {
+        await env.DB.prepare(
+          "INSERT INTO remixes (child_capsule_id, parent_capsule_id) VALUES (?, ?)"
+        ).bind(capsuleId, parentCapsuleId.trim()).run();
+
+        // Increment user's remixes count best-effort
+        incrementUserCounters(env, user.userId, { remixesDelta: 1 }).catch((err) => {
+          console.error("E-API-0010 publishCapsule remixes counter failed", {
+            userId: user.userId,
+            capsuleId,
+            parentCapsuleId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    } catch (err) {
+      console.error("E-API-0011 publishCapsule remix insert failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return json({

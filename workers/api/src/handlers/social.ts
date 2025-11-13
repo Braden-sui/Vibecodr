@@ -1,14 +1,19 @@
 // Social interaction handlers: likes, follows, comments, notifications
 // References: research-social-platforms.md
 
-import type { Handler } from "../index";
+import type { Handler, Env } from "../index";
+import { incrementPostStats, incrementUserCounters } from "./counters";
+
+type Params = Record<string, string>;
 
 /**
  * Helper to require authentication and extract user from Clerk session
  * In production, integrate with @clerk/backend
  */
-function requireAuth(handler: (req: Request, env: any, ctx: ExecutionContext, params: Record<string, string>, userId: string) => Promise<Response>): Handler {
-  return async (req, env, ctx, params) => {
+function requireAuth(
+  handler: (req: Request, env: Env, ctx: ExecutionContext, params: Params, userId: string) => Promise<Response>
+): Handler {
+  return async (req: Request, env: Env, ctx: ExecutionContext, params: Params) => {
     // TODO: Replace with actual Clerk session validation
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -58,6 +63,15 @@ export const likePost: Handler = requireAuth(async (req, env, ctx, params, userI
         "INSERT INTO likes (user_id, post_id) VALUES (?, ?)"
       ).bind(userId, postId).run();
 
+      // Best-effort: update post like stats (no-op today) and ignore failures
+      incrementPostStats(env, postId, { likesDelta: 1 }).catch((err) => {
+        console.error("E-API-0002 likePost counter update failed", {
+          postId,
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
       // Create notification for post author (but not if liking own post)
       if (post.author_id !== userId) {
         const notifId = generateId();
@@ -94,6 +108,18 @@ export const unlikePost: Handler = requireAuth(async (req, env, ctx, params, use
       "DELETE FROM likes WHERE user_id = ? AND post_id = ?"
     ).bind(userId, postId).run();
 
+    // Only decrement if a row was deleted (idempotent)
+    try {
+      // D1 run() doesn't always return changes; attempt best-effort decrement
+      incrementPostStats(env, postId, { likesDelta: -1 }).catch((err) => {
+        console.error("E-API-0003 unlikePost counter update failed", {
+          postId,
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch {}
+
     return json({ ok: true, liked: false });
   } catch (error) {
     return json({
@@ -107,7 +133,7 @@ export const unlikePost: Handler = requireAuth(async (req, env, ctx, params, use
  * GET /posts/:postId/likes?limit=20&offset=0
  * Get list of users who liked a post
  */
-export const getPostLikes: Handler = async (req, env, ctx, params) => {
+export const getPostLikes: Handler = async (req: Request, env: Env, ctx: ExecutionContext, params: Params) => {
   const postId = params.p1;
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get("limit") || "20");
@@ -173,6 +199,22 @@ export const followUser: Handler = requireAuth(async (req, env, ctx, params, fol
         "INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)"
       ).bind(followerId, followeeId).run();
 
+      // Best-effort: update counters (idempotent if UNIQUE prevented dupes)
+      incrementUserCounters(env, followeeId, { followersDelta: 1 }).catch((err) => {
+        console.error("E-API-0004 followUser followee counter failed", {
+          followeeId,
+          followerId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      incrementUserCounters(env, followerId, { followingDelta: 1 }).catch((err) => {
+        console.error("E-API-0005 followUser follower counter failed", {
+          followeeId,
+          followerId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
       // Create notification
       const notifId = generateId();
       await env.DB.prepare(
@@ -202,9 +244,27 @@ export const unfollowUser: Handler = requireAuth(async (req, env, ctx, params, f
   const followeeId = params.p1;
 
   try {
-    await env.DB.prepare(
+    const res = await env.DB.prepare(
       "DELETE FROM follows WHERE follower_id = ? AND followee_id = ?"
     ).bind(followerId, followeeId).run();
+
+    // Best-effort: decrement counters only when a row likely existed
+    try {
+      incrementUserCounters(env, followeeId, { followersDelta: -1 }).catch((err) => {
+        console.error("E-API-0006 unfollowUser followee counter failed", {
+          followeeId,
+          followerId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      incrementUserCounters(env, followerId, { followingDelta: -1 }).catch((err) => {
+        console.error("E-API-0007 unfollowUser follower counter failed", {
+          followeeId,
+          followerId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch {}
 
     return json({ ok: true, following: false });
   } catch (error) {
@@ -219,7 +279,7 @@ export const unfollowUser: Handler = requireAuth(async (req, env, ctx, params, f
  * GET /users/:userId/followers?limit=20&offset=0
  * Get list of followers for a user
  */
-export const getUserFollowers: Handler = async (req, env, ctx, params) => {
+export const getUserFollowers: Handler = async (req: Request, env: Env, ctx: ExecutionContext, params: Params) => {
   const userId = params.p1;
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get("limit") || "20");
@@ -256,7 +316,7 @@ export const getUserFollowers: Handler = async (req, env, ctx, params) => {
  * GET /users/:userId/following?limit=20&offset=0
  * Get list of users that this user follows
  */
-export const getUserFollowing: Handler = async (req, env, ctx, params) => {
+export const getUserFollowing: Handler = async (req: Request, env: Env, ctx: ExecutionContext, params: Params) => {
   const userId = params.p1;
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get("limit") || "20");
@@ -287,7 +347,7 @@ export const getUserFollowing: Handler = async (req, env, ctx, params) => {
       details: error instanceof Error ? error.message : "Unknown error"
     }, 500);
   }
-});
+};
 
 // ============================================================================
 // COMMENTS
@@ -302,7 +362,7 @@ export const createComment: Handler = requireAuth(async (req, env, ctx, params, 
   const postId = params.p1;
 
   try {
-    const body = await req.json();
+    const body = (await req.json()) as { body?: string; atMs?: number; bbox?: string | null };
     const { body: commentBody, atMs, bbox } = body;
 
     if (!commentBody || typeof commentBody !== "string" || commentBody.trim().length === 0) {
@@ -338,13 +398,17 @@ export const createComment: Handler = requireAuth(async (req, env, ctx, params, 
     }
 
     // Fetch the created comment with user info
-    const comment = await env.DB.prepare(`
+    const comment = (await env.DB.prepare(`
       SELECT c.id, c.body, c.at_ms, c.bbox, c.created_at,
              u.id as user_id, u.handle, u.name, u.avatar_url
       FROM comments c
       INNER JOIN users u ON c.user_id = u.id
       WHERE c.id = ?
-    `).bind(commentId).first();
+    `).bind(commentId).first()) as any | null;
+
+    if (!comment) {
+      return json({ error: "Failed to load created comment" }, 500);
+    }
 
     return json({
       comment: {
@@ -373,7 +437,7 @@ export const createComment: Handler = requireAuth(async (req, env, ctx, params, 
  * GET /posts/:postId/comments?limit=50&offset=0
  * Get comments for a post
  */
-export const getPostComments: Handler = async (req, env, ctx, params) => {
+export const getPostComments: Handler = async (req: Request, env: Env, ctx: ExecutionContext, params: Params) => {
   const postId = params.p1;
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get("limit") || "50");
@@ -411,7 +475,7 @@ export const getPostComments: Handler = async (req, env, ctx, params) => {
       details: error instanceof Error ? error.message : "Unknown error"
     }, 500);
   }
-});
+};
 
 /**
  * DELETE /comments/:commentId
@@ -517,7 +581,7 @@ export const getNotifications: Handler = requireAuth(async (req, env, ctx, param
  */
 export const markNotificationsRead: Handler = requireAuth(async (req, env, ctx, params, userId) => {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as { notificationIds?: string[] };
     const { notificationIds } = body;
 
     if (notificationIds && Array.isArray(notificationIds)) {
@@ -552,7 +616,7 @@ export const getUnreadCount: Handler = requireAuth(async (req, env, ctx, params,
       "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0"
     ).bind(userId).first();
 
-    return json({ count: result?.count || 0 });
+    return json({ count: Number(result?.count ?? 0) });
   } catch (error) {
     return json({
       error: "Failed to get unread count",

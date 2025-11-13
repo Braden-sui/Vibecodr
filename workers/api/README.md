@@ -20,3 +20,10 @@ Open TODOs:
 - Rate limiting per IP/user/route
 - Error handling and structured logs
 
+## Users schema notes
+- users.id equals Clerk user.id (string)
+- plan: one of free | creator | pro | team; defaults to free
+- followers_count/following_count/posts_count/runs_count/remixes_count: denormalized counters (integers)
+- primary_tags: JSON array string of preferred tags (nullable)
+- is_featured/is_suspended/shadow_banned: boolean-like flags (0/1)
+

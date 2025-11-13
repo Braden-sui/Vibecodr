@@ -9,6 +9,20 @@ export const users = sqliteTable("users", {
   name: text("name"),
   avatarUrl: text("avatar_url"),
   bio: text("bio"),
+  // Subscription plan
+  plan: text("plan", { enum: ["free", "creator", "pro", "team"] }).default("free"),
+  // Denormalized counters
+  followersCount: integer("followers_count").default(0),
+  followingCount: integer("following_count").default(0),
+  postsCount: integer("posts_count").default(0),
+  runsCount: integer("runs_count").default(0),
+  remixesCount: integer("remixes_count").default(0),
+  // Primary tags as JSON string
+  primaryTags: text("primary_tags"),
+  // Moderation/feature flags (0/1)
+  isFeatured: integer("is_featured").default(0),
+  isSuspended: integer("is_suspended").default(0),
+  shadowBanned: integer("shadow_banned").default(0),
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
@@ -186,12 +200,19 @@ export type Manifest = z.infer<typeof manifestSchema>;
 export const createUserSchema = z.object({
   id: z.string(),
   handle: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_-]+$/),
-  name: z.string().optional(),
-  avatarUrl: z.string().url().optional(),
-  bio: z.string().max(500).optional(),
+  name: z.string().nullable().optional(),
+  avatarUrl: z.string().url().nullable().optional(),
+  bio: z.string().max(500).nullable().optional(),
+  plan: z.enum(["free", "creator", "pro", "team"]).optional(),
 });
 
 export const updateUserSchema = createUserSchema.partial().required({ id: true });
+
+/**
+ * Note: users.id maps 1:1 to Clerk user.id (string)
+ * plan: subscription tier; isFeatured/isSuspended/shadowBanned: boolean-like flags (0/1) for curation/moderation
+ * *_count fields are denormalized counters maintained by application logic
+ */
 
 // Post schemas
 export const createPostSchema = z.object({
