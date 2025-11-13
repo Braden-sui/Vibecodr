@@ -161,14 +161,6 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       query += " WHERE " + where.join(" AND ");
     }
 
-    if (mode === "following") {
-      if (!userId) {
-        return json({ error: "userId required for following mode" }, 400);
-      }
-      query += ` WHERE p.author_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)`;
-      bindings.push(userId);
-    }
-
     // Default ordering is recency; For You will re-rank after fetch
     query += ` ORDER BY p.created_at DESC LIMIT ? OFFSET ?`;
     bindings.push(limit, offset);
