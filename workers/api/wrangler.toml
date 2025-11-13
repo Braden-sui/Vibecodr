@@ -17,6 +17,9 @@ directory = "./assets"
 
 [vars]
 ALLOWLIST_HOSTS = "[]" # JSON array of allowed network hosts per capsule is enforced per-request
+CLERK_JWT_ISSUER = "https://talented-stag-53.clerk.accounts.dev"
+# Optional: comma-separated audiences (https origins or app identifiers) to require on Clerk tokens
+CLERK_JWT_AUDIENCE = ""
 
 # Durable Objects binding for BuildCoordinator
 [durable_objects]

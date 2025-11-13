@@ -44,7 +44,8 @@ export function PublishTab() {
   const [publishStatus, setPublishStatus] = useState<"idle" | "validating" | "uploading" | "success" | "error">("idle");
 
   // Validation checks
-  const checks = [
+  type CheckStatus = "pass" | "warning" | "fail";
+  const checks: { name: string; status: CheckStatus; message: string }[] = [
     {
       name: "Manifest Valid",
       status: "pass" as const,

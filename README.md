@@ -19,3 +19,18 @@ Next steps:
 - Wire the live waitlist form to the Workers API.
 - Connect feed search/filter params to the backend query once endpoints land.
 
+## Cloudflare Pages build
+
+We now ship with Next 15.5.2 running entirely on the Edge runtime so it can be adapted by `@cloudflare/next-on-pages`. The build workflow is:
+
+```bash
+pnpm run cf:build
+```
+
+The script performs the three steps the adapter expects:
+
+1. Run `vercel build` inside `apps/web`.
+2. Remove the generated Node-oriented `_not-found` serverless function (the route is pre-rendered in `/404.html`, so only the static asset is required).
+3. Reuse that output via `@cloudflare/next-on-pages --skip-build` to produce the `_worker.js` bundle.
+
+When the command completes you will find the worker bundle under `.vercel/output/static/_worker.js`.

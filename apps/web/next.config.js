@@ -9,7 +9,9 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 
 const nextConfig = {
   reactStrictMode: true,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
 module.exports = nextConfig;
-

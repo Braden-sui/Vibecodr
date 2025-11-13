@@ -1,7 +1,8 @@
 // Moderation and safety handlers
 // References: checklist.mdx Section 11 (Moderation & Safety)
 
-import type { Handler } from "../index";
+import type { Handler, Env } from "../index";
+import { requireAuth as requireWorkerAuth } from "../auth";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -15,19 +16,15 @@ function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 }
 
-/**
- * Helper to require authentication
- */
-function requireAuth(handler: (req: Request, env: any, ctx: ExecutionContext, params: Record<string, string>, userId: string) => Promise<Response>): Handler {
-  return async (req, env, ctx, params) => {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return json({ error: "Unauthorized" }, 401);
-    }
-    const userId = authHeader.replace("Bearer ", "");
-    return handler(req, env, ctx, params, userId);
-  };
-}
+const requireUser = (
+  handler: (
+    req: Request,
+    env: Env,
+    ctx: ExecutionContext,
+    params: Record<string, string>,
+    userId: string
+  ) => Promise<Response>
+): Handler => requireWorkerAuth((req, env, ctx, params, user) => handler(req, env, ctx, params, user.userId));
 
 // Basic keyword filter for spam/abuse detection
 const BLOCKED_KEYWORDS = [
@@ -68,7 +65,7 @@ function containsBlockedKeywords(text: string): { blocked: boolean; matches: str
  *   details?: string
  * }
  */
-export const reportContent: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const reportContent: Handler = requireUser(async (req, env, ctx, params, userId) => {
   try {
     const body = await req.json();
     const { targetType, targetId, reason, details } = body;
@@ -150,7 +147,7 @@ export const reportContent: Handler = requireAuth(async (req, env, ctx, params, 
  * GET /moderation/reports?status=pending&limit=50&offset=0
  * Get moderation reports (admin only)
  */
-export const getModerationReports: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const getModerationReports: Handler = requireUser(async (req, env, ctx, params, userId) => {
   try {
     // TODO: Check if user is admin/moderator
     // For now, any authenticated user can view (should be restricted in production)
@@ -203,7 +200,7 @@ export const getModerationReports: Handler = requireAuth(async (req, env, ctx, p
  *   notes?: string
  * }
  */
-export const resolveModerationReport: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const resolveModerationReport: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const reportId = params.p1;
 
   try {

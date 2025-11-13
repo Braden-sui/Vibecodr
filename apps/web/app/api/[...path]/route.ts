@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
+export const runtime = "edge";
+
 function getBase() {
   return process.env.WORKER_API_BASE || process.env.NEXT_PUBLIC_API_BASE || "https://vibecodr-api.braden-yig.workers.dev";
 }

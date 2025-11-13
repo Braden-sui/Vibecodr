@@ -5,6 +5,8 @@ export interface Env {
   DB: D1Database;
   R2: R2Bucket;
   ALLOWLIST_HOSTS: string; // JSON string
+  CLERK_JWT_ISSUER: string;
+  CLERK_JWT_AUDIENCE?: string;
   BUILD_COORDINATOR_DURABLE: DurableObjectNamespace;
   vibecodr_analytics_engine: AnalyticsEngineDataset;
 }
@@ -364,5 +366,4 @@ export default {
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" }, ...init });
 }
-
 

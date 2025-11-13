@@ -1,6 +1,7 @@
 import { expect, afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import * as matchers from "@testing-library/jest-dom/matchers";
+import { createElement } from "react";
 
 // Extend Vitest matchers
 expect.extend(matchers);
@@ -26,7 +27,7 @@ vi.mock("next/navigation", () => ({
 // Mock Next.js Link
 vi.mock("next/link", () => ({
   default: ({ children, href }: any) => {
-    return <a href={href}>{children}</a>;
+    return createElement("a", { href }, children);
   },
 }));
 

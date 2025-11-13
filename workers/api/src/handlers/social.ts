@@ -2,27 +2,16 @@
 // References: research-social-platforms.md
 
 import type { Handler, Env } from "../index";
+import { requireAuth as requireWorkerAuth } from "../auth";
 import { incrementPostStats, incrementUserCounters } from "./counters";
 
 type Params = Record<string, string>;
 
-/**
- * Helper to require authentication and extract user from Clerk session
- * In production, integrate with @clerk/backend
- */
-function requireAuth(
+const requireUser = (
   handler: (req: Request, env: Env, ctx: ExecutionContext, params: Params, userId: string) => Promise<Response>
-): Handler {
-  return async (req: Request, env: Env, ctx: ExecutionContext, params: Params) => {
-    // TODO: Replace with actual Clerk session validation
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return json({ error: "Unauthorized" }, 401);
-    }
-    const userId = authHeader.replace("Bearer ", "");
-    return handler(req, env, ctx, params, userId);
-  };
-}
+): Handler => {
+  return requireWorkerAuth((req, env, ctx, params, user) => handler(req, env, ctx, params, user.userId));
+};
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -44,7 +33,7 @@ function generateId(): string {
  * POST /posts/:postId/like
  * Like a post and create notification for post author
  */
-export const likePost: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const likePost: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const postId = params.p1;
 
   try {
@@ -100,7 +89,7 @@ export const likePost: Handler = requireAuth(async (req, env, ctx, params, userI
  * DELETE /posts/:postId/like
  * Unlike a post
  */
-export const unlikePost: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const unlikePost: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const postId = params.p1;
 
   try {
@@ -176,7 +165,7 @@ export const getPostLikes: Handler = async (req: Request, env: Env, ctx: Executi
  * POST /users/:userId/follow
  * Follow a user and create notification
  */
-export const followUser: Handler = requireAuth(async (req, env, ctx, params, followerId) => {
+export const followUser: Handler = requireUser(async (req, env, ctx, params, followerId) => {
   const followeeId = params.p1;
 
   if (followerId === followeeId) {
@@ -240,7 +229,7 @@ export const followUser: Handler = requireAuth(async (req, env, ctx, params, fol
  * DELETE /users/:userId/follow
  * Unfollow a user
  */
-export const unfollowUser: Handler = requireAuth(async (req, env, ctx, params, followerId) => {
+export const unfollowUser: Handler = requireUser(async (req, env, ctx, params, followerId) => {
   const followeeId = params.p1;
 
   try {
@@ -358,7 +347,7 @@ export const getUserFollowing: Handler = async (req: Request, env: Env, ctx: Exe
  * Create a comment on a post
  * Body: { body: string, atMs?: number, bbox?: string }
  */
-export const createComment: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const createComment: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const postId = params.p1;
 
   try {
@@ -481,7 +470,7 @@ export const getPostComments: Handler = async (req: Request, env: Env, ctx: Exec
  * DELETE /comments/:commentId
  * Delete a comment (only by author)
  */
-export const deleteComment: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const deleteComment: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const commentId = params.p1;
 
   try {
@@ -517,7 +506,7 @@ export const deleteComment: Handler = requireAuth(async (req, env, ctx, params, 
  * GET /notifications?limit=20&offset=0&unreadOnly=false
  * Get notifications for current user
  */
-export const getNotifications: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const getNotifications: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get("limit") || "20");
   const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -579,7 +568,7 @@ export const getNotifications: Handler = requireAuth(async (req, env, ctx, param
  * Mark notifications as read
  * Body: { notificationIds: string[] } or {} to mark all as read
  */
-export const markNotificationsRead: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const markNotificationsRead: Handler = requireUser(async (req, env, ctx, params, userId) => {
   try {
     const body = (await req.json()) as { notificationIds?: string[] };
     const { notificationIds } = body;
@@ -610,7 +599,7 @@ export const markNotificationsRead: Handler = requireAuth(async (req, env, ctx, 
  * GET /notifications/unread-count
  * Get count of unread notifications
  */
-export const getUnreadCount: Handler = requireAuth(async (req, env, ctx, params, userId) => {
+export const getUnreadCount: Handler = requireUser(async (req, env, ctx, params, userId) => {
   try {
     const result = await env.DB.prepare(
       "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0"

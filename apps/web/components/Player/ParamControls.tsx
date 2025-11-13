@@ -95,7 +95,9 @@ function ParamControl({ param, value, onChange, disabled }: ParamControlProps) {
           </div>
           {(param.type === "slider" || param.type === "number") && (
             <span className="ml-2 text-sm font-mono text-muted-foreground">
-              {typeof localValue === "number" ? localValue.toFixed(2) : localValue}
+              {typeof localValue === "number"
+                ? localValue.toFixed(2)
+                : String(localValue ?? "")}
             </span>
           )}
         </div>
