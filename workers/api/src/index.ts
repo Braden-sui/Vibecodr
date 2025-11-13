@@ -5,7 +5,7 @@ export interface Env {
   DB: D1Database;
   R2: R2Bucket;
   ALLOWLIST_HOSTS: string; // JSON string
-  BUILD_COORDINATOR: DurableObjectNamespace;
+  BUILD_COORDINATOR_DURABLE: DurableObjectNamespace;
   vibecodr_analytics_engine: AnalyticsEngineDataset;
 }
 
@@ -81,8 +81,8 @@ async function appendRunLogs(_req: Request, _env: Env, _ctx: ExecutionContext, p
 
 async function doStatus(_req: Request, env: Env): Promise<Response> {
   try {
-    const id = env.BUILD_COORDINATOR.idFromName("global");
-    const stub = env.BUILD_COORDINATOR.get(id);
+    const id = env.BUILD_COORDINATOR_DURABLE.idFromName("global");
+    const stub = env.BUILD_COORDINATOR_DURABLE.get(id);
     const res = await stub.fetch("https://internal/status");
     try {
       env.vibecodr_analytics_engine.writeDataPoint({
@@ -364,6 +364,5 @@ export default {
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" }, ...init });
 }
-
 
 

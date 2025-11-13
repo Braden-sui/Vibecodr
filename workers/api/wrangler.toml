@@ -21,7 +21,7 @@ ALLOWLIST_HOSTS = "[]" # JSON array of allowed network hosts per capsule is enfo
 # Durable Objects binding for BuildCoordinator
 [durable_objects]
 bindings = [
-  { name = "BUILD_COORDINATOR", class_name = "BuildCoordinator" }
+  { name = "BUILD_COORDINATOR_DURABLE", class_name = "BuildCoordinator" }
 ]
 
 # Durable Objects migration tag
