@@ -1,4 +1,4 @@
-// Cloudflare Worker API skeleton for Vibecodr
+// Cloudflare Worker API skeleton for Vibecod
 // Routes documented in SITEMAP.md. Each handler returns 501 with TODOs.
 
 export interface Env {
