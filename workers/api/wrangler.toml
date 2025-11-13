@@ -6,6 +6,7 @@ compatibility_date = "2024-10-01"
 binding = "DB"
 database_name = "vibecodr-d1"
 database_id = "1d42e343-b1a3-4371-a4a3-516381599bc2"
+migrations_dir = "drizzle/migrations"
 
 [[r2_buckets]]
 binding = "R2"

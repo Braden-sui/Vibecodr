@@ -68,49 +68,154 @@ export function FeedCard({ post }: FeedCardProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout>();
   const prebootStartRef = useRef<number>();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [isNearViewport, setIsNearViewport] = useState(false);
+  const [isWarmZoneActive, setIsWarmZoneActive] = useState(false);
+  const prewarmInFlightRef = useRef(false);
+  const preconnectHintedRef = useRef(false);
 
   const isWebContainer = post.capsule?.runner === "webcontainer";
   const shouldPreboot = isApp && !isWebContainer; // Only preboot client-static, not WebContainer
+  const showPrewarmSpinner = (isHovering || isWarmZoneActive) && !previewLoaded && !previewError;
 
-  // Handle hover preboot for client-static runners
+  // Track when the card enters the viewport with some padding
   useEffect(() => {
-    if (isHovering && shouldPreboot && !previewLoaded && !isRunning) {
-      // Check concurrency cap
-      if (activePreviewCount >= MAX_ACTIVE_PREVIEWS) {
-        return; // Too many active previews, skip preboot
+    const node = cardRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+
+        setIsNearViewport((prev) => (prev === entry.isIntersecting ? prev : entry.isIntersecting));
+        const warmZone = entry.intersectionRatio >= 0.35;
+        setIsWarmZoneActive((prev) => (prev === warmZone ? prev : warmZone));
+      },
+      {
+        root: null,
+        rootMargin: "300px 0px 300px 0px",
+        threshold: [0, 0.35],
+      }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // Fire preconnect hints once a card is near the viewport
+  useEffect(() => {
+    if (!isNearViewport || preconnectHintedRef.current) {
+      return;
+    }
+    preconnectHintedRef.current = true;
+
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+
+    const existing = document.querySelector('link[data-feed-preconnect="capsule-prewarm"]');
+    if (existing) {
+      return;
+    }
+
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = window.location.origin;
+    link.crossOrigin = "anonymous";
+    link.setAttribute("data-feed-preconnect", "capsule-prewarm");
+    document.head.appendChild(link);
+  }, [isNearViewport]);
+
+  // Automatically prewarm once the card is within the prewarm zone
+  useEffect(() => {
+    if (
+      !shouldPreboot ||
+      !post.capsule?.id ||
+      previewLoaded ||
+      isRunning ||
+      (!isNearViewport && !isWarmZoneActive)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryHandle: number | undefined;
+
+    const startPrewarm = () => {
+      if (cancelled || prewarmInFlightRef.current) {
+        return;
       }
 
-      // Start preboot with performance budget
+      prewarmInFlightRef.current = true;
       prebootStartRef.current = Date.now();
       activePreviewCount++;
 
-      // Preload manifest for quick boot
-      if (post.capsule?.id) {
-        fetch(`/api/capsules/${post.capsule.id}/manifest`)
-          .then((res) => res.json())
-          .then(() => {
-            setPreviewLoaded(true);
-            const bootTime = Date.now() - (prebootStartRef.current || 0);
+      fetch(`/api/capsules/${post.capsule.id}/manifest`)
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error("Failed to preload capsule manifest");
+          }
+          return res.json();
+        })
+        .then(() => {
+          if (cancelled) {
+            return;
+          }
 
-            // Check if within performance budget (250-500ms)
-            if (bootTime > 500) {
-              console.warn(`Preview boot exceeded budget: ${bootTime}ms`);
-            }
-          })
-          .catch((err) => {
-            console.error("Preview preboot error:", err);
-            setPreviewError(true);
-            activePreviewCount--;
-          });
+          setPreviewLoaded(true);
+          const bootTime = Date.now() - (prebootStartRef.current || 0);
+
+          // Check if within performance budget (250-500ms)
+          if (bootTime > 500) {
+            console.warn(`Preview boot exceeded budget: ${bootTime}ms`);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) {
+            return;
+          }
+          console.error("Preview preboot error:", err);
+          setPreviewError(true);
+          prewarmInFlightRef.current = false;
+        })
+        .finally(() => {
+          activePreviewCount = Math.max(0, activePreviewCount - 1);
+        });
+    };
+
+    const attemptPrewarm = () => {
+      if (cancelled || previewLoaded || prewarmInFlightRef.current) {
+        return;
       }
-    }
+
+      if (activePreviewCount >= MAX_ACTIVE_PREVIEWS) {
+        retryHandle = window.setTimeout(attemptPrewarm, 150);
+        return;
+      }
+
+      startPrewarm();
+    };
+
+    attemptPrewarm();
 
     return () => {
-      if (previewLoaded && activePreviewCount > 0) {
-        activePreviewCount--;
+      cancelled = true;
+      if (retryHandle) {
+        window.clearTimeout(retryHandle);
       }
     };
-  }, [isHovering, shouldPreboot, previewLoaded, isRunning, post.capsule?.id]);
+  }, [
+    shouldPreboot,
+    isNearViewport,
+    isWarmZoneActive,
+    previewLoaded,
+    isRunning,
+    post.capsule?.id,
+  ]);
 
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
@@ -213,7 +318,7 @@ export function FeedCard({ post }: FeedCardProps) {
           text: post.description,
           url,
         });
-      } catch (error) {
+      } catch {
         // User cancelled or error occurred
       }
     } else {
@@ -224,7 +329,7 @@ export function FeedCard({ post }: FeedCardProps) {
   };
 
   return (
-    <Card className="group relative overflow-hidden transition-all hover:shadow-lg">
+    <Card ref={cardRef} className="group relative overflow-hidden transition-all hover:shadow-lg">
       {/* Cover/Preview Area */}
       <div
         onMouseEnter={handleMouseEnter}
@@ -279,7 +384,7 @@ export function FeedCard({ post }: FeedCardProps) {
                         <Play className="h-5 w-5" />
                         Run Preview
                       </Button>
-                    ) : isHovering && !previewError ? (
+                    ) : showPrewarmSpinner ? (
                       <Loader2 className="h-16 w-16 animate-spin text-muted-foreground/30" />
                     ) : (
                       <Play className="h-16 w-16 text-muted-foreground/20" />
