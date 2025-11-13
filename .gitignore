@@ -48,3 +48,11 @@ drizzle/migrations/*.sql.js
 
 
 .clerk/
+
+# pnpm
+.pnpm-store/
+pnpm-debug.log*
+
+# Common local caches
+.cache/
+.eslintcache
