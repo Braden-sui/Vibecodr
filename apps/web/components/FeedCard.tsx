@@ -74,6 +74,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const prewarmInFlightRef = useRef(false);
   const preconnectHintedRef = useRef(false);
 
+  const capsuleId = post.capsule?.id;
   const isWebContainer = post.capsule?.runner === "webcontainer";
   const shouldPreboot = isApp && !isWebContainer; // Only preboot client-static, not WebContainer
   const showPrewarmSpinner = (isHovering || isWarmZoneActive) && !previewLoaded && !previewError;
@@ -134,7 +135,7 @@ export function FeedCard({ post }: FeedCardProps) {
   useEffect(() => {
     if (
       !shouldPreboot ||
-      !post.capsule?.id ||
+      !capsuleId ||
       previewLoaded ||
       isRunning ||
       (!isNearViewport && !isWarmZoneActive)
@@ -154,7 +155,7 @@ export function FeedCard({ post }: FeedCardProps) {
       prebootStartRef.current = Date.now();
       activePreviewCount++;
 
-      fetch(`/api/capsules/${post.capsule.id}/manifest`)
+      fetch(`/api/capsules/${capsuleId}/manifest`)
         .then((res) => {
           if (!res.ok) {
             throw new Error("Failed to preload capsule manifest");
@@ -214,7 +215,7 @@ export function FeedCard({ post }: FeedCardProps) {
     isWarmZoneActive,
     previewLoaded,
     isRunning,
-    post.capsule?.id,
+    capsuleId,
   ]);
 
   // Handle hover enter with debounce
@@ -300,8 +301,8 @@ export function FeedCard({ post }: FeedCardProps) {
   const handleRemix = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isApp && post.capsule) {
-      router.push(`/studio?remixFrom=${post.capsule.id}`);
+    if (isApp && capsuleId) {
+      router.push(`/studio?remixFrom=${capsuleId}`);
     }
   };
 
@@ -346,11 +347,11 @@ export function FeedCard({ post }: FeedCardProps) {
             )}
           >
             {/* Preview iframe for running apps */}
-            {isRunning && post.capsule?.id && (
+            {isRunning && capsuleId && (
               <div className="absolute inset-0 z-10">
                 <iframe
                   ref={iframeRef}
-                  src={`/api/capsules/${post.capsule.id}/bundle`}
+                  src={`/api/capsules/${capsuleId}/bundle`}
                   className="h-full w-full border-0"
                   sandbox="allow-scripts allow-same-origin"
                   style={{
