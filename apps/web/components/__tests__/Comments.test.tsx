@@ -33,7 +33,7 @@ describe("Comments", () => {
   });
 
   it("should display loading state initially", () => {
-    global.fetch = vi.fn(() => new Promise(() => {})); // Never resolves
+    global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch; // Never resolves
 
     render(<Comments postId="post1" />);
 

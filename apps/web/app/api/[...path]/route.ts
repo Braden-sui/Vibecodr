@@ -12,7 +12,8 @@ async function injectClerkAuthHeader(headers: Headers) {
   }
 
   try {
-    const { getToken } = auth();
+    const authResult = await auth();
+    const { getToken } = authResult;
     if (!getToken) {
       return;
     }
