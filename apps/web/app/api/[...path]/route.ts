@@ -1,9 +1,31 @@
 import { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { getWorkerApiBase } from "@/lib/worker-api";
 
 export const runtime = "edge";
 
 const API_BASE = getWorkerApiBase();
+
+async function injectClerkAuthHeader(headers: Headers) {
+  if (headers.has("authorization")) {
+    return;
+  }
+
+  try {
+    const { getToken } = auth();
+    if (!getToken) {
+      return;
+    }
+    const token = await getToken();
+    if (token) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
+  } catch (error) {
+    console.error("E-VIBECODR-0003 clerk token injection failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname.replace(/^\/api\/?/, "");
@@ -13,6 +35,7 @@ async function proxy(req: NextRequest) {
   headers.delete("host");
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
+  await injectClerkAuthHeader(headers);
 
   const init: RequestInit = {
     method: req.method,
