@@ -1,19 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   FileCode,
   FileText,
-  Image,
-  Folder,
+  Image as ImageIcon,
   Plus,
-  Trash2,
   Download,
   Upload,
   AlertCircle,
@@ -117,7 +113,7 @@ window.vibecodr.ready();`,
     if (fileName.endsWith(".js")) return <FileCode className="h-4 w-4 text-yellow-500" />;
     if (fileName.endsWith(".json")) return <FileText className="h-4 w-4 text-blue-500" />;
     if (fileName.match(/\.(png|jpg|jpeg|gif|svg)$/))
-      return <Image className="h-4 w-4 text-purple-500" />;
+      return <ImageIcon className="h-4 w-4 text-purple-500" />;
     return <FileText className="h-4 w-4" />;
   };
 
@@ -267,7 +263,7 @@ window.vibecodr.ready();`,
                   <div className="rounded-md bg-blue-500/10 p-3 text-xs text-blue-700 dark:text-blue-400">
                     <p className="font-medium">Manifest File</p>
                     <p className="mt-1">
-                      This file defines your vibe's configuration, parameters, and capabilities.
+                      This file defines your vibe&apos;s configuration, parameters, and capabilities.
                     </p>
                   </div>
                 </>

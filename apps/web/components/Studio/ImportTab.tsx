@@ -63,6 +63,7 @@ export function ImportTab() {
       setImportStatus("success");
     } catch (err) {
       setImportStatus("error");
+      console.error("ZIP upload failed:", err);
       setError("Failed to process ZIP file");
     } finally {
       setIsImporting(false);
@@ -78,7 +79,7 @@ export function ImportTab() {
         </p>
       </div>
 
-      <Tabs value={importMethod} onValueChange={(v) => setImportMethod(v as any)}>
+      <Tabs value={importMethod} onValueChange={(v) => setImportMethod(v as "github" | "zip")}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="github" className="gap-2">
             <Github className="h-4 w-4" />
@@ -96,7 +97,7 @@ export function ImportTab() {
             <CardHeader>
               <CardTitle>Import from GitHub</CardTitle>
               <CardDescription>
-                Paste a GitHub repository URL. We'll download, analyze, and prepare your code.
+                Paste a GitHub repository URL. We&apos;ll download, analyze, and prepare your code.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -228,7 +229,7 @@ export function ImportTab() {
               <CardTitle className="text-base">Import Guidelines</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>• We'll detect your entry file (index.html, main.js, etc.)</p>
+              <p>• We&apos;ll detect your entry file (index.html, main.js, etc.)</p>
               <p>• Bundle size limit: 25 MB (Free/Creator), up to 250 MB (Team)</p>
               <p>• SSR or server-only code will be flagged</p>
               <p>• License information will be detected (SPDX)</p>

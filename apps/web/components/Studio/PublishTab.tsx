@@ -9,16 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import {
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Upload,
-  Globe,
-  Lock,
-  Eye,
-  Rocket,
-} from "lucide-react";
+import { CheckCircle2, AlertCircle, Loader2, Globe, Lock, Eye, Rocket } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -99,11 +90,12 @@ export function PublishTab() {
       // Simulate upload to R2
       await new Promise((resolve) => setTimeout(resolve, 2000));
       setPublishStatus("success");
-    } catch (err) {
-      setPublishStatus("error");
-    } finally {
-      setIsPublishing(false);
-    }
+  } catch (err) {
+    setPublishStatus("error");
+    console.error("Publish simulation failed:", err);
+  } finally {
+    setIsPublishing(false);
+  }
   };
 
   return (
@@ -227,7 +219,10 @@ export function PublishTab() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="visibility">Visibility</Label>
-            <Select value={visibility} onValueChange={(v: any) => setVisibility(v)}>
+            <Select
+              value={visibility}
+              onValueChange={(value: "public" | "unlisted" | "private") => setVisibility(value)}
+            >
               <SelectTrigger id="visibility">
                 <SelectValue />
               </SelectTrigger>

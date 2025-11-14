@@ -3,11 +3,17 @@
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 
+type PublicMetadata = {
+  role?: string;
+  isModerator?: boolean;
+} | null;
+
 export function ModerationNavLinks() {
   const { user, isSignedIn } = useUser();
-
-  const role = (user?.publicMetadata as any)?.role as string | undefined;
-  const isModerator = role === "moderator" || (user?.publicMetadata as any)?.isModerator === true;
+  const metadata: PublicMetadata =
+    typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
+  const role = metadata?.role;
+  const isModerator = role === "moderator" || metadata?.isModerator === true;
   const isAdmin = role === "admin";
 
   if (!isSignedIn || (!isModerator && !isAdmin)) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -33,13 +33,6 @@ export function TopbarSearch() {
     router.replace(`${pathname}?${params.toString()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
-
-  const clear = () => {
-    setValue("");
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("q");
-    router.replace(`${pathname}?${params.toString()}`);
-  };
 
   return (
     <div className="flex items-center gap-2 flex-row-reverse">

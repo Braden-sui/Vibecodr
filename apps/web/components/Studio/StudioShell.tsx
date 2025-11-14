@@ -1,10 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { CheckCircle2, AlertCircle, Loader2, FileCode, Sliders, Upload, Send } from "lucide-react";
 import type { Manifest } from "@vibecodr/shared/manifest";
 

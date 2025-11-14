@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,6 +25,11 @@ interface Comment {
   };
 }
 
+type PublicMetadata = {
+  role?: string;
+  isModerator?: boolean;
+} | null;
+
 interface CommentsProps {
   postId: string;
   currentUserId?: string;
@@ -37,18 +42,14 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, isSignedIn } = useUser();
+  const metadata: PublicMetadata =
+    typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
+  const role = metadata?.role;
+  const isModeratorFlag = metadata?.isModerator === true;
   const isModeratorOrAdmin =
-    !!user &&
-    isSignedIn &&
-    (((user.publicMetadata as any)?.role as string | undefined) === "admin" ||
-      ((user.publicMetadata as any)?.role as string | undefined) === "moderator" ||
-      (user.publicMetadata as any)?.isModerator === true);
+    !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
 
-  useEffect(() => {
-    fetchComments();
-  }, [postId]);
-
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     try {
       const response = await commentsApi.fetch(postId, { limit: 100 });
       if (!response.ok) throw new Error("Failed to fetch comments");
@@ -60,7 +61,11 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [postId]);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +86,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       const data = await response.json();
-      setComments([...comments, data.comment]);
+      setComments((prev) => [...prev, data.comment]);
       setNewComment("");
     } catch (error) {
       console.error("Failed to create comment:", error);

@@ -6,10 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { Plus, Trash2, GripVertical } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { ParamControls } from "@/components/Player/ParamControls";
 
@@ -163,7 +160,7 @@ export function ParamsTab() {
                         <Select
                           value={param.type}
                           onValueChange={(value) =>
-                            updateParam(index, { type: value as any })
+                            updateParam(index, { type: value as ManifestParam["type"] })
                           }
                         >
                           <SelectTrigger id={`type-${index}`}>

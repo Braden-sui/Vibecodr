@@ -35,6 +35,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { FeedPost } from "@/lib/api";
 
+type PublicMetadata = {
+  role?: string;
+  isModerator?: boolean;
+} | null;
+
 export interface FeedCardProps {
   post: FeedPost;
 }
@@ -46,14 +51,14 @@ const MAX_ACTIVE_PREVIEWS = 2;
 export function FeedCard({ post }: FeedCardProps) {
   const router = useRouter();
   const { user, isSignedIn } = useUser();
+  const metadata: PublicMetadata =
+    typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
+  const role = metadata?.role;
+  const isModeratorFlag = metadata?.isModerator === true;
   const isModeratorOrAdmin =
-    !!user &&
-    isSignedIn &&
-    (((user.publicMetadata as any)?.role as string | undefined) === "admin" ||
-      ((user.publicMetadata as any)?.role as string | undefined) === "moderator" ||
-      (user.publicMetadata as any)?.isModerator === true);
+    !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
   const isApp = post.type === "app";
-  const [isHovering, setIsHovering] = useState(false);
+  const [_isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -62,7 +67,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const prebootStartRef = useRef<number>();
   const cardRef = useRef<HTMLDivElement>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
-  const [isWarmZoneActive, setIsWarmZoneActive] = useState(false);
+  const [_isWarmZoneActive, setIsWarmZoneActive] = useState(false);
   const preconnectHintedRef = useRef(false);
   const clickRunIncrementRef = useRef(false);
   const pauseStateRef = useRef<"paused" | "running">("running");

@@ -23,7 +23,7 @@ This document lists the major surfaces and their purpose. Each route in apps/web
 - /pricing
   - Public plans & limits (Free, Creator, Pro, Team)
 - /live
-  - Placeholder "not live yet" page for the future live capsules hubproce
+  - Placeholder "not live yet" page for the future live capsules hub
 - /admin/moderation
   - Simple stub queue for reports/quarantine
 - /moderation/flagged

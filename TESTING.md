@@ -212,20 +212,20 @@ test("should load feed within 2 seconds", async ({ page }) => {
 
 ## CI/CD Integration
 
-Tests run automatically on:
+When CI is configured for this repo, it should run tests on:
 - Every push to `main`, `develop`, or `claude/**` branches
 - Every pull request to `main` or `develop`
 
-### GitHub Actions Workflow
+### GitHub Actions Workflow (planned)
 
-The test workflow includes:
-1. **Unit Tests** - Runs unit tests for all packages
-2. **Component Tests** - Runs component tests for web app
-3. **E2E Tests** - Runs E2E tests on Chromium, Firefox, and WebKit
-4. **Performance Tests** - Runs performance benchmarks
-5. **Lint & Type Check** - Validates code quality
+The recommended test workflow includes:
+1. **Unit Tests** - Run unit tests for all packages (e.g., `pnpm test:unit`)
+2. **Component Tests** - Run component tests for the web app (e.g., `pnpm test:component -w apps/web`)
+3. **E2E Tests** - Run E2E tests on Chromium, Firefox, and WebKit (e.g., `pnpm test:e2e`)
+4. **Performance Tests** - Run performance benchmarks (e.g., `pnpm test:performance`)
+5. **Lint & Type Check** - Validate code quality (e.g., `pnpm lint` and `pnpm typecheck`)
 
-See `.github/workflows/test.yml` for full configuration.
+The `.github/workflows` configuration has not been checked in yet; when adding it, mirror the commands from the root `package.json` scripts.
 
 ## Test Files Created
 

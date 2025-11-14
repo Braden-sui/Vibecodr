@@ -62,9 +62,9 @@ Early indicators of success:
 
 ## Implementation Log (Week 1 Kickoff)
 
-- **Shared manifest** – schema now supports worker-edge runners, live session settings, and concurrency hints so capsules can declare new capabilities upfront.
-- **Discovery surface** – `/app/page.tsx` exposes For You mode with search + tag filters and routes analytics events via `apps/web/lib/analytics.ts`.
-- **Live beta UX** – `/live` route ships sample project showcase sessions, safety messaging, and a waitlist dialog captured in PostHog for go-to-market tracking.
+- **Shared manifest** – `packages/shared/src/manifest.ts` schema now supports worker-edge runners, live session settings, and concurrency hints so capsules can declare new capabilities upfront.
+- **Discovery surface** – `apps/web/app/(site)/page.tsx` + `HomePageClient` expose Latest/Following/For You modes with search + tag filters and route analytics events via `apps/web/lib/analytics.ts`.
+- **Live beta UX** – `/live` currently renders a placeholder page; `LiveSessionCard` and `LiveWaitlistDialog` components exist as prototypes for a future live capsules hub and waitlist, but are not yet wired to streaming infra or Worker endpoints.
 
 ## Dependencies & Open Questions
 

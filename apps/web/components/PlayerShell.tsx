@@ -7,7 +7,7 @@ export type PlayerShellProps = {
   manifestUrl?: string;
 };
 
-export function PlayerShell({ manifestUrl }: PlayerShellProps) {
+export function PlayerShell({ manifestUrl: _manifestUrl }: PlayerShellProps) {
   return (
     <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 8 }}>
       <div style={{ height: 320, background: "#fafafa", borderRadius: 6 }}>
@@ -20,4 +20,3 @@ export function PlayerShell({ manifestUrl }: PlayerShellProps) {
     </div>
   );
 }
-

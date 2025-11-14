@@ -6,9 +6,9 @@ Surfaces implemented as placeholder routes with inline TODOs:
 - /player/[postId]: sandboxed runner, params drawer, logs, remix
 - /studio (Import, Params, Files, Publish): import/build pipeline UI
 - /post/[id]: app/report display
-- /report/new: report composer with snapshots
+- /report/new: report composer placeholder with snapshot button
 - /profile/[handle]: profile + posts
-- /settings: plan usage and upgrades
+- /settings: plan usage and upgrades UI (static; no billing wiring yet)
 - /admin/moderation: moderation queue
 
 Implementation checklist:

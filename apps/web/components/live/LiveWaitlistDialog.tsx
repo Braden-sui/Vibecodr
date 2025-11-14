@@ -43,7 +43,7 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
         sessionId: session.id,
         plan,
       });
-      setMessage("You're on the list. We'll email you as soon as slots open up.");
+      setMessage("You&apos;re on the list. We&apos;ll email you as soon as slots open up.");
       resetForm();
     } catch (error) {
       console.error("Failed to join waitlist", error);
