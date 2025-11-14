@@ -22,11 +22,17 @@ export interface PlayerDrawerProps {
   }>;
 }
 
-export function PlayerDrawer({ postId, notes, remixInfo, comments = [] }: PlayerDrawerProps) {
+export function PlayerDrawer({
+  postId,
+  notes,
+  remixInfo,
+  comments = [],
+  initialTab,
+}: PlayerDrawerProps & { initialTab?: "notes" | "remix" | "chat" }) {
   const staticComments = !postId ? comments : [];
   return (
     <div className="flex h-full flex-col border-l bg-card">
-      <Tabs defaultValue="notes" className="flex h-full flex-col">
+      <Tabs defaultValue={initialTab ?? "notes"} className="flex h-full flex-col">
         <TabsList className="w-full justify-start rounded-none border-b">
           <TabsTrigger value="notes" className="gap-2">
             <FileText className="h-4 w-4" />

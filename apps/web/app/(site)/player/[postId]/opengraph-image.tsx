@@ -3,6 +3,12 @@
 // Requires @vercel/og package
 
 import { ImageResponse } from "next/og";
+import { getWorkerApiBase } from "@/lib/worker-api";
+import {
+  mapApiFeedPostToFeedPost,
+  type ApiFeedPostPayload,
+  type FeedPost,
+} from "@/lib/api";
 
 // Route segment config
 export const runtime = "edge";
@@ -16,15 +22,41 @@ export const size = {
 
 export const contentType = "image/png";
 
-// Image generation
-export default async function Image({ params: _params }: { params: { postId: string } }) {
-  // TODO: Fetch post data from API
-  // const post = await fetch(`${process.env.API_URL}/posts/${params.postId}`).then(r => r.json());
+async function fetchPost(postId: string): Promise<FeedPost | null> {
+  const apiBase = getWorkerApiBase();
+  try {
+    const res = await fetch(`${apiBase}/posts/${encodeURIComponent(postId)}`, {
+      headers: {
+        Accept: "application/json",
+      },
+      // OG images can be cached for a bit, but we still want to refresh regularly.
+      next: { revalidate: 120 },
+    });
 
-  const post = {
-    title: "Interactive Boids Simulation",
-    author: { handle: "marta" },
-  };
+    if (!res.ok) {
+      return null;
+    }
+
+    const payload = (await res.json()) as { post?: ApiFeedPostPayload };
+    if (!payload.post) {
+      return null;
+    }
+
+    return mapApiFeedPostToFeedPost(payload.post);
+  } catch (error) {
+    console.error("E-VIBECODR-1101 og:image fetch failed", {
+      postId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+// Image generation
+export default async function Image({ params }: { params: { postId: string } }) {
+  const post = await fetchPost(params.postId);
+  const title = post?.title ?? "Vibecodr vibe";
+  const authorHandle = post?.author.handle ?? "anonymous";
 
   return new ImageResponse(
     (
@@ -69,7 +101,7 @@ export default async function Image({ params: _params }: { params: { postId: str
               lineHeight: 1.2,
             }}
           >
-            {post.title}
+            {title}
           </div>
 
           <div
@@ -79,7 +111,7 @@ export default async function Image({ params: _params }: { params: { postId: str
               color: "rgba(255, 255, 255, 0.8)",
             }}
           >
-            by @{post.author.handle}
+            by @{authorHandle}
           </div>
         </div>
       </div>

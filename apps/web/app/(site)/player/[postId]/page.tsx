@@ -4,12 +4,10 @@ type PlayerPageParams = {
   postId: string;
 };
 
-export default async function PlayerPage({
+export default function PlayerPage({
   params,
 }: {
-  params: Promise<PlayerPageParams>;
+  params: PlayerPageParams;
 }) {
-  const resolvedParams = await params;
-
-  return <PlayerPageClient postId={resolvedParams.postId} />;
+  return <PlayerPageClient postId={params.postId} />;
 }
