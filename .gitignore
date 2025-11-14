@@ -11,6 +11,7 @@ node_modules
 out/
 build
 dist/
+apps/web/next-dist/
 
 # Misc
 .DS_Store

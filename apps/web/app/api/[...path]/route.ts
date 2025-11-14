@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
 export const runtime = "edge";
 
@@ -16,14 +15,6 @@ async function proxy(req: NextRequest) {
   headers.delete("host");
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
-
-  const { userId, getToken } = await auth();
-  if (userId && getToken && !headers.has("authorization")) {
-    const token = await getToken();
-    if (token) {
-      headers.set("authorization", `Bearer ${token}`);
-    }
-  }
 
   const init: RequestInit = {
     method: req.method,

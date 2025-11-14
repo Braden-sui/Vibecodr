@@ -3,15 +3,17 @@
  * TODO: Add next-on-pages adapter when wiring CI/CD.
  */
 
-// Load env from repository root for local development
-// INVARIANT: Keep this import at top-level so Next picks up env before config is evaluated
-require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+const path = require('path');
+
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const nextConfig = {
   reactStrictMode: true,
   eslint: {
     ignoreDuringBuilds: true,
   },
+  distDir: 'next-dist',
+  outputFileTracingRoot: path.resolve(__dirname, '../..'),
 };
 
 module.exports = nextConfig;
