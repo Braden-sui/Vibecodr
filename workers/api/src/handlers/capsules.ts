@@ -70,7 +70,7 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     const files: CapsuleFile[] = [];
     let totalSize = 0;
 
-    for (const [key, value] of formData.entries()) {
+    for (const [key, value] of (formData as any)) {
       if (key === "manifest") continue; // Already processed
 
       const fileLike = value as any;
@@ -367,16 +367,19 @@ export const getUserQuota: Handler = requireAuth(async (req, env, ctx, params, u
       },
     };
 
+    const planLimits = limits[plan];
+
     return json({
       plan,
       usage: {
         storage: storageUsage,
-        runsThisMonth,
+        runs: runsThisMonth,
+        bundleSize: 0,
       },
-      limits: limits[plan],
+      limits: planLimits,
       percentUsed: {
-        storage: (storageUsage / limits[plan].maxStorage) * 100,
-        runs: (runsThisMonth / limits[plan].maxRuns) * 100,
+        storage: (storageUsage / planLimits.maxStorage) * 100,
+        runs: (runsThisMonth / planLimits.maxRuns) * 100,
       },
     });
   } catch (error) {

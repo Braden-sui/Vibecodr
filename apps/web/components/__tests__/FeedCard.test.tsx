@@ -1,6 +1,53 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FeedCard } from "../FeedCard";
+
+vi.mock("@clerk/nextjs", () => ({
+  useUser: () => ({ user: null, isSignedIn: false }),
+}));
+
+class MockIntersectionObserver {
+  callback: IntersectionObserverCallback;
+  options?: IntersectionObserverInit;
+  targets: Element[] = [];
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    this.callback = callback;
+    this.options = options;
+    // store instance
+    (window as any).__mockIOInstances.push(this);
+  }
+  observe = (el: Element) => {
+    this.targets.push(el);
+  };
+  unobserve = (_el: Element) => {};
+  disconnect = () => {};
+  trigger = (ratio: number, isIntersecting: boolean) => {
+    const entry = {
+      isIntersecting,
+      intersectionRatio: ratio,
+      target: this.targets[0] ?? ({} as Element),
+    } as IntersectionObserverEntry;
+    this.callback([entry], this as unknown as IntersectionObserver);
+  };
+}
+
+beforeAll(() => {
+  (window as any).__mockIOInstances = [] as MockIntersectionObserver[];
+  (window as any).IntersectionObserver = MockIntersectionObserver as any;
+  Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", {
+    configurable: true,
+    get() {
+      return {
+        postMessage: vi.fn(),
+      } as any;
+    },
+  });
+});
+
+afterAll(() => {
+  delete (window as any).__mockIOInstances;
+});
 
 describe("FeedCard", () => {
   const mockPost = {
@@ -37,6 +84,110 @@ describe("FeedCard", () => {
 
     expect(screen.getByText("Test App")).toBeInTheDocument();
     expect(screen.getByText("A test application")).toBeInTheDocument();
+  });
+
+  it("should gate prewarm concurrency and retry when capacity frees", async () => {
+    vi.useFakeTimers();
+
+    const pending: Array<(v: any) => void> = [];
+    global.fetch = vi.fn(() =>
+      new Promise((resolve) => pending.push(resolve)) as any
+    );
+
+    const postA = { ...mockPost, id: "postA" };
+    const postB = { ...mockPost, id: "postB" };
+    const postC = { ...mockPost, id: "postC" };
+
+    render(<><FeedCard post={postA} /><FeedCard post={postB} /><FeedCard post={postC} /></>);
+
+    const viewObservers = ((window as any).__mockIOInstances as MockIntersectionObserver[]).filter(
+      (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.35)
+    );
+
+    // Warm zone for all three cards (start prewarm)
+    viewObservers.forEach((obs) => obs.trigger(1.0, true));
+
+    // Only two fetches should be in flight due to MAX_ACTIVE_PREVIEWS=2
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    // Resolve one prewarm to free capacity
+    pending[0]({ ok: true, json: async () => ({}) });
+    await Promise.resolve();
+
+    // Advance retry timer so third can start
+    vi.advanceTimersByTime(200);
+    await Promise.resolve();
+
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+
+    // Cleanup timers
+    vi.useRealTimers();
+  });
+
+  it("should post pause/resume when visibility crosses 30% threshold", async () => {
+    // Immediate successful manifest for prewarm
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as any;
+
+    render(<FeedCard post={mockPost} />);
+
+    const ioInstances = (window as any).__mockIOInstances as MockIntersectionObserver[];
+    const viewObserver = ioInstances.find(
+      (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.35)
+    )!;
+
+    // Enter warm zone to trigger prewarm and reveal Run Preview
+    viewObserver.trigger(1.0, true);
+
+    await waitFor(() => expect(screen.getByText("Run Preview")).toBeInTheDocument());
+
+    // Click Run Preview to mount iframe and enable pause/resume observer
+    fireEvent.click(screen.getByText("Run Preview"));
+
+    // Find the pause/resume observer (threshold 0.3)
+    const prObserver = (ioInstances.find(
+      (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.3)
+    ) as MockIntersectionObserver)!;
+
+    const postMessage = (document.querySelector("iframe") as HTMLIFrameElement).contentWindow!
+      .postMessage as unknown as ReturnType<typeof vi.fn>;
+
+    // Drop below 30% -> pause
+    prObserver.trigger(0.2, false);
+    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
+
+    // Back to >=30% -> resume
+    prObserver.trigger(0.3, true);
+    expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
+  });
+
+  it("should pause when tab hidden and resume when visible again", async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as any;
+
+    render(<FeedCard post={mockPost} />);
+
+    const ioInstances = (window as any).__mockIOInstances as MockIntersectionObserver[];
+    const viewObserver = ioInstances.find(
+      (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.35)
+    )!;
+
+    viewObserver.trigger(1.0, true);
+    await waitFor(() => expect(screen.getByText("Run Preview")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Run Preview"));
+
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessage = iframe.contentWindow!.postMessage as unknown as ReturnType<typeof vi.fn>;
+
+    const hiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
+
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
+
+    // restore
+    if (hiddenDescriptor) Object.defineProperty(document, "hidden", hiddenDescriptor);
   });
 
   it("should render author information", () => {

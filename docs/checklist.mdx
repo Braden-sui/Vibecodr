@@ -40,8 +40,8 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [X] Choose Drizzle or Kysely; migrations pipeline established
 - [X] Tables created: users, capsules, posts, assets, runs, comments, follows, remixes
 - [X] Indices for feed sorts and lookups (created_at, author_id, parent_id, type)
-- [ ] Seed script and fixtures for local/dev
-- [ ] Typed query layer + Zod schemas for API contracts
+- [X] Seed script and fixtures for local/dev
+- [X] Typed query layer + Zod schemas for API contracts
 
 ## 4) Feed (Phase 1 → 3)
 - [X] Card components: App and Report (Live shows “Coming Soon”)
@@ -145,6 +145,7 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [ ] Preview deployments on PRs via Cloudflare Pages
 - [ ] Secret scan and dependency audits
 - [ ] Coverage floors enforced
+- [ ] API safety review: new or changed `/api/*` endpoints checked against `api-safety-and-abuse-invariants.mdx`
 - [X] E2E smoke for core flows (see 16)
 
 ## 16) Tests and Performance (All Phases)
@@ -175,6 +176,7 @@ Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and 
 - [ ] Worker-edge runner for tiny server logic per app
 - [ ] Full-text search (Postgres FTS)
 - [ ] Collaborative editing and inline annotations
+- [ ] Feed ranking favors runnable vibes while still surfacing non-code vibes, with simple filters (e.g., All / Runnable / Links / Media)
 
 ## Phase Mapping Reference (from MVP Plan)
 - [ ] Phase 1 (0–10): Foundation → Sections 0–3, parts of 4–5, 13, 15

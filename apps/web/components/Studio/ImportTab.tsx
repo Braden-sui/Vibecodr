@@ -72,7 +72,7 @@ export function ImportTab() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div>
-        <h2 className="text-2xl font-bold">Import Capsule</h2>
+        <h2 className="text-2xl font-bold">Import a Vibe</h2>
         <p className="text-muted-foreground">
           Import from GitHub or upload a ZIP file to get started
         </p>

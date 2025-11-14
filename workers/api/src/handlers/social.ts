@@ -2,16 +2,10 @@
 // References: research-social-platforms.md
 
 import type { Handler, Env } from "../index";
-import { requireAuth as requireWorkerAuth } from "../auth";
+import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
 import { incrementPostStats, incrementUserCounters } from "./counters";
 
 type Params = Record<string, string>;
-
-const requireUser = (
-  handler: (req: Request, env: Env, ctx: ExecutionContext, params: Params, userId: string) => Promise<Response>
-): Handler => {
-  return requireWorkerAuth((req, env, ctx, params, user) => handler(req, env, ctx, params, user.userId));
-};
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -53,7 +47,7 @@ export const likePost: Handler = requireUser(async (req, env, ctx, params, userI
       ).bind(userId, postId).run();
 
       // Best-effort: update post like stats (no-op today) and ignore failures
-      incrementPostStats(env, postId, { likesDelta: 1 }).catch((err) => {
+      incrementPostStats(env, postId, { likesDelta: 1 }).catch((err: unknown) => {
         console.error("E-API-0002 likePost counter update failed", {
           postId,
           userId,
@@ -100,7 +94,7 @@ export const unlikePost: Handler = requireUser(async (req, env, ctx, params, use
     // Only decrement if a row was deleted (idempotent)
     try {
       // D1 run() doesn't always return changes; attempt best-effort decrement
-      incrementPostStats(env, postId, { likesDelta: -1 }).catch((err) => {
+      incrementPostStats(env, postId, { likesDelta: -1 }).catch((err: unknown) => {
         console.error("E-API-0003 unlikePost counter update failed", {
           postId,
           userId,
@@ -189,14 +183,14 @@ export const followUser: Handler = requireUser(async (req, env, ctx, params, fol
       ).bind(followerId, followeeId).run();
 
       // Best-effort: update counters (idempotent if UNIQUE prevented dupes)
-      incrementUserCounters(env, followeeId, { followersDelta: 1 }).catch((err) => {
+      incrementUserCounters(env, followeeId, { followersDelta: 1 }).catch((err: unknown) => {
         console.error("E-API-0004 followUser followee counter failed", {
           followeeId,
           followerId,
           error: err instanceof Error ? err.message : String(err),
         });
       });
-      incrementUserCounters(env, followerId, { followingDelta: 1 }).catch((err) => {
+      incrementUserCounters(env, followerId, { followingDelta: 1 }).catch((err: unknown) => {
         console.error("E-API-0005 followUser follower counter failed", {
           followeeId,
           followerId,
@@ -239,14 +233,14 @@ export const unfollowUser: Handler = requireUser(async (req, env, ctx, params, f
 
     // Best-effort: decrement counters only when a row likely existed
     try {
-      incrementUserCounters(env, followeeId, { followersDelta: -1 }).catch((err) => {
+      incrementUserCounters(env, followeeId, { followersDelta: -1 }).catch((err: unknown) => {
         console.error("E-API-0006 unfollowUser followee counter failed", {
           followeeId,
           followerId,
           error: err instanceof Error ? err.message : String(err),
         });
       });
-      incrementUserCounters(env, followerId, { followingDelta: -1 }).catch((err) => {
+      incrementUserCounters(env, followerId, { followingDelta: -1 }).catch((err: unknown) => {
         console.error("E-API-0007 unfollowUser follower counter failed", {
           followeeId,
           followerId,
@@ -433,15 +427,26 @@ export const getPostComments: Handler = async (req: Request, env: Env, ctx: Exec
   const offset = parseInt(url.searchParams.get("offset") || "0");
 
   try {
-    const { results } = await env.DB.prepare(`
+    const authedUser = await verifyAuth(req, env);
+    const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+
+    const base = `
       SELECT c.id, c.body, c.at_ms, c.bbox, c.created_at,
              u.id as user_id, u.handle, u.name, u.avatar_url
       FROM comments c
       INNER JOIN users u ON c.user_id = u.id
-      WHERE c.post_id = ?
-      ORDER BY c.created_at ASC
-      LIMIT ? OFFSET ?
-    `).bind(postId, limit, offset).all();
+      WHERE c.post_id = ?`;
+
+    const filtered = isMod
+      ? `${base}
+         ORDER BY c.created_at ASC
+         LIMIT ? OFFSET ?`
+      : `${base}
+         AND (c.quarantined IS NULL OR c.quarantined = 0)
+         ORDER BY c.created_at ASC
+         LIMIT ? OFFSET ?`;
+
+    const { results } = await env.DB.prepare(filtered).bind(postId, limit, offset).all();
 
     const comments = results?.map((row: any) => ({
       id: row.id,
@@ -474,16 +479,19 @@ export const deleteComment: Handler = requireUser(async (req, env, ctx, params, 
   const commentId = params.p1;
 
   try {
-    // Check if comment exists and user is author
-    const comment = await env.DB.prepare(
-      "SELECT user_id FROM comments WHERE id = ?"
+    // Check if comment exists and user is author or post author
+    const row = await env.DB.prepare(
+      `SELECT c.user_id as comment_user_id, p.author_id as post_author_id
+       FROM comments c
+       INNER JOIN posts p ON c.post_id = p.id
+       WHERE c.id = ?`
     ).bind(commentId).first();
 
-    if (!comment) {
+    if (!row) {
       return json({ error: "Comment not found" }, 404);
     }
 
-    if (comment.user_id !== userId) {
+    if (row.comment_user_id !== userId && row.post_author_id !== userId) {
       return json({ error: "Forbidden" }, 403);
     }
 

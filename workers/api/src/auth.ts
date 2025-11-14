@@ -1,9 +1,51 @@
-import type { Env } from "./index";
+import type { Env, Handler } from "./index";
 
 export interface AuthenticatedUser {
   userId: string;
   sessionId: string;
   claims: ClerkJwtPayload;
+}
+
+export function requireAdmin(
+  handler: (
+    req: Request,
+    env: Env,
+    ctx: ExecutionContext,
+    params: Record<string, string>,
+    user: AuthenticatedUser
+  ) => Promise<Response>
+) {
+  return requireAuth(async (req, env, ctx, params, user) => {
+    if (!isAdmin(user)) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return handler(req, env, ctx, params, user);
+  });
+}
+
+export function isModeratorOrAdmin(user: AuthenticatedUser | { claims: ClerkJwtPayload }): boolean {
+  const claims = user.claims as any;
+  const publicMetadata = (claims.public_metadata || claims.publicMetadata || {}) as any;
+
+  const role = (claims.role as string | undefined) ?? (publicMetadata.role as string | undefined);
+  const isModeratorFlag =
+    (claims.isModerator as boolean | undefined) ?? (publicMetadata.isModerator as boolean | undefined);
+
+  if (role === "admin" || role === "moderator") {
+    return true;
+  }
+
+  return isModeratorFlag === true;
+}
+
+export function isAdmin(user: AuthenticatedUser | { claims: ClerkJwtPayload }): boolean {
+  const claims = user.claims as any;
+  const publicMetadata = (claims.public_metadata || claims.publicMetadata || {}) as any;
+  const role = (claims.role as string | undefined) ?? (publicMetadata.role as string | undefined);
+  return role === "admin";
 }
 
 type JwtHeader = {
@@ -95,6 +137,18 @@ export function requireAuth(
     }
     return handler(req, env, ctx, params, user);
   };
+}
+
+export type RequireUserHandler = (
+  req: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  params: Record<string, string>,
+  userId: string
+) => Promise<Response>;
+
+export function requireUser(handler: RequireUserHandler): Handler {
+  return requireAuth((req, env, ctx, params, user) => handler(req, env, ctx, params, user.userId));
 }
 
 async function verifyClerkJwt(token: string, env: Env): Promise<{ header: JwtHeader; payload: ClerkJwtPayload }> {

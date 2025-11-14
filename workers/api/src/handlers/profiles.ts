@@ -1,7 +1,11 @@
 // Profile and user-related handlers
 // References: research-social-platforms.md (Profiles section)
 
-import type { Handler } from "../index";
+import type { Handler, Env } from "../index";
+import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
+import { ApiUserProfileResponseSchema, ApiUserPostsResponseSchema } from "../contracts";
+
+type Params = Record<string, string>;
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -54,7 +58,7 @@ export const getUserProfile: Handler = async (req, env, ctx, params) => {
       `).bind(user.id).first(),
     ]);
 
-    return json({
+    const payload = {
       user: {
         id: user.id,
         handle: user.handle,
@@ -71,7 +75,10 @@ export const getUserProfile: Handler = async (req, env, ctx, params) => {
           remixes: remixCount?.count || 0,
         },
       },
-    });
+    };
+
+    const parsed = ApiUserProfileResponseSchema.parse(payload);
+    return json(parsed);
   } catch (error) {
     return json({
       error: "Failed to fetch user profile",
@@ -101,16 +108,24 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
     }
 
     // Get posts with capsule info
-    const { results } = await env.DB.prepare(`
+    const authedUser = await verifyAuth(req, env);
+    const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+
+    let query = `
       SELECT
         p.id, p.type, p.title, p.description, p.tags, p.created_at,
         c.id as capsule_id, c.manifest_json
       FROM posts p
       LEFT JOIN capsules c ON p.capsule_id = c.id
-      WHERE p.author_id = ?
-      ORDER BY p.created_at DESC
-      LIMIT ? OFFSET ?
-    `).bind(user.id, limit, offset).all();
+      WHERE p.author_id = ?`;
+
+    if (!isMod) {
+      query += " AND (p.quarantined IS NULL OR p.quarantined = 0)";
+    }
+
+    query += " ORDER BY p.created_at DESC LIMIT ? OFFSET ?";
+
+    const { results } = await env.DB.prepare(query).bind(user.id, limit, offset).all();
 
     // Get stats for each post
     const posts = await Promise.all((results || []).map(async (row: any) => {
@@ -144,7 +159,9 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       };
     }));
 
-    return json({ posts, limit, offset });
+    const payload = { posts, limit, offset };
+    const parsed = ApiUserPostsResponseSchema.parse(payload);
+    return json(parsed);
   } catch (error) {
     return json({
       error: "Failed to fetch user posts",
@@ -158,16 +175,9 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
  * Check if current user follows target user
  * Requires auth
  */
-export const checkFollowing: Handler = async (req, env, ctx, params) => {
+export const checkFollowing: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const url = new URL(req.url);
   const targetId = url.searchParams.get("targetId");
-
-  // TODO: Get current user from auth
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return json({ following: false });
-  }
-  const userId = authHeader.replace("Bearer ", "");
 
   if (!targetId) {
     return json({ error: "targetId required" }, 400);
@@ -185,22 +195,19 @@ export const checkFollowing: Handler = async (req, env, ctx, params) => {
       details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
-};
+});
 
 /**
  * GET /posts/:postId/check-liked
  * Check if current user has liked a post
  * Requires auth
  */
-export const checkLiked: Handler = async (req, env, ctx, params) => {
+export const checkLiked: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const postId = params.p1;
 
-  // TODO: Get current user from auth
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return json({ liked: false });
+  if (!postId) {
+    return json({ error: "postId required" }, 400);
   }
-  const userId = authHeader.replace("Bearer ", "");
 
   try {
     const result = await env.DB.prepare(
@@ -214,4 +221,4 @@ export const checkLiked: Handler = async (req, env, ctx, params) => {
       details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
-};
+});

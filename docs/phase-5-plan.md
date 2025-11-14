@@ -4,7 +4,7 @@ Phase 5 extends the initial four-phase MVP program by tackling the “Post-MVP P
 
 ## Objectives & Success Criteria
 
-1. **Live Capsules & Presence** – ship a gated live streaming beta (Daily/LiveKit) with waitlist activation, pointer sync, and post-session VOD chapters while keeping infra spend predictable (`docs/research-live-roadmap.md`).
+1. **Live Capsules & Presence** – ship a gated live streaming beta (Daily/LiveKit) for showcasing projects and demos with waitlist activation, pointer sync, and post-session VOD chapters while keeping infra spend predictable (`docs/research-live-roadmap.md`). Hosts can present their capsules, walk through features, or even stream their coding process with Claude Code/Codex if desired.
 2. **Advanced Runtimes** – graduate WebContainer previews from flag to supported tier and stand up a worker-edge runner track for lightweight server logic, enforcing the bundle/cap limits defined in `docs/research-code-showcase-platforms.md` and `docs/checklist.mdx §18`.
 3. **Discovery & Collaboration Loops** – add For You ranking, full-text search, richer embeds, and collaborative editing/annotations so remixes and shares compound (`docs/research-social-platforms.md`, `docs/research-embed-share-and-seo.md`).
 4. **Observable Reliability** – deepen analytics (PostHog funnels + Workers Analytics Engine) and moderation tooling so the new capabilities stay safe (`docs/research-analytics-and-growth.md`, `docs/research-moderation-and-safety.md`, `docs/research-sandbox-and-runner.md`).
@@ -27,10 +27,10 @@ Early indicators of success:
 ## Pillars & Workstreams
 
 ### 1. Live Capsules & Presence
-- Stand up Daily/LiveKit room broker (Durable Object) with plan gating and waitlist toggles.
-- Player live mode: pointer laser, param timeline, attendee list, fallback to VOD after session.
-- Recording/VOD pipeline with chapter markers derived from param change events.
-- Cost guardrails: per-plan live minutes, alerts when 80% consumed, “notify me” for locked plans.
+- Stand up Daily/LiveKit room broker (Durable Object) with plan gating and waitlist toggles for project showcase streams.
+- Player live mode: pointer laser, param timeline, attendee list, fallback to VOD after session—hosts demonstrate their capsules, explain features, take Q&A.
+- Recording/VOD pipeline with chapter markers derived from param change events for replay value.
+- Cost guardrails: per-plan live minutes, alerts when 80% consumed, "notify me" for locked plans.
 
 ### 2. Advanced Runner Stack
 - Move WebContainer preview out of feature flag: enforce 1.5 s P95 boot, concurrency caps, kill switch UI.
@@ -64,7 +64,7 @@ Early indicators of success:
 
 - **Shared manifest** – schema now supports worker-edge runners, live session settings, and concurrency hints so capsules can declare new capabilities upfront.
 - **Discovery surface** – `/app/page.tsx` exposes For You mode with search + tag filters and routes analytics events via `apps/web/lib/analytics.ts`.
-- **Live beta UX** – `/live` route ships sample sessions, safety messaging, and a waitlist dialog captured in PostHog for go-to-market tracking.
+- **Live beta UX** – `/live` route ships sample project showcase sessions, safety messaging, and a waitlist dialog captured in PostHog for go-to-market tracking.
 
 ## Dependencies & Open Questions
 

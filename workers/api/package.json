@@ -15,7 +15,10 @@
     "db:migrate": "wrangler d1 execute vibecodr-d1 --file=./drizzle/migrations/*.sql",
     "d1:apply:remote": "wrangler d1 execute vibecodr-d1 --remote --file ./src/schema.sql",
     "d1:apply:local": "wrangler d1 execute vibecodr-d1 --local --file ./src/schema.sql",
-    "d1:apply": "pnpm run d1:apply:remote && pnpm run d1:apply:local"
+    "d1:apply": "pnpm run d1:apply:remote && pnpm run d1:apply:local",
+    "d1:seed:local": "wrangler d1 execute vibecodr-d1 --local --file ./src/seed-dev.sql",
+    "d1:seed:remote": "wrangler d1 execute vibecodr-d1 --remote --file ./src/seed-dev.sql",
+    "d1:seed": "pnpm run d1:seed:local && pnpm run d1:seed:remote"
   },
   "dependencies": {
     "drizzle-orm": "^0.33.0",

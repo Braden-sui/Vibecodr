@@ -16,9 +16,23 @@ import {
   Cpu,
   Sliders,
   Loader2,
+  MoreHorizontal,
+  ShieldAlert,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { redirectToSignIn } from "@/lib/client-auth";
+import { toast } from "@/lib/toast";
+import { capsulesApi, moderationApi, postsApi } from "@/lib/api";
 import { ReportButton } from "@/components/ReportButton";
+import { useUser } from "@clerk/nextjs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export interface FeedCardProps {
   post: {
@@ -60,6 +74,13 @@ const MAX_ACTIVE_PREVIEWS = 2;
 
 export function FeedCard({ post }: FeedCardProps) {
   const router = useRouter();
+  const { user, isSignedIn } = useUser();
+  const isModeratorOrAdmin =
+    !!user &&
+    isSignedIn &&
+    (((user.publicMetadata as any)?.role as string | undefined) === "admin" ||
+      ((user.publicMetadata as any)?.role as string | undefined) === "moderator" ||
+      (user.publicMetadata as any)?.isModerator === true);
   const isApp = post.type === "app";
   const [isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
@@ -71,13 +92,43 @@ export function FeedCard({ post }: FeedCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
   const [isWarmZoneActive, setIsWarmZoneActive] = useState(false);
-  const prewarmInFlightRef = useRef(false);
   const preconnectHintedRef = useRef(false);
+  const clickRunIncrementRef = useRef(false);
+  const pauseStateRef = useRef<"paused" | "running">("running");
+  const lastIntersectionRatioRef = useRef(1);
+  const [isModerating, setIsModerating] = useState(false);
+
+  const handleModerationAction = async (action: "quarantine" | "remove") => {
+    if (isModerating) return;
+
+    setIsModerating(true);
+    try {
+      const response = await moderationApi.moderatePost(post.id, action);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          toast({ title: "Forbidden", description: "You don't have moderator access.", variant: "error" });
+        } else if (response.status === 503) {
+          toast({ title: "Unavailable", description: "Moderation service is temporarily unavailable.", variant: "warning" });
+        } else {
+          const error = await response.json().catch(() => null);
+          toast({ title: "Failed", description: error?.error || "Failed to apply moderation action", variant: "error" });
+        }
+        return;
+      }
+
+      window.location.reload();
+    } catch (error) {
+      console.error("Moderation action failed:", error);
+      toast({ title: "Failed", description: error instanceof Error ? error.message : "Moderation action failed", variant: "error" });
+    } finally {
+      setIsModerating(false);
+    }
+  };
 
   const capsuleId = post.capsule?.id;
   const isWebContainer = post.capsule?.runner === "webcontainer";
-  const shouldPreboot = isApp && !isWebContainer; // Only preboot client-static, not WebContainer
-  const showPrewarmSpinner = (isHovering || isWarmZoneActive) && !previewLoaded && !previewError;
+  // Note: WebContainer runner should support equivalent pause/resume semantics when inline runs are enabled.
 
   // Track when the card enters the viewport with some padding
   useEffect(() => {
@@ -100,7 +151,7 @@ export function FeedCard({ post }: FeedCardProps) {
       }
     );
 
-    observer.observe(node);
+    observer.observe(node as Element);
 
     return () => {
       observer.disconnect();
@@ -131,92 +182,87 @@ export function FeedCard({ post }: FeedCardProps) {
     document.head.appendChild(link);
   }, [isNearViewport]);
 
-  // Automatically prewarm once the card is within the prewarm zone
+  // We no longer prefetch manifests per-card; manifest data arrives with the feed.
+
   useEffect(() => {
-    if (
-      !shouldPreboot ||
-      !capsuleId ||
-      previewLoaded ||
-      isRunning ||
-      (!isNearViewport && !isWarmZoneActive)
-    ) {
+    return () => {
+      if (clickRunIncrementRef.current) {
+        activePreviewCount = Math.max(0, activePreviewCount - 1);
+        clickRunIncrementRef.current = false;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const node = cardRef.current;
+    if (!node || typeof window === "undefined") {
       return;
     }
 
-    let cancelled = false;
-    let retryHandle: number | undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
 
-    const startPrewarm = () => {
-      if (cancelled || prewarmInFlightRef.current) {
-        return;
+        const iframeWindow = iframeRef.current?.contentWindow;
+        if (!iframeWindow || !capsuleId || !isRunning) {
+          return;
+        }
+
+        const ratio = entry.intersectionRatio;
+        lastIntersectionRatioRef.current = ratio;
+
+        const hidden = typeof document !== "undefined" && document.hidden;
+        const shouldPause = hidden || ratio < 0.3;
+        const nextState: "paused" | "running" = shouldPause ? "paused" : "running";
+        if (nextState === pauseStateRef.current) {
+          return;
+        }
+        pauseStateRef.current = nextState;
+
+        iframeWindow.postMessage(
+          {
+            type: nextState === "paused" ? "pause" : "resume",
+          },
+          "*"
+        );
+      },
+      {
+        root: null,
+        rootMargin: "0px",
+        threshold: [0.3],
       }
+    );
 
-      prewarmInFlightRef.current = true;
-      prebootStartRef.current = Date.now();
-      activePreviewCount++;
-
-      fetch(`/api/capsules/${capsuleId}/manifest`)
-        .then((res) => {
-          if (!res.ok) {
-            throw new Error("Failed to preload capsule manifest");
-          }
-          return res.json();
-        })
-        .then(() => {
-          if (cancelled) {
-            return;
-          }
-
-          setPreviewLoaded(true);
-          const bootTime = Date.now() - (prebootStartRef.current || 0);
-
-          // Check if within performance budget (250-500ms)
-          if (bootTime > 500) {
-            console.warn(`Preview boot exceeded budget: ${bootTime}ms`);
-          }
-        })
-        .catch((err) => {
-          if (cancelled) {
-            return;
-          }
-          console.error("Preview preboot error:", err);
-          setPreviewError(true);
-          prewarmInFlightRef.current = false;
-        })
-        .finally(() => {
-          activePreviewCount = Math.max(0, activePreviewCount - 1);
-        });
-    };
-
-    const attemptPrewarm = () => {
-      if (cancelled || previewLoaded || prewarmInFlightRef.current) {
-        return;
-      }
-
-      if (activePreviewCount >= MAX_ACTIVE_PREVIEWS) {
-        retryHandle = window.setTimeout(attemptPrewarm, 150);
-        return;
-      }
-
-      startPrewarm();
-    };
-
-    attemptPrewarm();
+    observer.observe(node);
 
     return () => {
-      cancelled = true;
-      if (retryHandle) {
-        window.clearTimeout(retryHandle);
-      }
+      observer.disconnect();
     };
-  }, [
-    shouldPreboot,
-    isNearViewport,
-    isWarmZoneActive,
-    previewLoaded,
-    isRunning,
-    capsuleId,
-  ]);
+  }, [isRunning, capsuleId]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      const target = iframeRef.current?.contentWindow;
+      if (!isRunning || !target || !capsuleId) {
+        return;
+      }
+      const ratio = lastIntersectionRatioRef.current;
+      const hidden = document.hidden;
+      const shouldPause = hidden || ratio < 0.3;
+      const nextState: "paused" | "running" = shouldPause ? "paused" : "running";
+      if (nextState === pauseStateRef.current) {
+        return;
+      }
+      pauseStateRef.current = nextState;
+      target.postMessage({ type: nextState === "paused" ? "pause" : "resume" }, "*");
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [isRunning, capsuleId]);
 
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
@@ -245,9 +291,11 @@ export function FeedCard({ post }: FeedCardProps) {
       return;
     }
 
+    prebootStartRef.current = Date.now();
     setIsRunning(true);
     if (!previewLoaded) {
       activePreviewCount++;
+      clickRunIncrementRef.current = true;
     }
   };
 
@@ -270,14 +318,12 @@ export function FeedCard({ post }: FeedCardProps) {
     setIsLiking(true);
 
     try {
-      // TODO: Replace with actual API call using auth token
-      const method = wasLiked ? "DELETE" : "POST";
-      const response = await fetch(`/api/posts/${post.id}/like`, {
-        method,
-        headers: {
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-      });
+      const response = wasLiked ? await postsApi.unlike(post.id) : await postsApi.like(post.id);
+
+      if (response.status === 401) {
+        redirectToSignIn();
+        throw new Error("Unauthorized");
+      }
 
       if (!response.ok) {
         throw new Error("Failed to like post");
@@ -323,9 +369,8 @@ export function FeedCard({ post }: FeedCardProps) {
         // User cancelled or error occurred
       }
     } else {
-      // Fallback: copy to clipboard
       await navigator.clipboard.writeText(url);
-      // TODO: Show toast notification
+      toast({ title: "Link copied", description: "Share link copied to clipboard.", variant: "success" });
     }
   };
 
@@ -351,7 +396,7 @@ export function FeedCard({ post }: FeedCardProps) {
               <div className="absolute inset-0 z-10">
                 <iframe
                   ref={iframeRef}
-                  src={`/api/capsules/${capsuleId}/bundle`}
+                  src={capsulesApi.bundleSrc(capsuleId)}
                   className="h-full w-full border-0"
                   sandbox="allow-scripts allow-same-origin"
                   style={{
@@ -364,8 +409,21 @@ export function FeedCard({ post }: FeedCardProps) {
                         `Preview exceeded ${isWebContainer ? "WebContainer" : "client-static"} budget: ${bootTime}ms`
                       );
                     }
+                    if (clickRunIncrementRef.current) {
+                      activePreviewCount = Math.max(0, activePreviewCount - 1);
+                      clickRunIncrementRef.current = false;
+                    }
+                    if (!previewLoaded) {
+                      setPreviewLoaded(true);
+                    }
                   }}
-                  onError={() => setPreviewError(true)}
+                  onError={() => {
+                    setPreviewError(true);
+                    if (clickRunIncrementRef.current) {
+                      activePreviewCount = Math.max(0, activePreviewCount - 1);
+                      clickRunIncrementRef.current = false;
+                    }
+                  }}
                 />
               </div>
             )}
@@ -375,21 +433,15 @@ export function FeedCard({ post }: FeedCardProps) {
               <div className="flex h-full items-center justify-center">
                 {isApp ? (
                   <>
-                    {previewLoaded && !previewError ? (
-                      <Button
-                        onClick={handleClickToRun}
-                        variant="secondary"
-                        size="lg"
-                        className="gap-2"
-                      >
-                        <Play className="h-5 w-5" />
-                        Run Preview
-                      </Button>
-                    ) : showPrewarmSpinner ? (
-                      <Loader2 className="h-16 w-16 animate-spin text-muted-foreground/30" />
-                    ) : (
-                      <Play className="h-16 w-16 text-muted-foreground/20" />
-                    )}
+                    <Button
+                      onClick={handleClickToRun}
+                      variant="secondary"
+                      size="lg"
+                      className="gap-2"
+                    >
+                      <Play className="h-5 w-5" />
+                      Run Preview
+                    </Button>
                   </>
                 ) : (
                   <div className="px-8 text-center text-sm text-muted-foreground">
@@ -434,6 +486,39 @@ export function FeedCard({ post }: FeedCardProps) {
               <p className="line-clamp-2 text-sm text-muted-foreground">{post.description}</p>
             )}
           </div>
+          {isModeratorOrAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isModerating}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={isModerating}
+                  onClick={async () => {
+                    await handleModerationAction("quarantine");
+                  }}
+                >
+                  <ShieldAlert className="mr-2 h-4 w-4" />
+                  Quarantine post
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={isModerating}
+                  className="text-destructive focus:text-destructive"
+                  onClick={async () => {
+                    const confirmed = window.confirm("Remove this post? This cannot be undone.");
+                    if (!confirmed) return;
+                    await handleModerationAction("remove");
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Remove post
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {/* Author */}

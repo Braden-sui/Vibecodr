@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS posts (
   tags TEXT,
   report_md TEXT,
   cover_key TEXT,
+  quarantined INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS comments (
   body TEXT NOT NULL,
   at_ms INTEGER,
   bbox TEXT,
+  quarantined INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 
@@ -123,7 +125,5 @@ CREATE TABLE IF NOT EXISTS moderation_audit_log (
 CREATE INDEX IF NOT EXISTS idx_moderation_reports_status ON moderation_reports(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_moderation_reports_target ON moderation_reports(target_type, target_id);
 
--- TODO: Migration needed to add quarantined column to posts and comments tables
--- ALTER TABLE posts ADD COLUMN quarantined INTEGER DEFAULT 0;
--- ALTER TABLE comments ADD COLUMN quarantined INTEGER DEFAULT 0;
+
 

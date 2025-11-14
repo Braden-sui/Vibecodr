@@ -35,7 +35,7 @@ export const oEmbedHandler: Handler = async (req, env) => {
 
   try {
     // Parse post ID from URL
-    // Expected format: https://vibecodr.com/player/{postId} or /e/{postId}
+    // Expected format: https://vibecodr.space/player/{postId} or /e/{postId}
     const urlObj = new URL(targetUrl);
     const pathParts = urlObj.pathname.split("/").filter(Boolean);
 

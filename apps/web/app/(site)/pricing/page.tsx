@@ -56,7 +56,7 @@ const plans = [
       "Priority support",
       "Advanced analytics",
       "Custom domain",
-      "Private capsules",
+      "Private vibes",
       "Team collaboration (3 seats)",
     ],
     cta: "Upgrade to Pro",
@@ -76,7 +76,7 @@ const plans = [
       "Dedicated support",
       "Custom analytics",
       "Custom domain",
-      "Private capsules",
+      "Private vibes",
       "Unlimited team seats",
       "SSO & advanced security",
     ],
@@ -164,7 +164,7 @@ export default function PricingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                All capsules run in sandboxed environments with strict security policies and
+                All vibes run in sandboxed environments with strict security policies and
                 network allowlists.
               </p>
             </CardContent>
@@ -188,7 +188,7 @@ export default function PricingPage() {
             <CardContent>
               <p className="text-sm text-muted-foreground">
                 Track runs, performance metrics, and user engagement with built-in analytics for
-                all capsules.
+                all vibes.
               </p>
             </CardContent>
           </Card>
@@ -197,7 +197,7 @@ export default function PricingPage() {
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
             Need a custom plan?{" "}
-            <a href="mailto:sales@vibecodr.com" className="text-blue-600 hover:underline">
+            <a href="mailto:sales@vibecodr.space" className="text-blue-600 hover:underline">
               Contact sales
             </a>
           </p>

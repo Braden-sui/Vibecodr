@@ -20,7 +20,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { redirectToSignIn } from "@/lib/client-auth";
+import { toast } from "@/lib/toast";
 import { Flag, AlertTriangle } from "lucide-react";
+import { moderationApi } from "@/lib/api";
 
 interface ReportButtonProps {
   targetType: "post" | "comment";
@@ -49,23 +52,21 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/moderation/report", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-        body: JSON.stringify({
-          targetType,
-          targetId,
-          reason,
-          details: details.trim() || undefined,
-        }),
+      const response = await moderationApi.report({
+        targetType,
+        targetId,
+        reason,
+        details: details.trim() || undefined,
       });
 
+      if (response.status === 401) {
+        redirectToSignIn();
+        throw new Error("Unauthorized");
+      }
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to submit report");
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || "Failed to submit report");
       }
 
       setSubmitted(true);
@@ -77,7 +78,7 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
       }, 2000);
     } catch (error) {
       console.error("Failed to submit report:", error);
-      alert(error instanceof Error ? error.message : "Failed to submit report");
+      toast({ title: "Failed to submit report", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
     } finally {
       setIsSubmitting(false);
     }

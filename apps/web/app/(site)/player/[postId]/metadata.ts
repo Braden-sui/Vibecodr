@@ -15,7 +15,7 @@ export async function generatePlayerMetadata(postId: string): Promise<Metadata> 
     author: { handle: "marta", name: "Marta Chen" },
   };
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://vibecodr.com";
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://vibecodr.space";
   const url = `${baseUrl}/player/${postId}`;
   const ogImage = `${baseUrl}/api/og-image/${postId}`;
 

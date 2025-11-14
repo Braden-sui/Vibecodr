@@ -1,0 +1,211 @@
+---
+title: API Safety & Abuse Invariants
+description: Non-negotiable rules to prevent abusive usage and runaway costs for Vibecodr APIs
+---
+
+# API Safety & Abuse Invariants
+
+This checklist defines **hard invariants** for how we expose and protect Vibecodr APIs, to prevent abusive usage (bots, scripts, spam) from turning into runaway cost or security issues.
+
+Use this doc when:
+- Adding a new endpoint or modifying an existing one
+- Reviewing product flows that call `/api/*`
+- Designing new features that hit external services (GitHub, proxies, etc.)
+
+If any invariant would be violated by a change, **the change is not allowed** without a deliberate design doc and explicit sign-off.
+
+---
+
+## 1) Surface Area Invariants
+
+- **[INV-API-0001] No dev/ops actions over HTTP**
+  - **Goal**: Seeds, migrations, and ops scripts must never be triggerable by public HTTP requests.
+  - **Examples of what we are preventing**
+    - Hitting an undocumented `/api/admin/seed` that runs `seed-dev.sql` on production.
+    - Any endpoint that shells out to `wrangler d1 execute` or similar.
+  - **How we enforce it**
+    - Seeds/migrations live as **files + CLI scripts only**:
+      - e.g. `src/seed-dev.sql`, `db:migrate`, `d1:seed:*` in `package.json`.
+    - No route in `workers/api/src/index.ts` may call these; they are wired only via `npm/pnpm` scripts.
+
+- **[INV-API-0002] No public “platform” API (for now)**
+  - **Goal**: The API exists only to serve our own UI and first-party flows, not arbitrary third-party integrations.
+  - **Examples of what we are preventing**
+    - Publishing a public docs page that says “here is our REST API, use it however you like.”
+    - Adding `apiKeys` table + issuing keys to arbitrary developers pre-SaaS maturity.
+  - **How we enforce it**
+    - Treat all `/api/*` endpoints as **UI-only**, subject to UI-driven rate and quota assumptions.
+    - If we ever add a real developer platform, it should have its own doc + key model.
+
+---
+
+## 2) Auth & Identity Invariants
+
+- **[INV-API-0100] All write endpoints require auth**
+  - **Goal**: Any endpoint that changes state must tie usage to an authenticated user.
+  - **Examples of what we are preventing**
+    - Anonymous `POST /api/capsules/publish` creating capsules in bulk.
+    - Anonymous `POST /api/posts/:id/like` or `/comments` that can be scripted.
+  - **How we enforce it**
+    - Wrap Handlers for writes in `requireAuth` / `requireUser`.
+    - Quick check: if the endpoint does `INSERT`, `UPDATE`, or `DELETE` on D1 (or writes to R2, queues), it **must** use an auth wrapper.
+
+- **[INV-API-0101] Sensitive admin/mod endpoints require role checks**
+  - **Goal**: Moderation and admin actions should be limited to moderators/admins, not just "any logged-in user".
+  - **Examples of what we are preventing**
+    - Normal users calling `POST /api/moderation/posts/:id/action` to quarantine others' content.
+    - Users closing moderation reports on themselves.
+  - **How we enforce it**
+    - Use `isModeratorOrAdmin` (from `auth.ts`) in moderation handlers.
+    - Refuse with 403 if user lacks required role.
+
+---
+
+## 3) Rate Limiting & Quota Invariants
+
+- **[INV-API-0200] Public read endpoints must have upstream rate limits**
+  - **Goal**: Even for cheap reads, we cap worst-case abuse.
+  - **Examples of what we are preventing**
+    - A botnet hammering `GET /api/posts` or `GET /api/users/:handle` at hundreds of QPS.
+    - Automated scraping of every profile and feed at high speed.
+  - **How we enforce it**
+    - Cloudflare WAF and/or rate-limiting rules for `/api/*`:
+      - e.g. `GET /api/*`: per-IP and per-ASN limits (e.g. 60 requests/minute/IP as a starting point).
+    - Tighten rules specifically on:
+      - `/api/capsules/*`
+      - `/api/proxy`
+      - `/api/oembed`, `/e/:id` if abused for scraping.
+
+- **[INV-API-0201] Expensive actions are quota-limited per user**
+  - **Goal**: Tie cost to users and their plan; cap worst-case daily/monthly spend.
+  - **Examples of what we are preventing**
+    - A single user importing hundreds of GitHub repos or publishing thousands of capsules in a day.
+    - A script repeatedly triggering WebContainer runs or heavy builds.
+  - **How we enforce it** (target design)
+    - Maintain a `usage` table keyed by `(userId, date, actionType)` with counters.
+    - Before heavy actions (e.g., `publishCapsule`, `importGithub`, future build pipelines), we:
+      - Read current usage for that user.
+      - Compare against their plan's allotment.
+      - Return `429` or `402` with a clear message if exceeded (and do **not** perform the action).
+    - Plans & quotas are documented in Plans/Quotas docs and enforced consistently.
+
+---
+
+## 4) External Calls & Proxy Invariants
+
+- **[INV-API-0300] Network proxy and external fetches are allowlisted**
+  - **Goal**: Prevent using our infra as a generic HTTP proxy.
+  - **Examples of what we are preventing**
+    - Attackers using `/api/proxy` to hit arbitrary hosts.
+    - Capsules or users abusing external calls to launch attacks or exfiltrate data.
+  - **How we enforce it**
+    - Proxy handler only allows hosts listed in allowlist (e.g. `ALLOWLIST_HOSTS`, manifest `net: []`).
+    - Validate URLs and reject any host not in the allowlist.
+
+- **[INV-API-0301] External calls are bounded & time-limited**
+  - **Goal**: No unbounded retries or super-long upstream timeouts.
+  - **Examples of what we are preventing**
+    - Long-hanging requests to GitHub or other APIs that consume Workers CPU and concurrency.
+  - **How we enforce it**
+    - Use reasonable timeouts and limit per-request fan-out.
+    - Avoid unbounded loops making external calls inside a single request.
+
+---
+
+## 5) Cost & Billing Guardrails
+
+- **[INV-API-0400] Assume hostile automation exists**
+  - **Goal**: Design as if bots will hit every public endpoint.
+  - **Examples of what we are preventing**
+    - Relying on "security by obscurity" like unlinked routes or weird paths.
+  - **How we enforce it**
+    - Run threat modeling when adding new endpoints:
+      - "What if someone hits this 10k times per day?"
+      - "What if they run this on every post/capsule?"
+    - Answer with: **rate limits + auth + quotas + bounded work**.
+
+- **[INV-API-0401] Billing alerts & caps configured in Cloudflare**
+  - **Goal**: A config/ops-level circuit breaker in case dev-level invariants fail.
+  - **Examples of what we are preventing**
+    - Discovering a surprise multi-thousand-dollar bill after a weekend.
+  - **How we enforce it**
+    - Configure available billing alerts / caps for Workers, D1, and R2.
+    - Periodically review usage dashboards and adjust limits/quotas.
+
+---
+
+## 6) UI-to-API Expectations
+
+- **[INV-API-0500] UI calls only approved endpoints**
+  - **Goal**: Frontend only hits a constrained set of routes with known cost profiles.
+  - **Examples of what we are preventing**
+    - Ad-hoc `fetch("/api/*")` from UI components to experimental endpoints without safeguards.
+  - **How we enforce it**
+    - Centralize API client helpers in a small module.
+    - Avoid inlining random `/api/...` URLs deep inside components; route them through typed helpers when possible.
+
+- **[INV-API-0501] No client-side secrets in API usage**
+  - **Goal**: Never expose privileged keys or credentials in the browser.
+  - **Examples of what we are preventing**
+    - Putting GitHub personal access tokens or other API keys directly into frontend code.
+  - **How we enforce it**
+    - All secrets stay in server-side env vars or Workers bindings.
+    - Frontend talks to our Worker, and the Worker talks to third-party APIs using secure bindings.
+
+---
+
+## 7) Examples: What We Are Specifically Guarding Against
+
+This section collects concrete abuse scenarios and maps them to invariants above.
+
+- **Scenario A: Import spam from GitHub**
+  - Attacker writes a script that calls `POST /api/import/github` thousands of times using free accounts.
+  - **Impact**: High CPU, external bandwidth, possible D1/R2 usage, unexpected bills.
+  - **Mitigations**
+    - Auth required for `import/github` and associated publish/build endpoints. (**INV-API-0100**)
+    - Per-user `import` quota per day/plan. (**INV-API-0201**)
+    - WAF rate limits per IP and per route. (**INV-API-0200**)
+
+- **Scenario B: Capsule/run exhaustion**
+  - Automated tools repeatedly hit `GET /api/capsules/:id/bundle` and any future run endpoints.
+  - **Impact**: R2 egress, Workers CPU, possible D1 churn.
+  - **Mitigations**
+    - Rate limits on `/api/capsules/*`. (**INV-API-0200**)
+    - If we later introduce a "run" endpoint, enforce auth + per-user run quotas. (**INV-API-0100**, **INV-API-0201**)
+
+- **Scenario C: Social spam (likes/comments/follows)**
+  - A script uses valid auth tokens to mass-like, follow, or comment across many posts.
+  - **Impact**: DB growth, noise, potential moderation burden.
+  - **Mitigations**
+    - Auth required for all social write endpoints. (**INV-API-0100**)
+    - Per-user daily limits on likes/follows/comments. (**INV-API-0201**)
+    - Potentially CAPTCHAs/Turnstile for suspicious traffic patterns.
+
+- **Scenario D: Proxy abuse**
+  - Attackers try to use our `/api/proxy` as a general-purpose HTTP proxy.
+  - **Impact**: Bandwidth abuse, potential legal/abuse complaints.
+  - **Mitigations**
+    - Strict host allowlist from manifest/vars. (**INV-API-0300**)
+    - Per-route rate limits. (**INV-API-0200**)
+
+---
+
+## 8) How to Use This Checklist When Coding
+
+When adding or changing an endpoint:
+
+1. **Classify it**
+   - Is it read-only or write?
+   - Does it touch external services? Is it heavy?
+
+2. **Apply invariants**
+   - For writes: ensure auth. (**INV-API-0100**)
+   - For admin/mod: ensure role checks. (**INV-API-0101**)
+   - For external/proxy: enforce allowlists. (**INV-API-0300**)
+   - For heavy actions: think about quotas & rate limits. (**INV-API-0200/0201**)
+
+3. **Document assumptions**
+   - If an endpoint is intentionally cheap and public, note that.
+   - If it relies on WAF/rate limits, ensure those rules exist in Cloudflare.
+
+This doc should evolve as we learn more. Any time we discover a new class of abuse or unexpected cost, add it as a scenario and tighten the relevant invariants.

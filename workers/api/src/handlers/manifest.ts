@@ -1,5 +1,6 @@
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import type { Env } from "../index";
+import { getCapsuleKey } from "../storage/r2";
 
 type Handler = (
   req: Request,
@@ -67,8 +68,22 @@ export const getManifest: Handler = async (_req, env, _ctx, params) => {
   const capsuleId = params.p1;
 
   try {
-    // Try to get from R2 first (fastest)
-    const manifestKey = `capsules/${capsuleId}/manifest.json`;
+    // Look up capsule to get content hash and stored manifest
+    const { results } = await env.DB.prepare(
+      "SELECT manifest_json, hash FROM capsules WHERE id = ? LIMIT 1"
+    )
+      .bind(capsuleId)
+      .all();
+
+    if (!results || results.length === 0) {
+      return json({ error: "Capsule not found" }, 404);
+    }
+
+    const row = results[0];
+    const contentHash = row.hash as string;
+
+    // Try to get manifest from R2 using content hash (fast path)
+    const manifestKey = getCapsuleKey(contentHash, "manifest.json");
     const object = await env.R2.get(manifestKey);
 
     if (object) {
@@ -76,19 +91,9 @@ export const getManifest: Handler = async (_req, env, _ctx, params) => {
       return json({ manifest });
     }
 
-    // Fallback to D1 if not in R2
-    const { results } = await env.DB.prepare(
-      "SELECT manifest_json FROM capsules WHERE id = ?"
-    )
-      .bind(capsuleId)
-      .all();
-
-    if (results && results.length > 0) {
-      const manifest = JSON.parse(results[0].manifest_json as string);
-      return json({ manifest });
-    }
-
-    return json({ error: "Capsule not found" }, 404);
+    // Fallback to manifest stored in D1
+    const manifest = JSON.parse(row.manifest_json as string);
+    return json({ manifest });
   } catch (error) {
     return json(
       {
@@ -109,18 +114,33 @@ export const getCapsuleBundle: Handler = async (_req, env, _ctx, params) => {
   const capsuleId = params.p1;
 
   try {
-    // Get manifest first to know the entry point
-    const manifestKey = `capsules/${capsuleId}/manifest.json`;
-    const manifestObj = await env.R2.get(manifestKey);
+    // Look up capsule to get content hash and stored manifest
+    const { results } = await env.DB.prepare(
+      "SELECT manifest_json, hash FROM capsules WHERE id = ? LIMIT 1"
+    )
+      .bind(capsuleId)
+      .all();
 
-    if (!manifestObj) {
+    if (!results || results.length === 0) {
       return json({ error: "Capsule not found" }, 404);
     }
 
-    const manifest = await manifestObj.json<Manifest>();
+    const row = results[0];
+    const contentHash = row.hash as string;
 
-    // Get the entry file
-    const entryKey = `capsules/${capsuleId}/${manifest.entry}`;
+    // Get manifest first to know the entry point
+    const manifestKey = getCapsuleKey(contentHash, "manifest.json");
+    const manifestObj = await env.R2.get(manifestKey);
+
+    let manifest: Manifest;
+    if (manifestObj) {
+      manifest = await manifestObj.json<Manifest>();
+    } else {
+      manifest = JSON.parse(row.manifest_json as string) as Manifest;
+    }
+
+    // Get the entry file using the content hash prefix
+    const entryKey = getCapsuleKey(contentHash, manifest.entry);
     const entryObj = await env.R2.get(entryKey);
 
     if (!entryObj) {

@@ -19,6 +19,7 @@ import {
   getManifest,
   getCapsuleBundle,
 } from "./handlers/manifest";
+import { importGithub, importZip } from "./handlers/import";
 
 import {
   publishCapsule,
@@ -50,12 +51,18 @@ import {
   checkLiked,
 } from "./handlers/profiles";
 import { syncUser } from "./handlers/users";
+import { verifyAuth, isModeratorOrAdmin } from "./auth";
+import { ApiFeedResponseSchema, type ApiFeedPost } from "./contracts";
 
 import {
   reportContent,
   getModerationReports,
   resolveModerationReport,
   filterContent,
+  moderatePostAction,
+  moderateCommentAction,
+  getFlaggedPosts,
+  getModerationAudit,
 } from "./handlers/moderation";
 
 import { netProxy } from "./handlers/proxy";
@@ -67,15 +74,6 @@ import {
 } from "./handlers/embeds";
 import { completeRun } from "./handlers/runs";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
-
-// Local stub handlers (hoisted)
-async function importGithub(_req: Request): Promise<Response> {
-  return json({ ok: false, todo: "import github not implemented" }, 501);
-}
-
-async function importZip(_req: Request): Promise<Response> {
-  return json({ ok: false, todo: "import zip not implemented" }, 501);
-}
 
 async function appendRunLogs(_req: Request, _env: Env, _ctx: ExecutionContext, params: Record<string, string>): Promise<Response> {
   return json({ ok: false, runId: params.p1, todo: "logs not implemented" }, 501);
@@ -103,7 +101,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
   const mode = url.searchParams.get("mode") || "latest";
   const limit = parseInt(url.searchParams.get("limit") || "20");
   const offset = parseInt(url.searchParams.get("offset") || "0");
-  const userId = url.searchParams.get("userId");
+  const userIdParam = url.searchParams.get("userId");
   const tagsParam = url.searchParams.get("tags");
   const q = (url.searchParams.get("q") || "").trim().toLowerCase();
   const tagList = (tagsParam || "")
@@ -112,6 +110,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     .filter(Boolean);
 
   try {
+    const authedUser = await verifyAuth(req, env);
+    const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
     let query = `
       SELECT
         p.id, p.type, p.title, p.description, p.tags, p.created_at,
@@ -135,13 +135,22 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const where: string[] = [];
     // Safety: exclude suspended or shadow-banned authors from surfaced feeds
     where.push("(u.is_suspended = 0 AND u.shadow_banned = 0)");
+    if (!isMod) {
+      where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
+    }
 
     if (mode === "following") {
-      if (!userId) {
+      let followerId: string | null = null;
+      if (authedUser) {
+        followerId = authedUser.userId;
+      } else if (userIdParam) {
+        followerId = userIdParam;
+      } else {
         return json({ error: "userId required for following mode" }, 400);
       }
+
       where.push(`p.author_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)`);
-      bindings.push(userId);
+      bindings.push(followerId);
     }
 
     if (tagList.length > 0) {
@@ -170,10 +179,12 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     // Filter any bad rows for safety (defense-in-depth)
     const safeRows = (results || []).filter((row: any) => row.author_is_suspended === 0 && row.author_shadow_banned === 0);
 
-    const posts = await Promise.all(safeRows.map(async (row: any) => {
+    const posts: ApiFeedPost[] = await Promise.all(safeRows.map(async (row: any) => {
       const [likeCount, commentCount, runCount, remixCount] = await Promise.all([
         env.DB.prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?").bind(row.id).first(),
-        env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?").bind(row.id).first(),
+        isMod
+          ? env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?").bind(row.id).first()
+          : env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ? AND (quarantined IS NULL OR quarantined = 0)").bind(row.id).first(),
         row.capsule_id ? env.DB.prepare("SELECT COUNT(*) as count FROM runs WHERE capsule_id = ?").bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
         row.capsule_id ? env.DB.prepare("SELECT COUNT(*) as count FROM remixes WHERE parent_capsule_id = ?").bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
       ]);
@@ -215,13 +226,15 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         const authorFollowers = Number(row.author_followers_count || 0);
         const featuredBoost = row.author_is_featured === 1 ? 0.05 : 0;
         const planBoost = ["pro", "team"].includes(String(row.author_plan || "")) ? 0.03 : 0;
+        const capsuleBoost = row.capsule_id ? 0.1 : 0;
 
         const score =
-          0.5 * recencyDecay +
+          0.45 * recencyDecay +
           0.2 * log1p(post.stats.runs) +
           0.15 * log1p(post.stats.likes) +
           0.1 * log1p(post.stats.remixes) +
           0.05 * log1p(authorFollowers) +
+          capsuleBoost +
           featuredBoost +
           planBoost;
 
@@ -237,7 +250,9 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       finalPosts = [...posts].sort((a: any, b: any) => (b.score ?? 0) - (a.score ?? 0) || Number(b.createdAt) - Number(a.createdAt));
     }
 
-    return json({ posts: finalPosts, mode, limit, offset });
+    const payload = { posts: finalPosts, mode, limit, offset };
+    const parsed = ApiFeedResponseSchema.parse(payload);
+    return json(parsed);
   } catch (error) {
     return json({ error: "Failed to fetch posts", details: error instanceof Error ? error.message : "Unknown error" }, 500);
   }
@@ -266,7 +281,8 @@ async function getDiscoverPosts(req: Request, env: Env): Promise<Response> {
 const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   // Manifest & Import
   { method: "POST", pattern: /^\/manifest\/validate$/, handler: validateManifestHandler },
-  { method: "POST", pattern: /^\/import\/github$/, handler: importGithub },
+  // Allow both /import/github and /capsules/import/github for compatibility
+  { method: "POST", pattern: /^\/(?:capsules\/)?import\/github$/, handler: importGithub },
   { method: "POST", pattern: /^\/import\/zip$/, handler: importZip },
 
   // Capsules
@@ -321,8 +337,12 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
 
   // Moderation
   { method: "POST", pattern: /^\/moderation\/report$/, handler: reportContent },
+  { method: "POST", pattern: /^\/moderation\/posts\/([^\/]+)\/action$/, handler: moderatePostAction },
+  { method: "POST", pattern: /^\/moderation\/comments\/([^\/]+)\/action$/, handler: moderateCommentAction },
   { method: "GET", pattern: /^\/moderation\/reports$/, handler: getModerationReports },
   { method: "POST", pattern: /^\/moderation\/reports\/([^\/]+)\/resolve$/, handler: resolveModerationReport },
+  { method: "GET", pattern: /^\/moderation\/flagged-posts$/, handler: getFlaggedPosts },
+  { method: "GET", pattern: /^\/moderation\/audit$/, handler: getModerationAudit },
   { method: "POST", pattern: /^\/moderation\/filter-content$/, handler: filterContent },
 
   // Embeds & SEO
@@ -337,9 +357,13 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(req.url);
+    // Allow optional /api prefix when running behind Pages/Next routing
+    const pathname = url.pathname.startsWith("/api/")
+      ? url.pathname.slice(4)
+      : url.pathname;
     for (const r of routes) {
       if (req.method !== r.method) continue;
-      const match = url.pathname.match(r.pattern);
+      const match = pathname.match(r.pattern);
       if (match) {
         const params: Record<string, string> = {};
         // naive: capture groups as p1/p2

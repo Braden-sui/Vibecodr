@@ -61,9 +61,9 @@ export function PlayerDrawer({ notes, remixInfo, comments = [] }: PlayerDrawerPr
         <TabsContent value="remix" className="flex-1 overflow-auto p-4">
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold">Remix this capsule</h3>
+              <h3 className="text-sm font-semibold">Remix this vibe</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Fork this capsule to your studio and make your own changes
+                Fork this vibe to your studio and make your own changes
               </p>
             </div>
 
@@ -73,7 +73,7 @@ export function PlayerDrawer({ notes, remixInfo, comments = [] }: PlayerDrawerPr
                   This is a remix with {remixInfo.changes} changes from the original
                 </p>
                 <Button variant="link" size="sm" className="mt-2 h-auto p-0 text-xs">
-                  View original capsule
+                  View original vibe
                 </Button>
               </Card>
             )}

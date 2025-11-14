@@ -17,9 +17,12 @@ async function proxy(req: NextRequest) {
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
 
-  const { userId } = await auth();
-  if (userId && !headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${userId}`);
+  const { userId, getToken } = await auth();
+  if (userId && getToken && !headers.has("authorization")) {
+    const token = await getToken();
+    if (token) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
   }
 
   const init: RequestInit = {

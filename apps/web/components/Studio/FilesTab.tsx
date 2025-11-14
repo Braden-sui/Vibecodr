@@ -29,7 +29,7 @@ interface FileNode {
 
 /**
  * Files Editor Tab
- * View and edit capsule files with validation
+ * View and edit vibe files with validation
  * Based on mvp-plan.md Studio Files section
  */
 export function FilesTab() {
@@ -43,7 +43,7 @@ export function FilesTab() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Capsule</title>
+  <title>My Vibe</title>
   <script src="/runner/client-static-shim.js"></script>
 </head>
 <body>
@@ -56,10 +56,10 @@ export function FilesTab() {
       name: "main.js",
       type: "file",
       size: 567,
-      content: `// Your capsule code
-console.log("Capsule loaded!");
+      content: `// Your vibe code
+console.log("Vibe loaded!");
 
-// Tell Vibecodr the capsule is ready
+// Tell Vibecodr the vibe is ready
 window.vibecodr.ready();`,
     },
     {
@@ -71,7 +71,7 @@ window.vibecodr.ready();`,
           version: "1.0",
           runner: "client-static",
           entry: "index.html",
-          title: "My Capsule",
+          title: "My Vibe",
           params: [],
           capabilities: {
             net: [],
@@ -267,7 +267,7 @@ window.vibecodr.ready();`,
                   <div className="rounded-md bg-blue-500/10 p-3 text-xs text-blue-700 dark:text-blue-400">
                     <p className="font-medium">Manifest File</p>
                     <p className="mt-1">
-                      This file defines your capsule's configuration, parameters, and capabilities.
+                      This file defines your vibe's configuration, parameters, and capabilities.
                     </p>
                   </div>
                 </>

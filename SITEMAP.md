@@ -9,7 +9,7 @@ This document lists the major surfaces and their purpose. Each route in apps/web
 - /player/[postId]
   - Full-screen Player: sandboxed iframe, params drawer, remix, comments
 - /live
-  - Phase 5 beta hub with waitlisted sessions, live minutes context, and waitlist dialog
+  - Phase 5 beta hub for project showcase streams—demo capsules, feature walkthroughs, or coding sessions—with waitlisted sessions, live minutes context, and waitlist dialog
 - /studio
   - Creation hub with tabs: Import, Params, Files, Publish
 - /post/[id]

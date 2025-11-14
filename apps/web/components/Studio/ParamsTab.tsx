@@ -15,7 +15,7 @@ import { ParamControls } from "@/components/Player/ParamControls";
 
 /**
  * Params Designer Tab
- * Create and configure parameters with live preview
+ * Create and configure parameters for a vibe with live preview
  * Based on mvp-plan.md Phase 2 requirements
  */
 export function ParamsTab() {
@@ -84,7 +84,7 @@ export function ParamsTab() {
           <div>
             <h2 className="text-2xl font-bold">Parameters</h2>
             <p className="text-sm text-muted-foreground">
-              Define interactive controls for your capsule
+              Define interactive controls for your vibe
             </p>
           </div>
           <Button onClick={addParam} size="sm" className="gap-2">

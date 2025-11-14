@@ -10,7 +10,7 @@ import { PublishTab } from "@/components/Studio/PublishTab";
 import type { CapsuleDraft } from "@/components/Studio/StudioShell";
 
 /**
- * Studio Index - Main capsule creation workflow
+ * Studio Index - Main vibe creation workflow
  * Tabs: Import → Params → Files → Publish
  * Based on mvp-plan.md Phase 2 Studio requirements
  */
@@ -36,4 +36,3 @@ export default function StudioIndex() {
     </StudioShell>
   );
 }
-

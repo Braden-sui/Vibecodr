@@ -183,7 +183,7 @@ describe("NotificationBell", () => {
       expect(screen.getByText("@charlie")).toBeInTheDocument();
       expect(screen.getByText(/started following you/i)).toBeInTheDocument();
       expect(screen.getByText("@diana")).toBeInTheDocument();
-      expect(screen.getByText(/remixed your capsule/i)).toBeInTheDocument();
+      expect(screen.getByText(/remixed your vibe/i)).toBeInTheDocument();
     });
   });
 

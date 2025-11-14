@@ -14,7 +14,7 @@ export type CapsuleManifest = {
   schema: 1;
   name: string;
   entry: string; // e.g., "/index.html"
-  runner: "client-static" | "webcontainer"; // MVP: client-static only
+  runner: "client-static" | "webcontainer"; // MVP: client-static only; WebContainer runner must honor pause/resume messages when enabled
   capabilities: {
     net: string[]; // allowlisted hosts
     storage: boolean;

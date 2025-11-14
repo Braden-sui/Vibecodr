@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FeedCard } from "@/components/FeedCard";
 import { UserPlus, UserMinus, Calendar, Sparkles, GitFork, Heart } from "lucide-react";
+import { usersApi } from "@/lib/api";
 
 interface UserProfile {
   id: string;
@@ -22,6 +23,12 @@ interface UserProfile {
     runs: number;
     remixes: number;
   };
+}
+
+function redirectToSignIn() {
+  if (typeof window === "undefined") return;
+  const redirectUrl = window.location.pathname + window.location.search;
+  window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`);
 }
 
 export default function ProfilePage() {
@@ -41,21 +48,13 @@ export default function ProfilePage() {
 
   const fetchProfile = async () => {
     try {
-      const response = await fetch(`/api/users/${handle}`);
+      const response = await usersApi.getProfile(handle);
       if (!response.ok) throw new Error("Failed to fetch profile");
       const data = await response.json();
       setProfile(data.user);
 
       // Check if following
-      // TODO: Replace with actual current user ID from auth
-      const followResponse = await fetch(
-        `/api/users/${data.user.id}/check-following?targetId=${data.user.id}`,
-        {
-          headers: {
-            Authorization: `Bearer user-id-placeholder`,
-          },
-        }
-      );
+      const followResponse = await usersApi.checkFollowing(data.user.id, data.user.id);
       if (followResponse.ok) {
         const followData = await followResponse.json();
         setIsFollowing(followData.following);
@@ -69,7 +68,7 @@ export default function ProfilePage() {
 
   const fetchPosts = async () => {
     try {
-      const response = await fetch(`/api/users/${handle}/posts?limit=20`);
+      const response = await usersApi.getPosts(handle, { limit: 20 });
       if (!response.ok) throw new Error("Failed to fetch posts");
       const data = await response.json();
       setPosts(data.posts || []);
@@ -95,12 +94,14 @@ export default function ProfilePage() {
     });
 
     try {
-      const response = await fetch(`/api/users/${profile.id}/follow`, {
-        method: wasFollowing ? "DELETE" : "POST",
-        headers: {
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-      });
+      const response = wasFollowing
+        ? await usersApi.unfollow(profile.id)
+        : await usersApi.follow(profile.id);
+
+      if (response.status === 401) {
+        redirectToSignIn();
+        throw new Error("Unauthorized");
+      }
 
       if (!response.ok) {
         throw new Error("Failed to follow/unfollow");

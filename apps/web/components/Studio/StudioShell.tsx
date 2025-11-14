@@ -26,7 +26,7 @@ export interface StudioShellProps {
 }
 
 /**
- * Studio Shell - Main container for capsule creation workflow
+ * Studio Shell - Main container for vibe creation workflow
  * Provides tab navigation and validation status display
  * Based on mvp-plan.md Studio section
  */
@@ -37,10 +37,10 @@ export function StudioShell({ children, currentTab, draft, onTabChange }: Studio
       <div className="border-b bg-card p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Studio</h1>
-            <p className="text-sm text-muted-foreground">
-              Create and publish runnable capsules
-            </p>
+              <h1 className="text-2xl font-bold">Studio</h1>
+              <p className="text-sm text-muted-foreground">
+                Create and publish runnable vibes
+              </p>
           </div>
 
           {/* Validation Status */}

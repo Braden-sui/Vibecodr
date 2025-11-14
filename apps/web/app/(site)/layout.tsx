@@ -4,6 +4,7 @@ import Link from "next/link";
 import { NotificationBell } from "@/components/Notifications";
 import { AnalyticsProvider } from "@/providers/posthog-provider";
 import { TopbarSearch } from "../../components/TopbarSearch";
+import { ModerationNavLinks } from "@/components/ModerationNavLinks";
 
 export const metadata = {
   title: "Vibecodr",
@@ -24,9 +25,10 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
               <Link href="/studio" className="hover:text-primary">
                 Studio
               </Link>
-              <Link href="/report/new" className="hover:text-primary">
-                New Report
+              <Link href="/post/new" className="hover:text-primary">
+                Share a vibe
               </Link>
+              <ModerationNavLinks />
               <div className="ml-auto flex items-center gap-3">
                 <Suspense fallback={null}>
                   <TopbarSearch />

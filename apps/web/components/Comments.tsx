@@ -6,6 +6,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { redirectToSignIn } from "@/lib/client-auth";
+import { toast } from "@/lib/toast";
+import { commentsApi, moderationApi } from "@/lib/api";
+import { useUser } from "@clerk/nextjs";
 
 interface Comment {
   id: string;
@@ -32,6 +36,13 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [newComment, setNewComment] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user, isSignedIn } = useUser();
+  const isModeratorOrAdmin =
+    !!user &&
+    isSignedIn &&
+    (((user.publicMetadata as any)?.role as string | undefined) === "admin" ||
+      ((user.publicMetadata as any)?.role as string | undefined) === "moderator" ||
+      (user.publicMetadata as any)?.isModerator === true);
 
   useEffect(() => {
     fetchComments();
@@ -39,12 +50,13 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
 
   const fetchComments = async () => {
     try {
-      const response = await fetch(`/api/posts/${postId}/comments?limit=100`);
+      const response = await commentsApi.fetch(postId, { limit: 100 });
       if (!response.ok) throw new Error("Failed to fetch comments");
       const data = await response.json();
       setComments(data.comments || []);
     } catch (error) {
       console.error("Failed to fetch comments:", error);
+      toast({ title: "Failed to load comments", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
     } finally {
       setIsLoading(false);
     }
@@ -56,23 +68,24 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/posts/${postId}/comments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-        body: JSON.stringify({ body: newComment.trim() }),
-      });
+      const response = await commentsApi.create(postId, newComment.trim());
 
-      if (!response.ok) throw new Error("Failed to create comment");
+      if (response.status === 401) {
+        redirectToSignIn();
+        throw new Error("Unauthorized");
+      }
+
+      if (!response.ok) {
+        const msg = (await response.json().catch(() => null))?.error || "Failed to create comment";
+        throw new Error(msg);
+      }
 
       const data = await response.json();
       setComments([...comments, data.comment]);
       setNewComment("");
     } catch (error) {
       console.error("Failed to create comment:", error);
-      // TODO: Show error toast
+      toast({ title: "Failed to comment", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
     } finally {
       setIsSubmitting(false);
     }
@@ -80,19 +93,25 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
 
   const handleDelete = async (commentId: string) => {
     try {
-      const response = await fetch(`/api/comments/${commentId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-      });
+      const response = isModeratorOrAdmin
+        ? await moderationApi.moderateComment(commentId, "remove")
+        : await commentsApi.delete(commentId);
 
-      if (!response.ok) throw new Error("Failed to delete comment");
+      if (response.status === 401) {
+        redirectToSignIn();
+        throw new Error("Unauthorized");
+      }
+
+      if (!response.ok) {
+        const msg = (await response.json().catch(() => null))?.error || "Failed to delete comment";
+        throw new Error(msg);
+      }
 
       setComments(comments.filter((c) => c.id !== commentId));
+      toast({ title: "Deleted", description: "Comment removed.", variant: "success" });
     } catch (error) {
       console.error("Failed to delete comment:", error);
-      // TODO: Show error toast
+      toast({ title: "Failed", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
     }
   };
 
@@ -133,7 +152,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
                       </div>
                     </div>
                   </div>
-                  {currentUserId === comment.user.id && (
+                  {(currentUserId === comment.user.id || isModeratorOrAdmin) && (
                     <Button
                       variant="ghost"
                       size="icon"

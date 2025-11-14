@@ -29,11 +29,11 @@ import {
 
 /**
  * Publish Tab
- * Final validation and publishing of capsule
+ * Final validation and publishing of a vibe
  * Based on mvp-plan.md Studio Publish section
  */
 export function PublishTab() {
-  const [title, setTitle] = useState("My Awesome Capsule");
+  const [title, setTitle] = useState("My Awesome Vibe");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>(["demo", "interactive"]);
   const [tagInput, setTagInput] = useState("");
@@ -109,7 +109,7 @@ export function PublishTab() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div>
-        <h2 className="text-2xl font-bold">Publish Capsule</h2>
+        <h2 className="text-2xl font-bold">Publish Vibe</h2>
         <p className="text-muted-foreground">
           Final checks and metadata before publishing to the feed
         </p>
@@ -118,9 +118,9 @@ export function PublishTab() {
       {/* Validation Checks */}
       <Card>
         <CardHeader>
-          <CardTitle>Pre-Flight Checks</CardTitle>
+          <CardTitle>Vibe Pre-Flight Checks</CardTitle>
           <CardDescription>
-            Ensuring your capsule meets all requirements
+            Ensuring your vibe meets all requirements
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -152,19 +152,19 @@ export function PublishTab() {
       {/* Metadata */}
       <Card>
         <CardHeader>
-          <CardTitle>Capsule Details</CardTitle>
+          <CardTitle>Vibe Details</CardTitle>
           <CardDescription>
             This information will be visible in the feed
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Title *</Label>
+            <Label htmlFor="title">Vibe title *</Label>
             <Input
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Give your capsule a catchy title"
+              placeholder="Give your vibe a catchy title"
               maxLength={200}
             />
             <p className="text-xs text-muted-foreground">
@@ -178,7 +178,7 @@ export function PublishTab() {
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what your capsule does..."
+              placeholder="Describe what your vibe does..."
               rows={4}
               maxLength={1000}
             />
@@ -276,7 +276,7 @@ export function PublishTab() {
               <div className="space-y-0.5">
                 <Label htmlFor="network">Network Access</Label>
                 <p className="text-xs text-muted-foreground">
-                  Allow this capsule to make network requests
+                  Allow this vibe to make network requests
                 </p>
               </div>
               <Switch
@@ -290,7 +290,7 @@ export function PublishTab() {
               <div className="space-y-0.5">
                 <Label htmlFor="storage">Local Storage</Label>
                 <p className="text-xs text-muted-foreground">
-                  Allow this capsule to use IndexedDB
+                  Allow this vibe to use IndexedDB
                 </p>
               </div>
               <Switch
@@ -309,9 +309,9 @@ export function PublishTab() {
           {publishStatus === "success" ? (
             <div className="text-center">
               <CheckCircle2 className="mx-auto mb-4 h-12 w-12 text-green-600" />
-              <h3 className="mb-2 text-lg font-semibold">Capsule Published!</h3>
+              <h3 className="mb-2 text-lg font-semibold">Vibe Published!</h3>
               <p className="mb-4 text-sm text-muted-foreground">
-                Your capsule is now live on Vibecodr
+                Your vibe is now live on Vibecodr
               </p>
               <div className="flex justify-center gap-2">
                 <Button variant="outline">View in Feed</Button>
@@ -349,7 +349,7 @@ export function PublishTab() {
                 ) : (
                   <>
                     <Rocket className="h-4 w-4" />
-                    Publish Capsule
+                    Publish Vibe
                   </>
                 )}
               </Button>

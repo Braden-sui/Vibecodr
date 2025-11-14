@@ -3,7 +3,7 @@
  *
  * Usage:
  * <div class="vibecodr-embed" data-post-id="POST_ID"></div>
- * <script src="https://vibecodr.com/embed.js" async></script>
+ * <script src="https://vibecodr.space/embed.js" async></script>
  *
  * Or programmatically:
  * VibecodrEmbed.create('POST_ID', document.getElementById('container'), { theme: 'dark' });
@@ -12,7 +12,7 @@
 (function() {
   'use strict';
 
-  const EMBED_BASE_URL = 'https://vibecodr.com/e';
+  const EMBED_BASE_URL = 'https://vibecodr.space/e';
 
   /**
    * Create an embed iframe

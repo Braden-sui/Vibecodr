@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bell, Heart, MessageCircle, UserPlus, GitFork } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { notificationsApi } from "@/lib/api";
 
 interface Notification {
   id: string;
@@ -38,12 +40,18 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000); // Poll every 30s
+    const interval = setInterval(fetchUnreadCount, 300000); // Refresh every 5 minutes
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    // Fetch unread count whenever the user navigates to a new page
+    fetchUnreadCount();
+  }, [pathname]);
 
   useEffect(() => {
     if (isOpen) {
@@ -53,11 +61,7 @@ export function NotificationBell() {
 
   const fetchUnreadCount = async () => {
     try {
-      const response = await fetch("/api/notifications/unread-count", {
-        headers: {
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-      });
+      const response = await notificationsApi.getUnreadCount();
       if (!response.ok) return;
       const data = await response.json();
       setUnreadCount(data.count || 0);
@@ -68,11 +72,7 @@ export function NotificationBell() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("/api/notifications?limit=20", {
-        headers: {
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-      });
+      const response = await notificationsApi.list({ limit: 20 });
       if (!response.ok) return;
       const data = await response.json();
       setNotifications(data.notifications || []);
@@ -83,14 +83,7 @@ export function NotificationBell() {
 
   const markAsRead = async (notificationIds?: string[]) => {
     try {
-      const response = await fetch("/api/notifications/mark-read", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-        body: JSON.stringify({ notificationIds }),
-      });
+      const response = await notificationsApi.markRead(notificationIds);
 
       if (response.ok) {
         if (notificationIds) {
@@ -134,7 +127,7 @@ export function NotificationBell() {
       case "follow":
         return "started following you";
       case "remix":
-        return `remixed your capsule${notification.post?.title ? `: "${notification.post.title}"` : ""}`;
+        return `remixed your vibe${notification.post?.title ? `: "${notification.post.title}"` : ""}`;
       default:
         return "sent you a notification";
     }

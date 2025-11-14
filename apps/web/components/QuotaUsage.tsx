@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, TrendingUp, Zap } from "lucide-react";
 import Link from "next/link";
+import { quotaApi } from "@/lib/api";
 
 interface QuotaData {
   plan: "free" | "creator" | "pro" | "team";
   usage: {
     storage: number; // bytes
     runs: number; // count this month
-    bundleSize: number; // bytes of current capsule
+    bundleSize: number; // bytes of current vibe
   };
   limits: {
     maxStorage: number;
@@ -32,11 +33,7 @@ export function QuotaUsage() {
 
   const fetchQuota = async () => {
     try {
-      const response = await fetch("/api/user/quota", {
-        headers: {
-          Authorization: `Bearer user-id-placeholder`, // TODO: Get from auth
-        },
-      });
+      const response = await quotaApi.getUserQuota();
 
       if (!response.ok) throw new Error("Failed to fetch quota");
 
@@ -175,13 +172,13 @@ export function QuotaUsage() {
         {/* Bundle Size Limit */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">Max Bundle Size</span>
+            <span className="font-medium">Max Vibe Size</span>
             <span className="text-muted-foreground">
               {formatBytes(quota.limits.maxBundleSize)}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Maximum size for a single capsule upload
+            Maximum size for a single vibe upload
           </p>
         </div>
 

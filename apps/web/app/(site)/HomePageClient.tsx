@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Filter, Sparkles, Tag as TagIcon } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
+import { postsApi } from "@/lib/api";
 
 type FeedMode = "latest" | "following" | "foryou";
 
@@ -161,28 +162,11 @@ export default function FeedPage() {
   const fetchPosts = async () => {
     setIsLoading(true);
     try {
-      const userId = "user-id-placeholder"; // TODO: hydrate from auth
-      const params = new URLSearchParams({
+      const response = await postsApi.list({
         mode,
-        limit: "20",
-      });
-
-      if (mode === "following") {
-        params.set("userId", userId);
-      }
-
-      if (searchTerm.trim()) {
-        params.set("q", searchTerm.trim());
-      }
-
-      if (selectedTags.length > 0) {
-        params.set("tags", selectedTags.join(","));
-      }
-
-      const response = await fetch(`/api/posts?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${userId}`,
-        },
+        limit: 20,
+        q: searchTerm,
+        tags: selectedTags,
       });
       if (!response.ok) {
         setPosts(fallbackPosts);
@@ -271,7 +255,7 @@ export default function FeedPage() {
 
   const emptyState = (
     <div className="rounded-xl border border-dashed p-10 text-center">
-      <p className="text-lg font-semibold">No capsules match that query yet.</p>
+      <p className="text-lg font-semibold">No vibes match that query yet.</p>
       <p className="mt-2 text-sm text-muted-foreground">
         Try a different tag or{" "}
         <Link href="/studio" className="text-primary underline-offset-4 hover:underline">
@@ -287,11 +271,16 @@ export default function FeedPage() {
       <div className="text-center space-y-4">
         <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm text-muted-foreground">
           <Sparkles className="h-4 w-4 text-amber-500" />
-          Runnable capsules
+          Runnable vibes
         </div>
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Runnable Feed</h1>
-          <p className="text-muted-foreground">Click a capsule to run it inline, tweak params, then remix in Studio.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Runnable Vibes</h1>
+          <p className="text-muted-foreground">Click a vibe to run it inline, tweak params, then remix in Studio.</p>
+        </div>
+        <div className="flex justify-center">
+          <Button asChild variant="outline">
+            <Link href="/post/new">Share a vibe</Link>
+          </Button>
         </div>
       </div>
 
@@ -356,7 +345,7 @@ export default function FeedPage() {
             <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-12 text-center">
               <p className="text-lg font-semibold">Follow makers to personalize this lane.</p>
               <p className="text-sm text-muted-foreground">
-                Once you follow a capsule author their new posts land here automatically.
+                Once you follow a vibe author their new posts land here automatically.
               </p>
               <Button variant="outline">Discover makers</Button>
             </div>
@@ -372,7 +361,7 @@ export default function FeedPage() {
               <div>
                 <h3 className="text-lg font-semibold">For You Beta</h3>
                 <p className="text-sm text-muted-foreground">
-                  Blends recency, remix velocity, and similar params so you see capsules you’ll actually run.
+                  Blends recency, remix velocity, and similar params so you see vibes you’ll actually run.
                 </p>
               </div>
             </div>
