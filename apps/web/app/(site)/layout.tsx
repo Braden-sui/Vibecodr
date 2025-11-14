@@ -11,6 +11,8 @@ export const metadata = {
   description: "Runnable micro-apps feed for makers",
 };
 
+export const runtime = "edge";
+
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
