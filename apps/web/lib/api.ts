@@ -70,6 +70,28 @@ export const commentsApi = {
 } as const;
 
 export const postsApi = {
+  create(input: {
+    title: string;
+    description?: string;
+    type?: "app" | "report";
+    capsuleId?: string | null;
+    tags?: string[];
+  }) {
+    const { title, description, type = "report", capsuleId, tags } = input;
+    return fetch("/api/posts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        description,
+        type,
+        capsuleId: capsuleId ?? undefined,
+        tags,
+      }),
+    });
+  },
   list(params: {
     mode: "latest" | "following" | "foryou";
     limit?: number;
@@ -136,6 +158,18 @@ export const notificationsApi = {
   getUnreadCount() {
     return fetch("/api/notifications/unread-count");
   },
+  summary(options?: { limit?: number; offset?: number }) {
+    const params = new URLSearchParams();
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.offset != null) {
+      params.set("offset", String(options.offset));
+    }
+    const query = params.toString();
+    const url = query ? `/api/notifications/summary?${query}` : "/api/notifications/summary";
+    return fetch(url);
+  },
   list(options?: { limit?: number }) {
     const params = new URLSearchParams();
     if (options?.limit != null) {
@@ -168,5 +202,22 @@ export const capsulesApi = {
   },
   bundleSrc(capsuleId: string) {
     return `/api/capsules/${capsuleId}/bundle`;
+  },
+  importGithub(input: { url: string; branch?: string }) {
+    return fetch("/api/import/github", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+  },
+  importZip(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return fetch("/api/import/zip", {
+      method: "POST",
+      body: formData,
+    });
   },
 } as const;

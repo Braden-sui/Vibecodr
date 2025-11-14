@@ -72,10 +72,13 @@ export function NotificationBell() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await notificationsApi.list({ limit: 20 });
+      const response = await notificationsApi.summary({ limit: 20 });
       if (!response.ok) return;
       const data = await response.json();
       setNotifications(data.notifications || []);
+      if (typeof data.unreadCount === "number") {
+        setUnreadCount(data.unreadCount);
+      }
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
     }

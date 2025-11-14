@@ -621,3 +621,72 @@ export const getUnreadCount: Handler = requireUser(async (req, env, ctx, params,
     }, 500);
   }
 });
+
+/**
+ * GET /notifications/summary?limit=20&offset=0
+ * Get unread count and a page of notifications in a single payload
+ */
+export const getNotificationSummary: Handler = requireUser(async (req, env, ctx, params, userId) => {
+  const url = new URL(req.url);
+  const limit = parseInt(url.searchParams.get("limit") || "20");
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+
+  try {
+    const countPromise = env.DB.prepare(
+      "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read = 0"
+    ).bind(userId).first();
+
+    const listPromise = env.DB.prepare(`
+      SELECT n.id, n.type, n.read, n.created_at,
+             a.id as actor_id, a.handle as actor_handle, a.name as actor_name, a.avatar_url as actor_avatar,
+             p.id as post_id, p.title as post_title,
+             c.id as comment_id, c.body as comment_body
+      FROM notifications n
+      INNER JOIN users a ON n.actor_id = a.id
+      LEFT JOIN posts p ON n.post_id = p.id
+      LEFT JOIN comments c ON n.comment_id = c.id
+      WHERE n.user_id = ?
+      ORDER BY n.created_at DESC
+      LIMIT ? OFFSET ?
+    `).bind(userId, limit, offset).all();
+
+    const [countRow, list] = await Promise.all([countPromise, listPromise]);
+
+    const notifications = list.results?.map((row: any) => ({
+      id: row.id,
+      type: row.type,
+      read: row.read === 1,
+      createdAt: row.created_at,
+      actor: {
+        id: row.actor_id,
+        handle: row.actor_handle,
+        name: row.actor_name,
+        avatarUrl: row.actor_avatar,
+      },
+      post: row.post_id
+        ? {
+            id: row.post_id,
+            title: row.post_title,
+          }
+        : null,
+      comment: row.comment_id
+        ? {
+            id: row.comment_id,
+            body: row.comment_body,
+          }
+        : null,
+    })) || [];
+
+    return json({
+      unreadCount: Number((countRow as any)?.count ?? 0),
+      notifications,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    return json({
+      error: "Failed to fetch notification summary",
+      details: error instanceof Error ? error.message : "Unknown error",
+    }, 500);
+  }
+});

@@ -42,6 +42,7 @@ import {
   getNotifications,
   markNotificationsRead,
   getUnreadCount,
+  getNotificationSummary,
 } from "./handlers/social";
 
 import {
@@ -51,8 +52,10 @@ import {
   checkLiked,
 } from "./handlers/profiles";
 import { syncUser } from "./handlers/users";
-import { verifyAuth, isModeratorOrAdmin } from "./auth";
+import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
 import { ApiFeedResponseSchema, type ApiFeedPost } from "./contracts";
+import { createPostSchema } from "./schema";
+import { incrementUserCounters } from "./handlers/counters";
 
 import {
   reportContent,
@@ -94,6 +97,37 @@ async function doStatus(_req: Request, env: Env): Promise<Response> {
   } catch (e: any) {
     return json({ error: "do status failed", details: e?.message || "unknown" }, 500);
   }
+}
+
+export type ForYouScoreInput = {
+  createdAtSec: number;
+  nowSec: number;
+  stats: { runs: number; likes: number; remixes: number };
+  authorFollowers: number;
+  authorIsFeatured: boolean;
+  authorPlan?: string | null;
+  hasCapsule: boolean;
+};
+
+export function computeForYouScore(input: ForYouScoreInput): number {
+  const ageHours = Math.max(0, (input.nowSec - input.createdAtSec) / 3600);
+  const recencyDecay = Math.exp(-ageHours / 72); // ~3-day half-life
+  const log1p = (n: number) => Math.log(1 + Math.max(0, n));
+
+  const featuredBoost = input.authorIsFeatured ? 0.05 : 0;
+  const planBoost = ["pro", "team"].includes(String(input.authorPlan || "")) ? 0.03 : 0;
+  const capsuleBoost = input.hasCapsule ? 0.1 : 0;
+
+  return (
+    0.45 * recencyDecay +
+    0.2 * log1p(input.stats.runs) +
+    0.15 * log1p(input.stats.likes) +
+    0.1 * log1p(input.stats.remixes) +
+    0.05 * log1p(input.authorFollowers) +
+    capsuleBoost +
+    featuredBoost +
+    planBoost
+  );
 }
 
 async function getPosts(req: Request, env: Env): Promise<Response> {
@@ -219,24 +253,16 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       // Attach a score field for potential re-ranking
       if (mode === "foryou") {
         const nowSec = Math.floor(Date.now() / 1000);
-        const ageHours = Math.max(0, (nowSec - Number(row.created_at)) / 3600);
-        const recencyDecay = Math.exp(-ageHours / 72); // ~3-day half-life
-        const log1p = (n: number) => Math.log(1 + Math.max(0, n));
-
         const authorFollowers = Number(row.author_followers_count || 0);
-        const featuredBoost = row.author_is_featured === 1 ? 0.05 : 0;
-        const planBoost = ["pro", "team"].includes(String(row.author_plan || "")) ? 0.03 : 0;
-        const capsuleBoost = row.capsule_id ? 0.1 : 0;
-
-        const score =
-          0.45 * recencyDecay +
-          0.2 * log1p(post.stats.runs) +
-          0.15 * log1p(post.stats.likes) +
-          0.1 * log1p(post.stats.remixes) +
-          0.05 * log1p(authorFollowers) +
-          capsuleBoost +
-          featuredBoost +
-          planBoost;
+        const score = computeForYouScore({
+          createdAtSec: Number(row.created_at),
+          nowSec,
+          stats: post.stats,
+          authorFollowers,
+          authorIsFeatured: row.author_is_featured === 1,
+          authorPlan: row.author_plan,
+          hasCapsule: !!row.capsule_id,
+        });
 
         (post as any).score = score;
       }
@@ -258,9 +284,71 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
   }
 }
 
-async function createPost(_req: Request): Promise<Response> {
-  return json({ ok: false, todo: "create post not implemented" }, 501);
-}
+const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) => {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+
+  const parsedResult = createPostSchema.safeParse({
+    ...(body as Record<string, unknown>),
+    authorId: userId,
+  });
+
+  if (!parsedResult.success) {
+    return json(
+      {
+        error: "Validation failed",
+        details: parsedResult.error.flatten(),
+      },
+      400
+    );
+  }
+
+  const parsed = parsedResult.data;
+  const id = crypto.randomUUID();
+  const tagsJson = parsed.tags && parsed.tags.length > 0 ? JSON.stringify(parsed.tags) : null;
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO posts (id, author_id, type, capsule_id, title, description, tags, report_md, cover_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        id,
+        parsed.authorId,
+        parsed.type,
+        parsed.capsuleId ?? null,
+        parsed.title,
+        parsed.description ?? null,
+        tagsJson,
+        parsed.reportMd ?? null,
+        null
+      )
+      .run();
+
+    // Best-effort: increment user posts counter
+    incrementUserCounters(env, parsed.authorId, { postsDelta: 1 }).catch((err: unknown) => {
+      console.error("E-VIBECODR-0101 createPost counter update failed", {
+        userId: parsed.authorId,
+        postId: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
+    return json({ ok: true, id }, 201);
+  } catch (error) {
+    return json(
+      {
+        error: "Failed to create post",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+});
 
 async function getDiscoverPosts(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
@@ -325,6 +413,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
 
   // Notifications
   { method: "GET", pattern: /^\/notifications$/, handler: getNotifications },
+  { method: "GET", pattern: /^\/notifications\/summary$/, handler: getNotificationSummary },
   { method: "POST", pattern: /^\/notifications\/mark-read$/, handler: markNotificationsRead },
   { method: "GET", pattern: /^\/notifications\/unread-count$/, handler: getUnreadCount },
 
@@ -382,4 +471,3 @@ export default {
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" }, ...init });
 }
-
