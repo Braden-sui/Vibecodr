@@ -11,7 +11,7 @@ export default function SettingsPage() {
       <h1>Settings</h1>
       <div>
         <h3>Profile</h3>
-        <p>// TODO: avatar upload, handle, bio</p>
+        <p>TODO: avatar upload, handle, bio</p>
       </div>
       <div>
         <h3>Plan</h3>
@@ -24,4 +24,3 @@ export default function SettingsPage() {
     </section>
   );
 }
-

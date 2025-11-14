@@ -21,10 +21,9 @@ export default function StudioFiles() {
           </ul>
         </aside>
         <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <pre>// TODO: file content editor</pre>
+          <pre>TODO: file content editor</pre>
         </div>
       </div>
     </section>
   );
 }
-

@@ -17,7 +17,7 @@ export const size = {
 export const contentType = "image/png";
 
 // Image generation
-export default async function Image({ params }: { params: { postId: string } }) {
+export default async function Image({ params: _params }: { params: { postId: string } }) {
   // TODO: Fetch post data from API
   // const post = await fetch(`${process.env.API_URL}/posts/${params.postId}`).then(r => r.json());
 

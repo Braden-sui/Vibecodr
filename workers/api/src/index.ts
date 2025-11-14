@@ -53,7 +53,7 @@ import {
 } from "./handlers/profiles";
 import { syncUser } from "./handlers/users";
 import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
-import { ApiFeedResponseSchema, type ApiFeedPost } from "./contracts";
+import { ApiFeedResponseSchema, ApiFeedPostSchema, type ApiFeedPost } from "./contracts";
 import { createPostSchema } from "./schema";
 import { incrementUserCounters } from "./handlers/counters";
 
@@ -284,6 +284,114 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
   }
 }
 
+async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, params: Record<string, string>): Promise<Response> {
+  const postId = params.p1;
+  if (!postId) {
+    return json({ error: "postId required" }, 400);
+  }
+
+  try {
+    const authedUser = await verifyAuth(req, env);
+    const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+
+    let query = `
+      SELECT
+        p.id, p.type, p.title, p.description, p.tags, p.created_at,
+        u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar,
+        u.followers_count as author_followers_count,
+        u.runs_count as author_runs_count,
+        u.remixes_count as author_remixes_count,
+        u.is_featured as author_is_featured,
+        u.plan as author_plan,
+        u.is_suspended as author_is_suspended,
+        u.shadow_banned as author_shadow_banned,
+        c.id as capsule_id, c.manifest_json
+      FROM posts p
+      INNER JOIN users u ON p.author_id = u.id
+      LEFT JOIN capsules c ON p.capsule_id = c.id
+      WHERE p.id = ?
+    `;
+
+    const bindings: any[] = [postId];
+
+    const where: string[] = [];
+    // Safety: exclude suspended or shadow-banned authors from surfaced feeds
+    where.push("(u.is_suspended = 0 AND u.shadow_banned = 0)");
+    if (!isMod) {
+      where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
+    }
+
+    if (where.length > 0) {
+      query += " AND " + where.join(" AND ");
+    }
+
+    const { results } = await env.DB.prepare(query).bind(...bindings).all();
+    const row: any = results && results[0];
+
+    if (!row) {
+      return json({ error: "Post not found" }, 404);
+    }
+
+    const [likeCount, commentCount, runCount, remixCount] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?").bind(row.id).first(),
+      isMod
+        ? env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?").bind(row.id).first()
+        : env.DB
+            .prepare(
+              "SELECT COUNT(*) as count FROM comments WHERE post_id = ? AND (quarantined IS NULL OR quarantined = 0)"
+            )
+            .bind(row.id)
+            .first(),
+      row.capsule_id
+        ? env.DB.prepare("SELECT COUNT(*) as count FROM runs WHERE capsule_id = ?").bind(row.capsule_id).first()
+        : Promise.resolve({ count: 0 }),
+      row.capsule_id
+        ? env.DB.prepare("SELECT COUNT(*) as count FROM remixes WHERE parent_capsule_id = ?")
+            .bind(row.capsule_id)
+            .first()
+        : Promise.resolve({ count: 0 }),
+    ]);
+
+    const post: ApiFeedPost = {
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      description: row.description,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      author: {
+        id: row.author_id,
+        handle: row.author_handle,
+        name: row.author_name,
+        avatarUrl: row.author_avatar,
+        followersCount: row.author_followers_count || 0,
+        runsCount: row.author_runs_count || 0,
+        remixesCount: row.author_remixes_count || 0,
+        isFeatured: row.author_is_featured === 1,
+        plan: row.author_plan || "free",
+      },
+      capsule: row.capsule_id ? { id: row.capsule_id, ...JSON.parse(row.manifest_json) } : null,
+      createdAt: row.created_at,
+      stats: {
+        runs: (runCount as any)?.count || 0,
+        comments: (commentCount as any)?.count || 0,
+        likes: (likeCount as any)?.count || 0,
+        remixes: (remixCount as any)?.count || 0,
+      },
+    };
+
+    const parsed = ApiFeedPostSchema.parse(post);
+    return json({ post: parsed });
+  } catch (error) {
+    return json(
+      {
+        error: "Failed to fetch post",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+}
+
 const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) => {
   let body: unknown;
   try {
@@ -398,6 +506,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   // Posts & Feed
   { method: "GET", pattern: /^\/posts$/, handler: getPosts },
   { method: "GET", pattern: /^\/posts\/discover$/, handler: getDiscoverPosts },
+  { method: "GET", pattern: /^\/posts\/([^\/]+)$/, handler: getPostById },
   { method: "POST", pattern: /^\/posts$/, handler: createPost },
 
   // Likes

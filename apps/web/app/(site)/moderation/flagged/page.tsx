@@ -22,14 +22,19 @@ type FlaggedItem = {
   };
 };
 
+type PublicMetadata = {
+  role?: string;
+  isModerator?: boolean;
+} | null;
+
 export default function FlaggedPostsPage() {
   const { user, isSignedIn } = useUser();
+  const metadata: PublicMetadata =
+    typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
+  const role = metadata?.role;
+  const isModeratorFlag = metadata?.isModerator === true;
   const isModeratorOrAdmin =
-    !!user &&
-    isSignedIn &&
-    (((user.publicMetadata as any)?.role as string | undefined) === "admin" ||
-      ((user.publicMetadata as any)?.role as string | undefined) === "moderator" ||
-      (user.publicMetadata as any)?.isModerator === true);
+    !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<FlaggedItem[]>([]);
@@ -69,7 +74,7 @@ export default function FlaggedPostsPage() {
     return (
       <div className="space-y-2">
         <h1 className="text-xl font-semibold">Moderation</h1>
-        <p className="text-sm text-muted-foreground">You don't have access to this page.</p>
+        <p className="text-sm text-muted-foreground">You don&apos;t have access to this page.</p>
       </div>
     );
   }

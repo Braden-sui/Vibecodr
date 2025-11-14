@@ -33,39 +33,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { FeedPost } from "@/lib/api";
 
 export interface FeedCardProps {
-  post: {
-    id: string;
-    type: "app" | "report";
-    title: string;
-    description?: string;
-    author: {
-      id: string;
-      handle: string;
-      name?: string;
-      avatarUrl?: string;
-    };
-    capsule?: {
-      id: string;
-      runner: "client-static" | "webcontainer";
-      capabilities?: {
-        net?: string[];
-        storage?: boolean;
-        workers?: boolean;
-      };
-      params?: unknown[];
-    };
-    coverKey?: string;
-    tags?: string[];
-    stats: {
-      runs: number;
-      comments: number;
-      likes: number;
-      remixes: number;
-    };
-    createdAt: string;
-  };
+  post: FeedPost;
 }
 
 // Global concurrency cap for active previews

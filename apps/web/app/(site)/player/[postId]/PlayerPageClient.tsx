@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { PlayerIframe } from "@/components/Player/PlayerIframe";
 import { PlayerControls } from "@/components/Player/PlayerControls";
 import { PlayerDrawer } from "@/components/Player/PlayerDrawer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
+import { postsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
+import { trackEvent } from "@/lib/analytics";
 
 type PlayerPageClientProps = {
   postId: string;
@@ -16,51 +19,57 @@ type PlayerPageClientProps = {
 export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState({ fps: 0, memory: 0, bootTime: 0 });
-  const [capsuleParams, setCapsuleParams] = useState<Record<string, unknown>>({});
+  const [capsuleParams] = useState<Record<string, unknown>>({});
+  const [post, setPost] = useState<FeedPost | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { user: _user } = useUser();
 
-  // TODO: Fetch post data from API
-  const mockPost = {
-    id: postId,
-    title: "Interactive Boids Simulation",
-    author: {
-      handle: "marta",
-      name: "Marta Chen",
-    },
-    capsule: {
-      id: "capsule1",
-      runner: "client-static" as const,
-      capabilities: {
-        net: [],
-        storage: false,
-        workers: false,
-      },
-    },
-    notes: `This is an interactive simulation of flocking behavior (boids algorithm).
+  useEffect(() => {
+    let cancelled = false;
 
-Adjust the parameters to see how the birds' behavior changes:
-- **Count**: Number of boids in the simulation
-- **Speed**: How fast the boids move
-- **Vision**: How far each boid can see
+    const load = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await postsApi.get(postId);
+        if (!response.ok) {
+          if (response.status === 404) {
+            setError("not_found");
+          } else {
+            setError("failed");
+          }
+          return;
+        }
 
-The algorithm implements three rules:
-1. Separation: avoid crowding neighbors
-2. Alignment: steer towards average heading of neighbors
-3. Cohesion: steer towards average position of neighbors`,
-    comments: [
-      {
-        id: "1",
-        user: "alex_codes",
-        text: "This is amazing! Love how you can tweak the parameters in real-time.",
-        timestamp: Date.now() - 86400000,
-      },
-      {
-        id: "2",
-        user: "sarah_dev",
-        text: "Great implementation! The performance is really smooth even with 100+ boids.",
-        timestamp: Date.now() - 43200000,
-      },
-    ],
-  };
+        const data = await response.json();
+        const mapped = mapApiFeedPostToFeedPost(data.post);
+        if (!cancelled) {
+          setPost(mapped);
+          trackEvent("player_loaded", {
+            postId: mapped.id,
+            type: mapped.type,
+            hasCapsule: !!mapped.capsule,
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load post for player:", e);
+        if (!cancelled) {
+          setError("failed");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [postId]);
 
   const handleRestart = () => {
     // TODO: Send restart message to iframe
@@ -74,13 +83,34 @@ The algorithm implements three rules:
   };
 
   const handleShare = () => {
-    // TODO: Open share dialog
-    console.log("Sharing capsule...");
+    try {
+      const url = `${window.location.origin}/player/${postId}`;
+      if (navigator.share) {
+        navigator
+          .share({
+            title: post?.title ?? "Vibecodr vibe",
+            text: post?.description,
+            url,
+          })
+          .catch(() => {
+            // user cancelled; ignore
+          });
+      } else {
+        navigator.clipboard.writeText(url).catch(() => {
+          // ignore clipboard errors
+        });
+      }
+    } catch {
+      // no-op
+    }
   };
 
   const handleReport = () => {
-    // TODO: Open report dialog
-    console.log("Reporting capsule...");
+    try {
+      window.location.assign(`/report/new?postId=${encodeURIComponent(postId)}`);
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -95,21 +125,27 @@ The algorithm implements three rules:
               </Button>
             </Link>
             <div>
-              <h1 className="text-xl font-bold">{mockPost.title}</h1>
+              <h1 className="text-xl font-bold">{post?.title}</h1>
               <Link
-                href={`/profile/${mockPost.author.handle}`}
+                href={`/profile/${post?.author.handle}`}
                 className="text-sm text-muted-foreground hover:underline"
               >
-                by @{mockPost.author.handle}
+                by @{post?.author.handle}
               </Link>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{mockPost.capsule.runner}</Badge>
-            {mockPost.capsule.capabilities.net &&
-              mockPost.capsule.capabilities.net.length > 0 && (
-                <Badge variant="outline">Network</Badge>
-              )}
+            {post && (
+              <>
+                <Badge variant="secondary">
+                  {post.type === "app" ? post.capsule?.runner || "client-static" : "report"}
+                </Badge>
+                {post.type === "app" && post.capsule?.capabilities?.net &&
+                  post.capsule.capabilities.net.length > 0 && (
+                    <Badge variant="outline">Network</Badge>
+                  )}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -119,13 +155,32 @@ The algorithm implements three rules:
         {/* Left: Player */}
         <div className="flex flex-1 flex-col">
           <div className="flex-1 p-4">
-            <PlayerIframe
-              capsuleId={mockPost.capsule.id}
-              params={capsuleParams}
-              onReady={() => setIsRunning(true)}
-              onLog={(log) => console.log("Capsule log:", log)}
-              onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
-            />
+            {post?.capsule ? (
+              <PlayerIframe
+                capsuleId={post.capsule.id}
+                params={capsuleParams}
+                onReady={() => {
+                  setIsRunning(true);
+                  trackEvent("player_run_started", {
+                    postId: post.id,
+                    capsuleId: post.capsule?.id,
+                    runner: post.capsule?.runner,
+                  });
+                }}
+                onLog={(log) => console.log("Capsule log:", log)}
+                onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed">
+                <p className="text-sm text-muted-foreground">
+                  {isLoading
+                    ? "Loading vibe..."
+                    : error === "not_found"
+                    ? "Vibe not found."
+                    : "This vibe does not have a runnable capsule attached yet."}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Controls */}
@@ -142,8 +197,8 @@ The algorithm implements three rules:
         {/* Right: Drawer */}
         <div className="w-80">
           <PlayerDrawer
-            notes={mockPost.notes}
-            comments={mockPost.comments}
+            postId={postId}
+            notes={post?.description}
             remixInfo={{ changes: 0 }}
           />
         </div>

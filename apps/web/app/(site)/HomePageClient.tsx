@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FeedCard } from "@/components/FeedCard";
@@ -8,7 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Filter, Sparkles, Tag as TagIcon } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
-import { postsApi } from "@/lib/api";
+import {
+  postsApi,
+  type FeedPost,
+  type ApiFeedPostPayload,
+  mapApiFeedPostToFeedPost,
+} from "@/lib/api";
 
 type FeedMode = "latest" | "following" | "foryou";
 
@@ -133,7 +138,7 @@ const fallbackPosts = [
 
 export default function FeedPage() {
   const [mode, setMode] = useState<FeedMode>("latest");
-  const [posts, setPosts] = useState<any[]>([]);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -145,21 +150,7 @@ export default function FeedPage() {
     setSearchTerm(searchParams.get("q") ?? "");
   }, [searchParams]);
 
-  useEffect(() => {
-    fetchPosts();
-  }, [mode, searchTerm, selectedTags]);
-
-  useEffect(() => {
-    if (!searchTerm) return;
-
-    const timer = setTimeout(() => {
-      trackEvent("feed_search", { query: searchTerm, mode, tagCount: selectedTags.length });
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm, selectedTags.length, mode]);
-
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await postsApi.list({
@@ -169,21 +160,22 @@ export default function FeedPage() {
         tags: selectedTags,
       });
       if (!response.ok) {
-        setPosts(fallbackPosts);
+        setPosts(fallbackPosts as FeedPost[]);
         return;
       }
 
-      const data = await response.json();
-      setPosts(data.posts || []);
+      const data = (await response.json()) as { posts?: ApiFeedPostPayload[] };
+      const mapped: FeedPost[] = (data.posts ?? []).map((p) => mapApiFeedPostToFeedPost(p));
+      setPosts(mapped);
       setLastUpdated(new Date().toISOString());
       trackEvent("feed_results_loaded", {
         mode,
-        count: data.posts?.length ?? 0,
+        count: mapped.length,
         fromNetwork: true,
       });
     } catch (error) {
       console.error("Failed to fetch posts:", error);
-      setPosts(fallbackPosts);
+      setPosts(fallbackPosts as FeedPost[]);
       trackEvent("feed_results_loaded", {
         mode,
         count: fallbackPosts.length,
@@ -192,10 +184,24 @@ export default function FeedPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [mode, searchTerm, selectedTags]);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
+
+  useEffect(() => {
+    if (!searchTerm) return;
+
+    const timer = setTimeout(() => {
+      trackEvent("feed_search", { query: searchTerm, mode, tagCount: selectedTags.length });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, selectedTags, mode]);
 
   const filteredPosts = useMemo(() => {
-    const source = posts.length > 0 ? posts : fallbackPosts;
+    const source = posts;
     const query = searchTerm.trim().toLowerCase();
 
     return source.filter((post) => {

@@ -1,12 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FeedCard } from "@/components/FeedCard";
 import { UserPlus, UserMinus, Calendar, Sparkles, GitFork, Heart } from "lucide-react";
-import { usersApi } from "@/lib/api";
+import {
+  usersApi,
+  type FeedPost,
+  type ApiFeedPostPayload,
+  mapApiFeedPostToFeedPost,
+} from "@/lib/api";
 
 interface UserProfile {
   id: string;
@@ -36,17 +41,12 @@ export default function ProfilePage() {
   const handle = params.handle as string;
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [posts, setPosts] = useState<any[]>([]);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFollowingLoading, setIsFollowingLoading] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-    fetchPosts();
-  }, [handle]);
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       const response = await usersApi.getProfile(handle);
       if (!response.ok) throw new Error("Failed to fetch profile");
@@ -64,18 +64,23 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [handle]);
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     try {
       const response = await usersApi.getPosts(handle, { limit: 20 });
       if (!response.ok) throw new Error("Failed to fetch posts");
-      const data = await response.json();
-      setPosts(data.posts || []);
+      const data = (await response.json()) as { posts?: ApiFeedPostPayload[] };
+      setPosts((data.posts ?? []).map((post) => mapApiFeedPostToFeedPost(post)));
     } catch (error) {
       console.error("Failed to fetch posts:", error);
     }
-  };
+  }, [handle]);
+
+  useEffect(() => {
+    fetchProfile();
+    fetchPosts();
+  }, [fetchProfile, fetchPosts]);
 
   const handleFollow = async () => {
     if (!profile || isFollowingLoading) return;

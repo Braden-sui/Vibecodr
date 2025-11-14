@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { StudioShell } from "@/components/Studio/StudioShell";
 import { ImportTab } from "@/components/Studio/ImportTab";
 import { ParamsTab } from "@/components/Studio/ParamsTab";
@@ -9,22 +8,23 @@ import { FilesTab } from "@/components/Studio/FilesTab";
 import { PublishTab } from "@/components/Studio/PublishTab";
 import type { CapsuleDraft } from "@/components/Studio/StudioShell";
 
+type StudioTab = "import" | "params" | "files" | "publish";
+
 /**
  * Studio Index - Main vibe creation workflow
  * Tabs: Import → Params → Files → Publish
  * Based on mvp-plan.md Phase 2 Studio requirements
  */
 export default function StudioIndex() {
-  const router = useRouter();
-  const [currentTab, setCurrentTab] = useState<"import" | "params" | "files" | "publish">(
-    "import"
-  );
+  const [currentTab, setCurrentTab] = useState<StudioTab>("import");
 
   // TODO: Load draft from localStorage or API
-  const [draft, setDraft] = useState<CapsuleDraft | undefined>(undefined);
+  const [draft] = useState<CapsuleDraft | undefined>(undefined);
 
   const handleTabChange = (tab: string) => {
-    setCurrentTab(tab as any);
+    if (tab === "import" || tab === "params" || tab === "files" || tab === "publish") {
+      setCurrentTab(tab);
+    }
   };
 
   return (

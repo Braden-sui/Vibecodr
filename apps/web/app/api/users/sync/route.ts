@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAuth, getCurrentUser } from "@/lib/auth";
+import { getWorkerApiBase } from "@/lib/worker-api";
 
 export const runtime = "edge";
-
-const API_URL =
-  process.env.WORKER_API_BASE || process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8787";
+const API_BASE = getWorkerApiBase();
 
 export async function POST() {
   const userId = await requireAuth();
@@ -20,7 +19,7 @@ export async function POST() {
     plan: undefined,
   };
 
-  const res = await fetch(`${API_URL}/users/sync`, {
+  const res = await fetch(`${API_BASE}/users/sync`, {
     method: "POST",
     headers: {
       "content-type": "application/json",

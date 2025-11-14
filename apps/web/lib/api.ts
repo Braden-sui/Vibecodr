@@ -69,6 +69,114 @@ export const commentsApi = {
   },
 } as const;
 
+// Shared feed post type used by HomePageClient, FeedCard, and Player page.
+export type FeedPost = {
+  id: string;
+  type: "app" | "report";
+  title: string;
+  description?: string;
+  author: {
+    id: string;
+    handle: string;
+    name?: string | null;
+    avatarUrl?: string | null;
+  };
+  capsule?: {
+    id: string;
+    // Runner and capabilities are derived from capsule manifest_json in the Worker.
+    runner: "client-static" | "webcontainer";
+    capabilities?: {
+      net?: string[];
+      storage?: boolean;
+      workers?: boolean;
+    };
+    params?: unknown[];
+  } | null;
+  coverKey?: string | null;
+  tags?: string[];
+  stats: {
+    runs: number;
+    comments: number;
+    likes: number;
+    remixes: number;
+  };
+  createdAt: string;
+};
+
+type ApiFeedPostCapsule = {
+  id?: string | number;
+  runner?: "client-static" | "webcontainer" | string;
+  capabilities?: {
+    net?: string[];
+    storage?: boolean;
+    workers?: boolean;
+  };
+  params?: unknown[];
+} | null;
+
+export type ApiFeedPostPayload = {
+  id: string | number;
+  type?: "app" | "report" | string;
+  title?: string;
+  description?: string | null;
+  author?: {
+    id?: string | number;
+    handle?: string;
+    name?: string | null;
+    avatarUrl?: string | null;
+  };
+  capsule?: ApiFeedPostCapsule;
+  coverKey?: string | null;
+  tags?: string[] | null;
+  stats?: {
+    runs?: number;
+    comments?: number;
+    likes?: number;
+    remixes?: number;
+  };
+  createdAt?: number | string;
+};
+
+// Map Worker ApiFeedPost payload into the client-side FeedPost shape.
+export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPostPayload): FeedPost {
+  const capsule = apiPost.capsule
+    ? {
+        id: String(apiPost.capsule.id),
+        runner: (apiPost.capsule.runner || "client-static") as "client-static" | "webcontainer",
+        capabilities: apiPost.capsule.capabilities,
+        params: apiPost.capsule.params,
+      }
+    : null;
+
+  const createdAtValue = apiPost.createdAt;
+  const createdAt = typeof createdAtValue === "number"
+    ? new Date(createdAtValue * 1000).toISOString()
+    : String(createdAtValue ?? "");
+
+  return {
+    id: String(apiPost.id),
+    type: apiPost.type === "app" ? "app" : "report",
+    title: String(apiPost.title ?? ""),
+    description: apiPost.description ?? undefined,
+    author: {
+      id: String(apiPost.author?.id ?? ""),
+      handle: String(apiPost.author?.handle ?? ""),
+      name: apiPost.author?.name ?? null,
+      avatarUrl: apiPost.author?.avatarUrl ?? null,
+    },
+    capsule,
+    coverKey: apiPost.coverKey ?? null,
+    tags: Array.isArray(apiPost.tags) ? apiPost.tags : [],
+    stats: {
+      runs: Number(apiPost.stats?.runs ?? 0),
+      comments: Number(apiPost.stats?.comments ?? 0),
+      likes: Number(apiPost.stats?.likes ?? 0),
+      remixes: Number(apiPost.stats?.remixes ?? 0),
+    },
+    createdAt,
+  };
+}
+
 export const postsApi = {
   create(input: {
     title: string;
@@ -91,6 +199,9 @@ export const postsApi = {
         tags,
       }),
     });
+  },
+  get(postId: string) {
+    return fetch(`/api/posts/${postId}`);
   },
   list(params: {
     mode: "latest" | "following" | "foryou";
@@ -202,6 +313,12 @@ export const capsulesApi = {
   },
   bundleSrc(capsuleId: string) {
     return `/api/capsules/${capsuleId}/bundle`;
+  },
+  publish(formData: FormData) {
+    return fetch("/api/capsules/publish", {
+      method: "POST",
+      body: formData,
+    });
   },
   importGithub(input: { url: string; branch?: string }) {
     return fetch("/api/import/github", {

@@ -34,3 +34,7 @@ The script performs the three steps the adapter expects:
 3. Reuse that output via `@cloudflare/next-on-pages --skip-build` to produce the `_worker.js` bundle.
 
 When the command completes you will find the worker bundle under `.vercel/output/static/_worker.js`.
+
+## Local development
+
+Run the Worker API and the Next.js app together so `/api/*` requests can proxy to your local Worker. Detailed setup steps, required environment variables, and troubleshooting notes live in [`docs/local-dev.md`](docs/local-dev.md).

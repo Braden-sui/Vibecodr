@@ -5,8 +5,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { FileText, GitFork, MessageCircle } from "lucide-react";
+import { Comments } from "@/components/Comments";
 
 export interface PlayerDrawerProps {
+  postId?: string;
   notes?: string;
   remixInfo?: {
     parentId?: string;
@@ -20,7 +22,8 @@ export interface PlayerDrawerProps {
   }>;
 }
 
-export function PlayerDrawer({ notes, remixInfo, comments = [] }: PlayerDrawerProps) {
+export function PlayerDrawer({ postId, notes, remixInfo, comments = [] }: PlayerDrawerProps) {
+  const staticComments = !postId ? comments : [];
   return (
     <div className="flex h-full flex-col border-l bg-card">
       <Tabs defaultValue="notes" className="flex h-full flex-col">
@@ -36,9 +39,9 @@ export function PlayerDrawer({ notes, remixInfo, comments = [] }: PlayerDrawerPr
           <TabsTrigger value="chat" className="gap-2">
             <MessageCircle className="h-4 w-4" />
             Chat
-            {comments.length > 0 && (
+            {postId == null && staticComments.length > 0 && (
               <span className="ml-1 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
-                {comments.length}
+                {staticComments.length}
               </span>
             )}
           </TabsTrigger>
@@ -98,9 +101,11 @@ export function PlayerDrawer({ notes, remixInfo, comments = [] }: PlayerDrawerPr
 
         {/* Chat Tab */}
         <TabsContent value="chat" className="flex-1 overflow-auto p-4">
-          {comments.length > 0 ? (
+          {postId ? (
+            <Comments postId={postId} className="h-full" />
+          ) : staticComments.length > 0 ? (
             <div className="space-y-4">
-              {comments.map((comment) => (
+              {staticComments.map((comment) => (
                 <div key={comment.id} className="space-y-1">
                   <div className="flex items-center gap-2">
                     <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />

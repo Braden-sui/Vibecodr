@@ -1,15 +1,13 @@
 import { NextRequest } from "next/server";
+import { getWorkerApiBase } from "@/lib/worker-api";
 
 export const runtime = "edge";
 
-function getBase() {
-  return process.env.WORKER_API_BASE || process.env.NEXT_PUBLIC_API_BASE || "https://vibecodr-api.braden-yig.workers.dev";
-}
+const API_BASE = getWorkerApiBase();
 
 async function proxy(req: NextRequest) {
-  const base = getBase();
   const path = req.nextUrl.pathname.replace(/^\/api\/?/, "");
-  const target = `${base}/${path}${req.nextUrl.search}`;
+  const target = `${API_BASE}/${path}${req.nextUrl.search}`;
 
   const headers = new Headers(req.headers);
   headers.delete("host");

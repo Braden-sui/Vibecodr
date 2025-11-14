@@ -7,14 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, Code2, Image as ImageIcon, Link2, Github, Upload, Loader2 } from "lucide-react";
 import { postsApi, capsulesApi } from "@/lib/api";
 import { redirectToSignIn } from "@/lib/client-auth";
 
 export default function ShareVibePage() {
   const [title, setTitle] = useState("");
-  const [selectedOutput, setSelectedOutput] = useState<string>("");
   const [caption, setCaption] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [imageName, setImageName] = useState<string>("");
