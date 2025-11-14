@@ -12,7 +12,6 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  distDir: 'next-dist',
   outputFileTracingRoot: path.resolve(__dirname, '../..'),
 };
 
