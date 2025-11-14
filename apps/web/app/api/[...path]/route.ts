@@ -17,7 +17,7 @@ async function injectClerkAuthHeader(headers: Headers) {
     if (!getToken) {
       return;
     }
-    const token = await getToken();
+    const token = await getToken({ template: "workers" });
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }

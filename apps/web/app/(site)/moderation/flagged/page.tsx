@@ -40,6 +40,10 @@ export default function FlaggedPostsPage() {
   const [items, setItems] = useState<FlaggedItem[]>([]);
 
   useEffect(() => {
+    if (!isModeratorOrAdmin) {
+      return;
+    }
+
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -68,7 +72,7 @@ export default function FlaggedPostsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isModeratorOrAdmin]);
 
   if (!isModeratorOrAdmin) {
     return (
