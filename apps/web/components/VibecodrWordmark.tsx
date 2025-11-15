@@ -33,7 +33,8 @@ export function VibecodrWordmark() {
     });
     setDisplayText(chars.join(""));
 
-    progressRef.current = Math.min(TARGET_TEXT.length, progress + 0.3);
+    // Slow the animation down to ~40% of the original speed.
+    progressRef.current = Math.min(TARGET_TEXT.length, progress + 0.12);
     if (progressRef.current >= TARGET_TEXT.length) {
       stopAnimation();
       setDisplayText(TARGET_TEXT);
