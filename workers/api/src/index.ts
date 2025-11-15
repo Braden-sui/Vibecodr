@@ -54,6 +54,7 @@ import {
 import { syncUser } from "./handlers/users";
 import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
 import { ApiFeedResponseSchema, ApiFeedPostSchema, type ApiFeedPost } from "./contracts";
+import { buildCapsuleSummary } from "./capsule-manifest";
 import { createPostSchema } from "./schema";
 import { incrementUserCounters } from "./handlers/counters";
 
@@ -213,15 +214,91 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     // Filter any bad rows for safety (defense-in-depth)
     const safeRows = (results || []).filter((row: any) => row.author_is_suspended === 0 && row.author_shadow_banned === 0);
 
-    const posts: ApiFeedPost[] = await Promise.all(safeRows.map(async (row: any) => {
-      const [likeCount, commentCount, runCount, remixCount] = await Promise.all([
-        env.DB.prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?").bind(row.id).first(),
-        isMod
-          ? env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?").bind(row.id).first()
-          : env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ? AND (quarantined IS NULL OR quarantined = 0)").bind(row.id).first(),
-        row.capsule_id ? env.DB.prepare("SELECT COUNT(*) as count FROM runs WHERE capsule_id = ?").bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
-        row.capsule_id ? env.DB.prepare("SELECT COUNT(*) as count FROM remixes WHERE parent_capsule_id = ?").bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
+    const postIds = safeRows.map((row: any) => row.id);
+    const capsuleIds = Array.from(
+      new Set(
+        safeRows
+          .map((row: any) => row.capsule_id)
+          .filter((id: string | null | undefined) => !!id)
+      )
+    ) as string[];
+
+    const likesByPost = new Map<string, number>();
+    const commentsByPost = new Map<string, number>();
+    const runsByCapsule = new Map<string, number>();
+    const remixesByCapsule = new Map<string, number>();
+
+    if (postIds.length > 0) {
+      const placeholders = postIds.map(() => "?").join(",");
+
+      const likesQuery = `
+        SELECT post_id, COUNT(*) as count
+        FROM likes
+        WHERE post_id IN (${placeholders})
+        GROUP BY post_id
+      `;
+
+      const commentsBase = `
+        SELECT post_id, COUNT(*) as count
+        FROM comments
+        WHERE post_id IN (${placeholders})
+      `;
+
+      const commentsQuery = isMod
+        ? `${commentsBase}
+           GROUP BY post_id`
+        : `${commentsBase}
+           AND (quarantined IS NULL OR quarantined = 0)
+           GROUP BY post_id`;
+
+      const [likesResult, commentsResult] = await Promise.all([
+        env.DB.prepare(likesQuery).bind(...postIds).all(),
+        env.DB.prepare(commentsQuery).bind(...postIds).all(),
       ]);
+
+      for (const row of likesResult.results || []) {
+        likesByPost.set((row as any).post_id, Number((row as any).count ?? 0));
+      }
+      for (const row of commentsResult.results || []) {
+        commentsByPost.set((row as any).post_id, Number((row as any).count ?? 0));
+      }
+    }
+
+    if (capsuleIds.length > 0) {
+      const placeholders = capsuleIds.map(() => "?").join(",");
+
+      const runsQuery = `
+        SELECT capsule_id, COUNT(*) as count
+        FROM runs
+        WHERE capsule_id IN (${placeholders})
+        GROUP BY capsule_id
+      `;
+
+      const remixesQuery = `
+        SELECT parent_capsule_id, COUNT(*) as count
+        FROM remixes
+        WHERE parent_capsule_id IN (${placeholders})
+        GROUP BY parent_capsule_id
+      `;
+
+      const [runsResult, remixesResult] = await Promise.all([
+        env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
+        env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
+      ]);
+
+      for (const row of runsResult.results || []) {
+        runsByCapsule.set((row as any).capsule_id, Number((row as any).count ?? 0));
+      }
+      for (const row of remixesResult.results || []) {
+        remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
+      }
+    }
+
+    const posts: ApiFeedPost[] = safeRows.map((row: any) => {
+      const runsCount = row.capsule_id ? runsByCapsule.get(row.capsule_id) ?? 0 : 0;
+      const remixCount = row.capsule_id ? remixesByCapsule.get(row.capsule_id) ?? 0 : 0;
+      const commentCount = commentsByPost.get(row.id) ?? 0;
+      const likeCount = likesByPost.get(row.id) ?? 0;
 
       const post = {
         id: row.id,
@@ -240,13 +317,16 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
           isFeatured: row.author_is_featured === 1,
           plan: row.author_plan || "free",
         },
-        capsule: row.capsule_id ? { id: row.capsule_id, ...JSON.parse(row.manifest_json) } : null,
+        capsule: buildCapsuleSummary(row.capsule_id, row.manifest_json, {
+          source: "feed",
+          postId: row.id,
+        }),
         createdAt: row.created_at,
         stats: {
-          runs: runCount?.count || 0,
-          comments: commentCount?.count || 0,
-          likes: likeCount?.count || 0,
-          remixes: remixCount?.count || 0,
+          runs: runsCount,
+          comments: commentCount,
+          likes: likeCount,
+          remixes: remixCount,
         },
       } as any;
 
@@ -268,7 +348,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       }
 
       return post;
-    }));
+    });
 
     // Re-rank For You by score if present
     let finalPosts = posts;
@@ -369,7 +449,10 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         isFeatured: row.author_is_featured === 1,
         plan: row.author_plan || "free",
       },
-      capsule: row.capsule_id ? { id: row.capsule_id, ...JSON.parse(row.manifest_json) } : null,
+      capsule: buildCapsuleSummary(row.capsule_id, row.manifest_json, {
+        source: "post",
+        postId: row.id,
+      }),
       createdAt: row.created_at,
       stats: {
         runs: (runCount as any)?.count || 0,

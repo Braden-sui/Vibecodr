@@ -1,5 +1,6 @@
 import type { Env } from "../index";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
+import { requireCapsuleManifest } from "../capsule-manifest";
 import {
   uploadCapsuleBundle,
   verifyCapsuleIntegrity,
@@ -264,7 +265,10 @@ export const getCapsule: Handler = async (req, env, ctx, params) => {
     return json({
       id: capsule.id,
       ownerId: capsule.owner_id,
-      manifest: JSON.parse(capsule.manifest_json as string),
+      manifest: requireCapsuleManifest(capsule.manifest_json, {
+        source: "getCapsule",
+        capsuleId,
+      }),
       contentHash,
       createdAt: capsule.created_at,
       metadata,

@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS posts (
   report_md TEXT,
   cover_key TEXT,
   quarantined INTEGER DEFAULT 0,
+  likes_count INTEGER DEFAULT 0,
+  comments_count INTEGER DEFAULT 0,
+  runs_count INTEGER DEFAULT 0,
+  remixes_count INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 

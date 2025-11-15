@@ -4,6 +4,7 @@
 import type { Handler, Env } from "../index";
 import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
 import { ApiUserProfileResponseSchema, ApiUserPostsResponseSchema } from "../contracts";
+import { buildCapsuleSummary } from "../capsule-manifest";
 
 type Params = Record<string, string>;
 
@@ -127,17 +128,92 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
 
     const { results } = await env.DB.prepare(query).bind(user.id, limit, offset).all();
 
-    // Get stats for each post
-    const posts = await Promise.all((results || []).map(async (row: any) => {
-      const [likeCount, commentCount, remixCount] = await Promise.all([
-        env.DB.prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?")
-          .bind(row.id).first(),
-        env.DB.prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?")
-          .bind(row.id).first(),
-        row.capsule_id ? env.DB.prepare(`
-          SELECT COUNT(*) as count FROM remixes WHERE parent_capsule_id = ?
-        `).bind(row.capsule_id).first() : Promise.resolve({ count: 0 }),
+    const rows = results || [];
+    const postIds = rows.map((row: any) => row.id);
+    const capsuleIds = Array.from(
+      new Set(
+        rows
+          .map((row: any) => row.capsule_id)
+          .filter((id: string | null | undefined) => !!id)
+      )
+    ) as string[];
+
+    const likesByPost = new Map<string, number>();
+    const commentsByPost = new Map<string, number>();
+    const runsByCapsule = new Map<string, number>();
+    const remixesByCapsule = new Map<string, number>();
+
+    if (postIds.length > 0) {
+      const placeholders = postIds.map(() => "?").join(",");
+
+      const likesQuery = `
+        SELECT post_id, COUNT(*) as count
+        FROM likes
+        WHERE post_id IN (${placeholders})
+        GROUP BY post_id
+      `;
+
+      const commentsBase = `
+        SELECT post_id, COUNT(*) as count
+        FROM comments
+        WHERE post_id IN (${placeholders})
+      `;
+
+      const commentsQuery = isMod
+        ? `${commentsBase}
+           GROUP BY post_id`
+        : `${commentsBase}
+           AND (quarantined IS NULL OR quarantined = 0)
+           GROUP BY post_id`;
+
+      const [likesResult, commentsResult] = await Promise.all([
+        env.DB.prepare(likesQuery).bind(...postIds).all(),
+        env.DB.prepare(commentsQuery).bind(...postIds).all(),
       ]);
+
+      for (const row of likesResult.results || []) {
+        likesByPost.set((row as any).post_id, Number((row as any).count ?? 0));
+      }
+      for (const row of commentsResult.results || []) {
+        commentsByPost.set((row as any).post_id, Number((row as any).count ?? 0));
+      }
+    }
+
+    if (capsuleIds.length > 0) {
+      const placeholders = capsuleIds.map(() => "?").join(",");
+
+      const runsQuery = `
+        SELECT capsule_id, COUNT(*) as count
+        FROM runs
+        WHERE capsule_id IN (${placeholders})
+        GROUP BY capsule_id
+      `;
+
+      const remixesQuery = `
+        SELECT parent_capsule_id, COUNT(*) as count
+        FROM remixes
+        WHERE parent_capsule_id IN (${placeholders})
+        GROUP BY parent_capsule_id
+      `;
+
+      const [runsResult, remixesResult] = await Promise.all([
+        env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
+        env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
+      ]);
+
+      for (const row of runsResult.results || []) {
+        runsByCapsule.set((row as any).capsule_id, Number((row as any).count ?? 0));
+      }
+      for (const row of remixesResult.results || []) {
+        remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
+      }
+    }
+
+    const posts = rows.map((row: any) => {
+      const likeCount = likesByPost.get(row.id) ?? 0;
+      const commentCount = commentsByPost.get(row.id) ?? 0;
+      const runsCount = row.capsule_id ? runsByCapsule.get(row.capsule_id) ?? 0 : 0;
+      const remixCount = row.capsule_id ? remixesByCapsule.get(row.capsule_id) ?? 0 : 0;
 
       return {
         id: row.id,
@@ -145,19 +221,19 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         title: row.title,
         description: row.description,
         tags: row.tags ? JSON.parse(row.tags) : [],
-        capsule: row.capsule_id ? {
-          id: row.capsule_id,
-          ...JSON.parse(row.manifest_json),
-        } : null,
+        capsule: buildCapsuleSummary(row.capsule_id, row.manifest_json, {
+          source: "profilePosts",
+          postId: row.id,
+        }),
         createdAt: row.created_at,
         stats: {
-          likes: likeCount?.count || 0,
-          comments: commentCount?.count || 0,
-          remixes: remixCount?.count || 0,
-          runs: 0, // TODO: Get from runs table
+          likes: likeCount,
+          comments: commentCount,
+          remixes: remixCount,
+          runs: runsCount,
         },
       };
-    }));
+    });
 
     const payload = { posts, limit, offset };
     const parsed = ApiUserPostsResponseSchema.parse(payload);

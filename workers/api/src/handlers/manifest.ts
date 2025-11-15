@@ -1,5 +1,6 @@
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import type { Env } from "../index";
+import { requireCapsuleManifest } from "../capsule-manifest";
 import { getCapsuleKey } from "../storage/r2";
 
 type Handler = (
@@ -92,7 +93,10 @@ export const getManifest: Handler = async (_req, env, _ctx, params) => {
     }
 
     // Fallback to manifest stored in D1
-    const manifest = JSON.parse(row.manifest_json as string);
+    const manifest = requireCapsuleManifest(row.manifest_json, {
+      source: "manifestFallback",
+      capsuleId,
+    });
     return json({ manifest });
   } catch (error) {
     return json(
@@ -136,7 +140,10 @@ export const getCapsuleBundle: Handler = async (_req, env, _ctx, params) => {
     if (manifestObj) {
       manifest = await manifestObj.json<Manifest>();
     } else {
-      manifest = JSON.parse(row.manifest_json as string) as Manifest;
+      manifest = requireCapsuleManifest(row.manifest_json, {
+        source: "bundleFallback",
+        capsuleId,
+      });
     }
 
     // Get the entry file using the content hash prefix

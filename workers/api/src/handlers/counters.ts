@@ -59,10 +59,41 @@ export async function incrementUserCounters(
 
 // Placeholder for future post metrics denormalization. Currently stats are derived in queries.
 export async function incrementPostStats(
-  _env: Env,
-  _postId: string,
-  _deltas: { likesDelta?: number; commentsDelta?: number; runsDelta?: number; remixesDelta?: number }
+  env: Env,
+  postId: string,
+  deltas: { likesDelta?: number; commentsDelta?: number; runsDelta?: number; remixesDelta?: number }
 ): Promise<void> {
-  // No-op: posts table has no denormalized counters. Kept for future use.
-  return;
+  const updates: string[] = [];
+  const binds: any[] = [];
+
+  if (typeof deltas.likesDelta === "number" && deltas.likesDelta !== 0) {
+    updates.push(`likes_count = ${clampDelta("likes_count", "?")}`);
+    binds.push(deltas.likesDelta);
+  }
+  if (typeof deltas.commentsDelta === "number" && deltas.commentsDelta !== 0) {
+    updates.push(`comments_count = ${clampDelta("comments_count", "?")}`);
+    binds.push(deltas.commentsDelta);
+  }
+  if (typeof deltas.runsDelta === "number" && deltas.runsDelta !== 0) {
+    updates.push(`runs_count = ${clampDelta("runs_count", "?")}`);
+    binds.push(deltas.runsDelta);
+  }
+  if (typeof deltas.remixesDelta === "number" && deltas.remixesDelta !== 0) {
+    updates.push(`remixes_count = ${clampDelta("remixes_count", "?")}`);
+    binds.push(deltas.remixesDelta);
+  }
+
+  if (updates.length === 0) return;
+
+  try {
+    await env.DB.prepare(`UPDATE posts SET ${updates.join(", ")} WHERE id = ?`)
+      .bind(...binds, postId)
+      .run();
+  } catch (err) {
+    console.error("E-API-0012 incrementPostStats failed", {
+      postId,
+      deltas,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }

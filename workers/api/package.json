@@ -18,7 +18,10 @@
     "d1:apply": "pnpm run d1:apply:remote && pnpm run d1:apply:local",
     "d1:seed:local": "wrangler d1 execute vibecodr-d1 --local --file ./src/seed-dev.sql",
     "d1:seed:remote": "wrangler d1 execute vibecodr-d1 --remote --file ./src/seed-dev.sql",
-    "d1:seed": "pnpm run d1:seed:local && pnpm run d1:seed:remote"
+    "d1:seed": "pnpm run d1:seed:local && pnpm run d1:seed:remote",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "drizzle-orm": "^0.33.0",

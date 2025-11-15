@@ -63,6 +63,10 @@ export const posts = sqliteTable("posts", {
   visibility: text("visibility", { enum: ["public", "unlisted", "private"] })
     .notNull()
     .default("public"),
+  likesCount: integer("likes_count").default(0),
+  commentsCount: integer("comments_count").default(0),
+  runsCount: integer("runs_count").default(0),
+  remixesCount: integer("remixes_count").default(0),
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 

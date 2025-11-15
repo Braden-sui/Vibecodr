@@ -442,7 +442,7 @@ async function generateManifest(
   }
 
   return {
-    version: "1",
+    version: "1.0",
     runner: "client-static",
     entry: analysis.entryPoint,
     title: "Imported Capsule",

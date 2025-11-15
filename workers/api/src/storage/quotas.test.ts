@@ -46,7 +46,8 @@ describe("Quota Enforcement", () => {
     it("should reject bundle exceeding FREE tier limit", () => {
       const result = checkBundleSize(Plan.FREE, 30 * 1024 * 1024); // 30 MB
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain("Bundle size exceeds");
+      expect(result.reason).toContain("Bundle size");
+      expect(result.reason).toContain("exceeds plan limit");
     });
 
     it("should allow larger bundles on PRO tier", () => {
@@ -61,7 +62,7 @@ describe("Quota Enforcement", () => {
 
     it("should include upgrade suggestion when exceeding", () => {
       const result = checkBundleSize(Plan.FREE, 30 * 1024 * 1024);
-      expect(result.reason).toContain("PRO");
+      expect(result.reason).toMatch(/Creator/i);
     });
   });
 
@@ -80,14 +81,14 @@ describe("Quota Enforcement", () => {
       const result = checkStorageQuota(Plan.FREE, currentUsage, additionalSize);
 
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain("Storage quota exceeded");
+      expect(result.reason).toContain("Storage limit exceeded");
     });
 
     it("should calculate correct percentUsed", () => {
-      const currentUsage = 750 * 1024 * 1024; // 750 MB (75%)
+      const currentUsage = 750 * 1024 * 1024; // 750 MB (73%)
       const result = checkStorageQuota(Plan.FREE, currentUsage, 0);
 
-      expect(result.percentUsed).toBeCloseTo(75, 0);
+      expect(result.percentUsed).toBeCloseTo(73, 0);
     });
   });
 

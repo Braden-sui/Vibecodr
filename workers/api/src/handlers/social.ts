@@ -372,6 +372,16 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(commentId, postId, userId, commentBody.trim(), atMs || null, bbox || null).run();
 
+    // Best-effort: update post comment stats and ignore failures
+    incrementPostStats(env, postId, { commentsDelta: 1 }).catch((err: unknown) => {
+      console.error("E-API-0013 createComment counter update failed", {
+        postId,
+        userId,
+        commentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
     // Create notification for post author (but not if commenting on own post)
     if (post.author_id !== userId) {
       const notifId = generateId();
@@ -480,12 +490,12 @@ export const deleteComment: Handler = requireUser(async (req, env, ctx, params, 
 
   try {
     // Check if comment exists and user is author or post author
-    const row = await env.DB.prepare(
-      `SELECT c.user_id as comment_user_id, p.author_id as post_author_id
+    const row = (await env.DB.prepare(
+      `SELECT c.user_id as comment_user_id, c.post_id as post_id, p.author_id as post_author_id
        FROM comments c
        INNER JOIN posts p ON c.post_id = p.id
        WHERE c.id = ?`
-    ).bind(commentId).first();
+    ).bind(commentId).first()) as any;
 
     if (!row) {
       return json({ error: "Comment not found" }, 404);
@@ -496,6 +506,17 @@ export const deleteComment: Handler = requireUser(async (req, env, ctx, params, 
     }
 
     await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
+
+    try {
+      incrementPostStats(env, row.post_id, { commentsDelta: -1 }).catch((err: unknown) => {
+        console.error("E-API-0014 deleteComment counter update failed", {
+          commentId,
+          postId: row.post_id,
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch {}
 
     return json({ ok: true });
   } catch (error) {

@@ -2,6 +2,8 @@
 // References: research-sandbox-and-runner.md (Capability Model)
 
 import type { Handler } from "../index";
+import { requireUser } from "../auth";
+import { requireCapsuleManifest } from "../capsule-manifest";
 
 interface RateLimitState {
   count: number;
@@ -124,7 +126,10 @@ export const netProxy: Handler = async (req, env) => {
       return json({ error: "Capsule not found" }, 404);
     }
 
-    const manifest = JSON.parse(capsule.manifest_json);
+    const manifest = requireCapsuleManifest(capsule.manifest_json, {
+      source: "proxyAllowlist",
+      capsuleId,
+    });
     const allowlist: string[] = manifest.capabilities?.net || [];
 
     // Check if host is allowed
@@ -159,11 +164,11 @@ export const netProxy: Handler = async (req, env) => {
 
     // Copy safe headers from original request
     const allowedHeaders = ["accept", "accept-language", "content-type", "user-agent"];
-    for (const [key, value] of req.headers.entries()) {
+    req.headers.forEach((value, key) => {
       if (allowedHeaders.includes(key.toLowerCase())) {
         proxyHeaders.set(key, value);
       }
-    }
+    });
 
     // Add proxy identification header
     proxyHeaders.set("X-Forwarded-By", "Vibecodr-Proxy");
@@ -187,11 +192,11 @@ export const netProxy: Handler = async (req, env) => {
       "etag",
     ];
 
-    for (const [key, value] of proxyResponse.headers.entries()) {
+    proxyResponse.headers.forEach((value, key) => {
       if (safeResponseHeaders.includes(key.toLowerCase())) {
         responseHeaders.set(key, value);
       }
-    }
+    });
 
     // Add CORS headers
     responseHeaders.set("Access-Control-Allow-Origin", "*");

@@ -12,6 +12,9 @@
     "typecheck": {
       "dependsOn": ["^typecheck"]
     },
+    "test:unit": {
+      "dependsOn": ["^test:unit"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

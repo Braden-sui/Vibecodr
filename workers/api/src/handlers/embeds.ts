@@ -104,9 +104,20 @@ export const oEmbedHandler: Handler = async (req, env) => {
 export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
   const postId = params.p1;
 
+  type EmbedPostRow = {
+    id: string;
+    type: string;
+    title: string;
+    description: string | null;
+    capsule_id: string | null;
+    manifest_json: string | null;
+    author_handle: string | null;
+    author_name: string | null;
+  };
+
   try {
     // Fetch post details
-    const post = await env.DB.prepare(`
+    const post = (await env.DB.prepare(`
       SELECT
         p.id, p.type, p.title, p.description, p.capsule_id,
         c.manifest_json,
@@ -115,7 +126,7 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
       INNER JOIN users u ON p.author_id = u.id
       LEFT JOIN capsules c ON p.capsule_id = c.id
       WHERE p.id = ?
-    `).bind(postId).first();
+    `).bind(postId).first()) as EmbedPostRow | null;
 
     if (!post) {
       return new Response("Post not found", { status: 404 });
@@ -231,14 +242,19 @@ function escapeHtml(text: string): string {
 export const ogImageHandler: Handler = async (req, env, ctx, params) => {
   const postId = params.p1;
 
+  type OgImageRow = {
+    title: string;
+    author_handle: string;
+  };
+
   try {
     // Fetch post details
-    const post = await env.DB.prepare(`
+    const post = (await env.DB.prepare(`
       SELECT p.title, u.handle as author_handle
       FROM posts p
       INNER JOIN users u ON p.author_id = u.id
       WHERE p.id = ?
-    `).bind(postId).first();
+    `).bind(postId).first()) as OgImageRow | null;
 
     if (!post) {
       return new Response("Post not found", { status: 404 });
