@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render } from "@testing-library/react";
+import { act } from "react-dom/test-utils";
 import { PlayerIframe } from "../Player/PlayerIframe";
 
 describe("PlayerIframe", () => {
@@ -39,18 +40,24 @@ describe("PlayerIframe", () => {
     render(<PlayerIframe capsuleId="capsule1" />);
 
     // Simulate the iframe reporting that it is ready
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        data: { type: "ready", payload: {} },
-      })
-    );
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "ready", payload: {} },
+        })
+      );
+    });
 
-    Object.defineProperty(document, "hidden", { configurable: true, value: true });
-    document.dispatchEvent(new Event("visibilitychange"));
+    act(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
 
-    Object.defineProperty(document, "hidden", { configurable: true, value: false });
-    document.dispatchEvent(new Event("visibilitychange"));
+    act(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
   });
 });

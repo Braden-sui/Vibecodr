@@ -15,7 +15,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:performance": "playwright test e2e/performance.spec.ts",
     "test:coverage": "turbo run test:coverage",
-    "cf:build": "pnpm --dir apps/web dlx vercel@47.0.4 build && rm -rf .vercel/output/functions/_not-found.func && ln -sfn apps/web/.next .next && pnpm dlx @cloudflare/next-on-pages@1 --skip-build"
+    "cf:build": "pnpm --dir apps/web dlx vercel@47.0.4 build && rm -rf .vercel/output/functions/_not-found.func && ln -sfn apps/web/.next .next && pnpm dlx @cloudflare/next-on-pages@1 --skip-build",
+    "check:runtime-assets": "turbo run runtime-assets:check"
   },
   "devDependencies": {
     "@types/node": "^20.19.25",
@@ -33,7 +34,7 @@
     "packages/*"
   ],
   "dependencies": {
-    "posthog-js": "^1.290.0",
+    "posthog-js": "^1.293.0",
     "posthog-node": "^5.11.2"
   }
 }

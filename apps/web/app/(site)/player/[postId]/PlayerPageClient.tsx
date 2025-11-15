@@ -260,6 +260,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
               <PlayerIframe
                 ref={iframeHandleRef}
                 capsuleId={post.capsule.id}
+                artifactId={post.capsule.artifactId ?? undefined}
                 params={capsuleParams}
                 onReady={() => {
                   setIsRunning(true);

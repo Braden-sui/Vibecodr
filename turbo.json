@@ -15,6 +15,9 @@
     "test:unit": {
       "dependsOn": ["^test:unit"]
     },
+    "runtime-assets:check": {
+      "dependsOn": ["^runtime-assets:check"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

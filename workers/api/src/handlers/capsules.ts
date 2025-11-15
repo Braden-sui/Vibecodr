@@ -15,6 +15,8 @@ import {
 } from "../storage/quotas";
 import { requireAuth, type AuthenticatedUser } from "../auth";
 import { incrementUserCounters } from "./counters";
+import { buildRuntimeManifest, type RuntimeArtifactType } from "../runtime/runtimeManifest";
+import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
 
 type Handler = (
   req: Request,
@@ -100,6 +102,43 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     });
     totalSize += manifestBytes.byteLength;
 
+    // HTML entry sanitization: run compileHtmlArtifact before quota checks and upload.
+    const entryPath = manifest.entry;
+    const entryFile = files.find((f) => f.path === entryPath);
+    const isHtmlEntry =
+      typeof entryPath === "string" &&
+      (entryPath.toLowerCase().endsWith(".html") || entryPath.toLowerCase().endsWith(".htm"));
+
+    if (entryFile && isHtmlEntry) {
+      const decoder = new TextDecoder();
+      const originalHtml =
+        typeof entryFile.content === "string"
+          ? entryFile.content
+          : decoder.decode(entryFile.content as ArrayBuffer);
+
+      const htmlResult = compileHtmlArtifact({ html: originalHtml });
+      if (!htmlResult.ok) {
+        return json(
+          {
+            error: "Invalid HTML artifact",
+            code: htmlResult.errorCode,
+            message: htmlResult.message,
+            details: htmlResult.details,
+          },
+          400
+        );
+      }
+
+      const encoder = new TextEncoder();
+      const sanitizedBytes = encoder.encode(htmlResult.html);
+
+      // Adjust total size to reflect sanitized entry content.
+      totalSize -= entryFile.size;
+      entryFile.content = sanitizedBytes.buffer as ArrayBuffer;
+      entryFile.size = sanitizedBytes.byteLength;
+      totalSize += entryFile.size;
+    }
+
     // Check quotas
     const userPlan = await getUserPlan(user.userId, env);
 
@@ -173,6 +212,94 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
       )
         .bind(crypto.randomUUID(), capsuleId, file.path, file.size)
         .run();
+    }
+
+    if (
+      env.RUNTIME_ARTIFACTS_ENABLED &&
+      env.RUNTIME_ARTIFACTS_ENABLED !== "false" &&
+      manifest.runner === "client-static"
+    ) {
+      try {
+        const artifactId = crypto.randomUUID();
+
+        const artifactType: RuntimeArtifactType =
+          manifest.entry.toLowerCase().endsWith(".html") ||
+          manifest.entry.toLowerCase().endsWith(".htm")
+            ? "html"
+            : "react-jsx";
+
+        const runtimeVersion = "v0.1.0";
+        const bundleR2Key = `capsules/${uploadResult.contentHash}/${manifest.entry}`;
+        const entryFile = files.find((f) => f.path === manifest.entry);
+        const bundleSizeBytes = entryFile?.size ?? uploadResult.totalSize;
+
+        const runtimeManifest = buildRuntimeManifest({
+          artifactId,
+          type: artifactType,
+          bundleKey: bundleR2Key,
+          bundleSizeBytes,
+          bundleDigest: uploadResult.contentHash,
+          runtimeVersion,
+        });
+
+        const runtimeManifestJson = JSON.stringify(runtimeManifest);
+        const runtimeManifestBytes = new TextEncoder().encode(runtimeManifestJson);
+        const runtimeManifestSize = runtimeManifestBytes.byteLength;
+        const runtimeManifestKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
+
+        await env.R2.put(runtimeManifestKey, runtimeManifestJson, {
+          httpMetadata: {
+            contentType: "application/json",
+          },
+        });
+
+        await env.DB.prepare(
+          "INSERT INTO artifacts (id, owner_id, capsule_id, type, runtime_version, bundle_digest) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+          .bind(
+            artifactId,
+            user.userId,
+            capsuleId,
+            artifactType,
+            runtimeVersion,
+            runtimeManifest.bundle.digest
+          )
+          .run();
+
+        const artifactManifestId = crypto.randomUUID();
+        await env.DB.prepare(
+          "INSERT INTO artifact_manifests (id, artifact_id, version, manifest_json, size_bytes, runtime_version) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+          .bind(
+            artifactManifestId,
+            artifactId,
+            1,
+            runtimeManifestJson,
+            runtimeManifestSize,
+            runtimeVersion
+          )
+          .run();
+
+        if (env.RUNTIME_MANIFEST_KV) {
+          try {
+            const kvKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
+            await env.RUNTIME_MANIFEST_KV.put(kvKey, runtimeManifestJson);
+          } catch (kvErr) {
+            console.error("runtime manifest KV write failed", {
+              capsuleId,
+              artifactId,
+              userId: user.userId,
+              error: kvErr instanceof Error ? kvErr.message : String(kvErr),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("artifact creation failed", {
+          capsuleId,
+          userId: user.userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     // Optional remix tracking

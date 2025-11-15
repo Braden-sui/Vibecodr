@@ -11,7 +11,7 @@ describe("ShareVibePage", () => {
   it("renders header and core fields", () => {
     render(<ShareVibePage />);
 
-    expect(screen.getByText(/Share a vibe/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /Share a vibe/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Vibe title/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Vibe text/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Share vibe/i })).toBeInTheDocument();

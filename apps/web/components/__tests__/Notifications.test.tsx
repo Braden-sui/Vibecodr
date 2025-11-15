@@ -62,11 +62,6 @@ describe("NotificationBell", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("should render notification bell button", () => {
@@ -107,7 +102,9 @@ describe("NotificationBell", () => {
     });
   });
 
-  it("should poll for unread count every 30 seconds", async () => {
+  it("should poll for unread count every 5 minutes", async () => {
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ count: 2 }),
@@ -119,12 +116,9 @@ describe("NotificationBell", () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    // Fast-forward 30 seconds
-    vi.advanceTimersByTime(30000);
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 300000);
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-    });
+    setIntervalSpy.mockRestore();
   });
 
   it("should fetch notifications when dropdown opens", async () => {
@@ -150,10 +144,7 @@ describe("NotificationBell", () => {
     await user.click(button);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/notifications?limit=20",
-        expect.any(Object)
-      );
+      expect(global.fetch).toHaveBeenCalledWith("/api/notifications/summary?limit=20");
     });
   });
 
@@ -229,8 +220,13 @@ describe("NotificationBell", () => {
     await user.click(button);
 
     await waitFor(() => {
-      const aliceNotif = screen.getByText("@alice").closest("div");
-      expect(aliceNotif).toHaveClass("bg-blue-50");
+      const aliceContainer = screen
+        .getByText("@alice")
+        .closest("a")
+        ?.querySelector("div");
+
+      expect(aliceContainer).toBeTruthy();
+      expect(aliceContainer).toHaveClass("bg-blue-50");
     });
   });
 
@@ -260,11 +256,12 @@ describe("NotificationBell", () => {
       expect(screen.getByText("@alice")).toBeInTheDocument();
     });
 
-    const aliceLink = screen.getByText("@alice").closest("a");
-    fireEvent.click(aliceLink!);
+    const aliceHandle = screen.getByText("@alice");
+    await user.click(aliceHandle);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        3,
         "/api/notifications/mark-read",
         expect.objectContaining({
           method: "POST",

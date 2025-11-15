@@ -47,6 +47,54 @@ export const assets = sqliteTable("assets", {
   size: integer("size").notNull(),
 });
 
+// Artifacts table - runtime artifacts linked to capsules
+export const artifacts = sqliteTable("artifacts", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id")
+    .notNull()
+    .references(() => users.id),
+  capsuleId: text("capsule_id")
+    .notNull()
+    .references(() => capsules.id),
+  // Logical runtime type for this artifact (e.g., react-jsx, html, etc.)
+  type: text("type").notNull(),
+  runtimeVersion: text("runtime_version"),
+  bundleDigest: text("bundle_digest").notNull(),
+  status: text("status", { enum: ["active", "quarantined", "removed", "draft"] })
+    .notNull()
+    .default("active"),
+  visibility: text("visibility", { enum: ["public", "unlisted", "private"] })
+    .notNull()
+    .default("public"),
+  policyStatus: text("policy_status", { enum: ["active", "quarantined", "removed"] })
+    .notNull()
+    .default("active"),
+  safetyTier: text("safety_tier").notNull().default("default"),
+  riskScore: integer("risk_score").notNull().default(0),
+  lastReviewedAt: integer("last_reviewed_at", { mode: "timestamp" }),
+  lastReviewedBy: text("last_reviewed_by").references(() => users.id),
+  deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  deletedBy: text("deleted_by").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`
+  ),
+});
+
+// Artifact manifests table - versioned runtime manifests per artifact
+export const artifactManifests = sqliteTable("artifact_manifests", {
+  id: text("id").primaryKey(),
+  artifactId: text("artifact_id")
+    .notNull()
+    .references(() => artifacts.id),
+  version: integer("version").notNull(),
+  manifestJson: text("manifest_json").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  runtimeVersion: text("runtime_version"),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`
+  ),
+});
+
 // Posts table - feed items (can be app or report)
 export const posts = sqliteTable("posts", {
   id: text("id").primaryKey(),

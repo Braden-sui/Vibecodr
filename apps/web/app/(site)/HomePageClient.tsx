@@ -349,11 +349,11 @@ export default function FeedPage() {
             renderTimeline()
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-12 text-center">
-              <p className="text-lg font-semibold">Follow makers to personalize this lane.</p>
+              <p className="text-lg font-semibold">Follow other Vibecoders to personalize this lane.</p>
               <p className="text-sm text-muted-foreground">
-                Once you follow a vibe author their new posts land here automatically.
+                Once you follow a creator, their new posts land here automatically.
               </p>
-              <Button variant="outline">Discover makers</Button>
+              <Button variant="outline">Discover Vibecoders</Button>
             </div>
           )}
         </TabsContent>

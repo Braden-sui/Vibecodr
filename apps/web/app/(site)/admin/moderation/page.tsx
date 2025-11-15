@@ -133,9 +133,18 @@ export default function ModerationQueue() {
         return;
       }
 
-      const data = await res.json().catch(() => null);
+      const data = (await res.json().catch(() => null)) as
+        | { error?: unknown; message?: unknown }
+        | null;
       if (!res.ok) {
-        const message = (data && ((data as any).error || (data as any).message)) || "Failed to resolve report";
+        const message =
+          (data &&
+            (typeof data.error === "string"
+              ? data.error
+              : typeof data.message === "string"
+                ? data.message
+                : null)) ||
+          "Failed to resolve report";
         toast({
           title: "Action failed",
           description: message,

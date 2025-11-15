@@ -4,11 +4,14 @@
 export interface Env {
   DB: D1Database;
   R2: R2Bucket;
+  RUNTIME_MANIFEST_KV?: KVNamespace;
   ALLOWLIST_HOSTS: string; // JSON string
   CLERK_JWT_ISSUER: string;
   CLERK_JWT_AUDIENCE?: string;
   BUILD_COORDINATOR_DURABLE: DurableObjectNamespace;
+  ARTIFACT_COMPILER_DURABLE: DurableObjectNamespace;
   vibecodr_analytics_engine: AnalyticsEngineDataset;
+  RUNTIME_ARTIFACTS_ENABLED?: string;
 }
 
 export type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;
@@ -77,7 +80,9 @@ import {
   ogImageHandler,
 } from "./handlers/embeds";
 import { completeRun } from "./handlers/runs";
+import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest } from "./handlers/artifacts";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
+export { ArtifactCompiler } from "./durable/ArtifactCompiler";
 
 async function appendRunLogs(_req: Request, _env: Env, _ctx: ExecutionContext, params: Record<string, string>): Promise<Response> {
   return json({ ok: false, runId: params.p1, todo: "logs not implemented" }, 501);
@@ -432,6 +437,28 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         : Promise.resolve({ count: 0 }),
     ]);
 
+    let artifactIdForCapsule: string | null = null;
+    if (row.capsule_id) {
+      const artifactRow = await env.DB.prepare(
+        "SELECT id FROM artifacts WHERE capsule_id = ? AND status = 'active' AND policy_status = 'active' AND visibility IN ('public','unlisted') ORDER BY created_at DESC LIMIT 1"
+      )
+        .bind(row.capsule_id)
+        .first();
+
+      if (artifactRow && (artifactRow as any).id) {
+        artifactIdForCapsule = String((artifactRow as any).id);
+      }
+    }
+
+    const capsuleSummary = buildCapsuleSummary(row.capsule_id, row.manifest_json, {
+      source: "post",
+      postId: row.id,
+    });
+
+    if (capsuleSummary && artifactIdForCapsule) {
+      (capsuleSummary as any).artifactId = artifactIdForCapsule;
+    }
+
     const post: ApiFeedPost = {
       id: row.id,
       type: row.type,
@@ -449,10 +476,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         isFeatured: row.author_is_featured === 1,
         plan: row.author_plan || "free",
       },
-      capsule: buildCapsuleSummary(row.capsule_id, row.manifest_json, {
-        source: "post",
-        postId: row.id,
-      }),
+      capsule: capsuleSummary,
       createdAt: row.created_at,
       stats: {
         runs: (runCount as any)?.count || 0,
@@ -563,6 +587,12 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   // Allow both /import/github and /capsules/import/github for compatibility
   { method: "POST", pattern: /^\/(?:capsules\/)?import\/github$/, handler: importGithub },
   { method: "POST", pattern: /^\/import\/zip$/, handler: importZip },
+
+  // Artifacts
+  { method: "POST", pattern: /^\/artifacts$/, handler: createArtifactUpload },
+  { method: "PUT", pattern: /^\/artifacts\/([^\/]+)\/sources$/, handler: uploadArtifactSources },
+  { method: "PUT", pattern: /^\/artifacts\/([^\/]+)\/complete$/, handler: completeArtifact },
+  { method: "GET", pattern: /^\/artifacts\/([^\/]+)\/manifest$/, handler: getArtifactManifest },
 
   // Capsules
   { method: "POST", pattern: /^\/capsules\/publish$/, handler: publishCapsule },

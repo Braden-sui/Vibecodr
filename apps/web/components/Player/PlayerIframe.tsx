@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { capsulesApi } from "@/lib/api";
+import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 
 export interface PlayerIframeProps {
   capsuleId: string;
@@ -18,6 +19,7 @@ export interface PlayerIframeProps {
   onReady?: () => void;
   onLog?: (log: { level: string; message: string }) => void;
   onStats?: (stats: { fps: number; memory: number }) => void;
+  artifactId?: string;
 }
 
 export interface PlayerIframeHandle {
@@ -27,7 +29,10 @@ export interface PlayerIframeHandle {
 }
 
 export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
-  function PlayerIframe({ capsuleId, params = {}, onReady, onLog, onStats }, ref) {
+  function PlayerIframe(
+    { capsuleId, params = {}, onReady, onLog, onStats, artifactId },
+    ref
+  ) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
     const [errorMessage, setErrorMessage] = useState<string>("");
@@ -119,6 +124,44 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         sendToIframe("setParams", params);
       }
     }, [params, status, sendToIframe]);
+
+    // Load runtime manifest when an artifactId is provided. If it fails, surface an
+    // error state before attempting to talk to the iframe runtime.
+    useEffect(() => {
+      let cancelled = false;
+
+      if (!artifactId) {
+        // No runtime artifact; rely on legacy capsule bundle path.
+        setStatus("loading");
+        setErrorMessage("");
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      setStatus("loading");
+      setErrorMessage("");
+
+      (async () => {
+        try {
+          await loadRuntimeManifest(artifactId);
+          if (cancelled) return;
+          // Successful manifest load; actual boot still happens via iframe src + bridge.
+        } catch (err) {
+          if (cancelled) return;
+          console.error("[player] runtime manifest load failed", {
+            artifactId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          setStatus("error");
+          setErrorMessage("Failed to load runtime manifest for this artifact.");
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [artifactId]);
 
     useEffect(() => {
       const onVisibility = () => {

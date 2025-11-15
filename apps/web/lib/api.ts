@@ -91,6 +91,7 @@ export type FeedPost = {
       workers?: boolean;
     };
     params?: unknown[];
+    artifactId?: string | null;
   } | null;
   coverKey?: string | null;
   tags?: string[];
@@ -112,6 +113,7 @@ type ApiFeedPostCapsule = {
     workers?: boolean;
   };
   params?: unknown[];
+  artifactId?: string | number | null;
 } | null;
 
 export type ApiFeedPostPayload = {
@@ -145,6 +147,10 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPostPayload): FeedPost 
         runner: (apiPost.capsule.runner || "client-static") as "client-static" | "webcontainer",
         capabilities: apiPost.capsule.capabilities,
         params: apiPost.capsule.params,
+        artifactId:
+          apiPost.capsule.artifactId != null
+            ? String(apiPost.capsule.artifactId)
+            : null,
       }
     : null;
 

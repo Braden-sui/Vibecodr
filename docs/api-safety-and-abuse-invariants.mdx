@@ -209,3 +209,29 @@ When adding or changing an endpoint:
    - If it relies on WAF/rate limits, ensure those rules exist in Cloudflare.
 
 This doc should evolve as we learn more. Any time we discover a new class of abuse or unexpected cost, add it as a scenario and tighten the relevant invariants.
+
+## 9) Runtime Error Code Contract (E-VIBECODR-####)
+
+Runtime, compile, and policy failures that affect users **must** surface structured error codes:
+
+- **Single source of truth**
+  - Canonical definitions live in `packages/shared/src/errors.ts` and are re-exported from the shared package index.
+  - Workers, Next.js, and any iframe/runtime loaders import from the shared module rather than hardcoding codes.
+
+- **Ranges (partial list)**
+  - `E-VIBECODR-11xx`: compile/manifest/runtime setup issues (schema, imports, limits).
+  - `E-VIBECODR-21xx`: runtime execution and sandbox policy violations.
+  - `E-VIBECODR-0xxx/01xx`: core platform, auth, and moderation helpers.
+
+- **API behavior**
+  - When a request fails due to manifest validation, compile limits, or runtime/sandbox enforcement, responses SHOULD include:
+    - `errorCode: "E-VIBECODR-####"`
+    - A concise `message` suitable for UI display.
+    - Optional `details` for logs or developer tooling.
+  - Heavy or abuse-adjacent failures (e.g., quota exceeded, policy block) should prefer a specific E-code over ad-hoc strings.
+
+- **UI expectations**
+  - Player, Feed, and moderation UIs surface the error code and a short explanation, but never stack traces or sensitive payloads.
+  - Error codes are stable; if semantics change, update `errors.ts` and this doc together.
+
+This contract keeps safety and runtime behavior debuggable while aligning with social-app norms (stable public-ish error identifiers, internal detail in logs).

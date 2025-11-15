@@ -3,6 +3,10 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Comments } from "../Comments";
 
+vi.mock("@clerk/nextjs", () => ({
+  useUser: () => ({ user: null, isSignedIn: false }),
+}));
+
 describe("Comments", () => {
   const mockComments = [
     {

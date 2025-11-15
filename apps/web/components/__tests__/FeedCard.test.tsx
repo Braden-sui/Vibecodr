@@ -32,6 +32,8 @@ class MockIntersectionObserver {
   };
 }
 
+let iframePostMessage: ReturnType<typeof vi.fn>;
+
 beforeAll(() => {
   (window as any).__mockIOInstances = [] as MockIntersectionObserver[];
   (window as any).IntersectionObserver = MockIntersectionObserver as any;
@@ -39,10 +41,19 @@ beforeAll(() => {
     configurable: true,
     get() {
       return {
-        postMessage: vi.fn(),
+        postMessage: iframePostMessage,
       } as any;
     },
   });
+});
+
+beforeEach(() => {
+  iframePostMessage = vi.fn();
+  (window as any).__mockIOInstances = [] as MockIntersectionObserver[];
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
 });
 
 afterAll(() => {
@@ -86,42 +97,29 @@ describe("FeedCard", () => {
     expect(screen.getByText("A test application")).toBeInTheDocument();
   });
 
-  it("should gate prewarm concurrency and retry when capacity frees", async () => {
-    vi.useFakeTimers();
-
-    const pending: Array<(v: any) => void> = [];
-    global.fetch = vi.fn(() =>
-      new Promise((resolve) => pending.push(resolve)) as any
-    );
+  it("should not prewarm manifests when cards enter the warm zone", async () => {
+    global.fetch = vi.fn();
 
     const postA = { ...mockPost, id: "postA" };
     const postB = { ...mockPost, id: "postB" };
     const postC = { ...mockPost, id: "postC" };
 
-    render(<><FeedCard post={postA} /><FeedCard post={postB} /><FeedCard post={postC} /></>);
+    render(
+      <>
+        <FeedCard post={postA} />
+        <FeedCard post={postB} />
+        <FeedCard post={postC} />
+      </>
+    );
 
     const viewObservers = ((window as any).__mockIOInstances as MockIntersectionObserver[]).filter(
       (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.35)
     );
 
-    // Warm zone for all three cards (start prewarm)
+    // Enter warm zone for all three cards; implementation should not issue manifest prewarm fetches.
     viewObservers.forEach((obs) => obs.trigger(1.0, true));
 
-    // Only two fetches should be in flight due to MAX_ACTIVE_PREVIEWS=2
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-
-    // Resolve one prewarm to free capacity
-    pending[0]({ ok: true, json: async () => ({}) });
-    await Promise.resolve();
-
-    // Advance retry timer so third can start
-    vi.advanceTimersByTime(200);
-    await Promise.resolve();
-
-    expect(global.fetch).toHaveBeenCalledTimes(3);
-
-    // Cleanup timers
-    vi.useRealTimers();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("should post pause/resume when visibility crosses 30% threshold", async () => {
@@ -143,21 +141,19 @@ describe("FeedCard", () => {
     // Click Run Preview to mount iframe and enable pause/resume observer
     fireEvent.click(screen.getByText("Run Preview"));
 
-    // Find the pause/resume observer (threshold 0.3)
-    const prObserver = (ioInstances.find(
+    // Find the latest pause/resume observer (threshold 0.3)
+    const prCandidates = ioInstances.filter(
       (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.3)
-    ) as MockIntersectionObserver)!;
-
-    const postMessage = (document.querySelector("iframe") as HTMLIFrameElement).contentWindow!
-      .postMessage as unknown as ReturnType<typeof vi.fn>;
+    );
+    const prObserver = prCandidates[prCandidates.length - 1] as MockIntersectionObserver;
 
     // Drop below 30% -> pause
     prObserver.trigger(0.2, false);
-    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
 
     // Back to >=30% -> resume
     prObserver.trigger(0.3, true);
-    expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
   });
 
   it("should pause when tab hidden and resume when visible again", async () => {
@@ -174,17 +170,14 @@ describe("FeedCard", () => {
     await waitFor(() => expect(screen.getByText("Run Preview")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Run Preview"));
 
-    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
-    const postMessage = iframe.contentWindow!.postMessage as unknown as ReturnType<typeof vi.fn>;
-
     const hiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
     Object.defineProperty(document, "hidden", { configurable: true, value: true });
     document.dispatchEvent(new Event("visibilitychange"));
-    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
 
     Object.defineProperty(document, "hidden", { configurable: true, value: false });
     document.dispatchEvent(new Event("visibilitychange"));
-    expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
 
     // restore
     if (hiddenDescriptor) Object.defineProperty(document, "hidden", hiddenDescriptor);
@@ -226,7 +219,7 @@ describe("FeedCard", () => {
 
     render(<FeedCard post={mockPost} />);
 
-    const likeButton = screen.getAllByRole("button")[0]; // First button is like
+    const likeButton = screen.getByRole("button", { name: "10" });
     fireEvent.click(likeButton);
 
     await waitFor(() => {
@@ -251,14 +244,15 @@ describe("FeedCard", () => {
   it("should show remix button for app type", () => {
     render(<FeedCard post={mockPost} />);
 
-    expect(screen.getByText("Remix")).toBeInTheDocument();
+    const remixButton = screen.getByRole("button", { name: "Remix" });
+    expect(remixButton).toBeInTheDocument();
   });
 
   it("should not show remix button for report type", () => {
     const reportPost = { ...mockPost, type: "report" as const, capsule: undefined };
     render(<FeedCard post={reportPost} />);
 
-    expect(screen.queryByText("Remix")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remix" })).not.toBeInTheDocument();
   });
 
   it("should show Report button", () => {

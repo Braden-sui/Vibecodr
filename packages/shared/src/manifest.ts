@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ERROR_MANIFEST_INVALID, ERROR_MANIFEST_TOO_LARGE, type ErrorCode } from "./errors";
 
 /**
  * Manifest Schema for Vibecodr Capsules
@@ -157,6 +158,7 @@ export interface ValidationResult {
     path: string;
     message: string;
     code?: string;
+    errorCode?: ErrorCode;
   }>;
   warnings?: Array<{
     path: string;
@@ -178,6 +180,7 @@ export function validateManifest(data: unknown): ValidationResult {
           path: err.path.join("."),
           message: err.message,
           code: err.code,
+          errorCode: ERROR_MANIFEST_INVALID,
         })),
       };
     }
@@ -201,6 +204,7 @@ export function validateManifest(data: unknown): ValidationResult {
       errors.push({
         path: "bundleSize",
         message: `Bundle size ${(manifest.bundleSize / 1024 / 1024).toFixed(2)} MB exceeds maximum of 25 MB for free/creator tiers`,
+        errorCode: ERROR_MANIFEST_TOO_LARGE,
       });
     }
 

@@ -27,13 +27,15 @@
       ]
     },
     "types": [
-      "node"
+      "node",
+      "vitest"
     ],
     "esModuleInterop": true
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "**/*.d.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
     "next-dist/types/**/*.ts"

@@ -20,6 +20,8 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
   - These tracks can proceed concurrently once Wave 0 completes.
 - *STOP 1:* Hold before Wave 2 until Track A (manifest endpoints live) and Track B (runtime bundle v1 published) pass validation.
 
+- **Current status (Wave 1):** Artifact schema and error codes are complete; artifact upload endpoints and the ArtifactCompiler Durable Object are scaffolded; runtime bundle v0.1.0 (bridge, guard, React + HTML runtimes) is checked in under `apps/web/public/runtime-assets/v0.1.0/` and indexed via `runtime-index.json` with a Turbo-powered checksum validation task.
+
 - **Wave 2 - Client Runtime Surfaces**
   - Track A: Checklist Section 4 (Frontend Registry & Loader) - registry module, SandboxFrame, React/HTML loaders.
   - Track B: Checklist Section 5 (Policy Enforcement) - guard script shims, heartbeat protocol, CSP headers, optional proxy.
@@ -150,20 +152,29 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 
 ## Chronological Checklist
 1. **Foundations**
-   1.1 Draft artifact schema changes + ERD updates.  
-   1.2 Implement backend migrations/tables to store artifacts + manifests.  
-   1.3 Define error code map for runtime system (reserve `E-VIBECODR-11xx` compile, `21xx` runtime).
+   - [x] 1.1 Draft artifact schema changes and ERD updates grounded in social-app standards.  
+       - Align `artifacts` and `artifact_manifests` tables with the fields in "Artifact Spec & Storage" (`id`, `ownerId`, `type`, `entry`, `files`, `deps`, `networkAllow`, `envAllow`, `runtimeVersion`, `bundleDigest`, `status`).  
+       - Add safety and visibility metadata common in large social apps, such as `visibility` (public/unlisted/private), `policyStatus` (active/quarantined/removed), `safetyTier`, `riskScore`, `lastReviewedAt`, `lastReviewedBy`, and soft-delete markers.  
+       - Update the ERD to show relationships to `users`, `capsules`/`posts`, moderation queues, and audit/audit-log tables; ensure 1:N versioning between artifacts, manifests, and the posts that reference them.  
+   - [x] 1.2 Implement backend migrations/tables to store artifacts and manifests with moderation-grade traceability.  
+       - Create or adjust D1 tables for `artifacts`, `artifact_manifests`, and (if needed) `artifact_versions` with indexes on `ownerId`, `capsuleId/postId`, `status`, `policyStatus`, and `createdAt`.  
+       - Make migrations reversible and idempotent; include backfill steps to attach default visibility/safety metadata to existing capsules and manifests.  
+       - Add audit columns (`createdBy`, `updatedBy`, `reviewedBy`, `reviewedAt`) where applicable so trust-and-safety reviews can be reconstructed later.  
+   - [x] 1.3 Define error code map for the runtime system (reserve `E-VIBECODR-11xx` compile, `21xx` runtime).  
+       - Partition code ranges by concern, for example: 1100-1119 schema/validation errors, 1120-1139 import/allowlist violations, 1140-1159 size and resource limits, 2100-2119 bootstrap/runtime-init failures, 2120-2139 network/policy violations, 2190+ trust-and-safety interventions (e.g., artifact blocked or quarantined).  
+       - For each code, document user-facing message, internal description, HTTP status, severity, logging/telemetry requirements, and recommended user action; keep codes stable over time to match social-app expectations.  
+       - Cross-link runtime-related codes into `api-safety-and-abuse-invariants.mdx` and ensure FeedCard and Player error UIs surface the code plus clear next steps without leaking sensitive implementation details.
 2. **Compile & Storage Pipeline**
-   2.1 Scaffold Cloudflare Worker/Durable Object for artifact compilation.  
-   2.2 Implement upload API + signed URL generation to R2.  
-   2.3 Build React compile pipeline (esbuild config, import validator, size guard).  
-   2.4 Build HTML sanitize pipeline (DOMPurify config, script tag enforcement).  
-   2.5 Emit manifests + store in KV/R2; add integration tests.  
-   2.6 Instrument Worker logs + metrics dashboards.
+   - [x] 2.1 Scaffold Cloudflare Worker/Durable Object for artifact compilation.  
+   - [x] 2.2 Implement authenticated upload API to R2 (signed or Worker-mediated) for artifact sources.  
+   - [x] 2.3 Build React compile pipeline (esbuild config, import validator, size guard).  
+   - [ ] 2.4 Build HTML sanitize pipeline (DOMPurify config, script tag enforcement).  
+   - [ ] 2.5 Emit manifests + store in KV/R2; add integration tests.  
+   - [ ] 2.6 Instrument Worker logs + metrics dashboards.
 3. **Runtime Assets**
-   3.1 Create shared runtime bundles (React runtime, HTML runtime, guard script, bridge).  
-   3.2 Publish assets to Cloudflare static hosting with versioning + `runtime-index.json`.  
-   3.3 Wire repo build step (Turbo task) that validates runtime bundle checksums.
+   - [x] 3.1 Create shared runtime bundles (React runtime, HTML runtime, guard script, bridge).  
+   - [x] 3.2 Publish assets to Cloudflare static hosting with versioning + `runtime-index.json`.  
+   - [x] 3.3 Wire repo build step (Turbo task) that validates runtime bundle checksums.
 4. **Frontend Registry & Loader**
    4.1 Implement runtime registry module + type definitions.  
    4.2 Build `SandboxFrame` component (iframe writer, guard injection, telemetry bridge).  
@@ -193,4 +204,5 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 ## Next Steps
 - Assign owners for each checklist section.
 - Open implementation issues referencing this doc, ensuring each includes validation + rollback notes.
-- Start with schema + Worker scaffolding (Sections 1-2) to unblock runtime consumers.
+- Complete the remaining Compile & Storage Pipeline work (2.2–2.6): signed or otherwise authenticated upload flows to R2, React/HTML compile pipelines, manifest emission to KV/R2, and basic metrics wiring.
+- Move into Wave 2 once STOP 1 is satisfied: implement the frontend runtime registry + loaders (Section 4) and policy enforcement layer (Section 5), using the v0.1.0 runtime assets as the backing bundles.

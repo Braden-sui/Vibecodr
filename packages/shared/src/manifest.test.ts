@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { manifestSchema, validateManifest, type Manifest } from "./manifest";
+import { ERROR_MANIFEST_INVALID, ERROR_MANIFEST_TOO_LARGE } from "./errors";
 
 describe("Manifest Validation", () => {
   const baseManifest: Manifest = {
@@ -18,12 +19,49 @@ describe("Manifest Validation", () => {
       const manifest: Manifest = {
         ...baseManifest,
         params: [
-          { name: "count", type: "slider", default: 50, min: 0, max: 100, step: 1 },
-          { name: "enabled", type: "toggle", default: true },
-          { name: "mode", type: "select", default: "normal", options: ["fast", "normal", "slow"] },
-          { name: "name", type: "text", default: "Hello" },
-          { name: "opacity", type: "number", default: 0.5, min: 0, max: 1, step: 0.1 },
-          { name: "color", type: "color", default: "#ff0000" },
+          {
+            name: "count",
+            type: "slider",
+            label: "Count",
+            default: 50,
+            min: 0,
+            max: 100,
+            step: 1,
+          },
+          {
+            name: "enabled",
+            type: "toggle",
+            label: "Enabled",
+            default: true,
+          },
+          {
+            name: "mode",
+            type: "select",
+            label: "Mode",
+            default: "normal",
+            options: ["fast", "normal", "slow"],
+          },
+          {
+            name: "name",
+            type: "text",
+            label: "Name",
+            default: "Hello",
+          },
+          {
+            name: "opacity",
+            type: "number",
+            label: "Opacity",
+            default: 0.5,
+            min: 0,
+            max: 1,
+            step: 0.1,
+          },
+          {
+            name: "color",
+            type: "color",
+            label: "Color",
+            default: "#ff0000",
+          },
         ],
       };
 
@@ -79,6 +117,7 @@ describe("Manifest Validation", () => {
         params: Array.from({ length: 21 }, (_, i) => ({
           name: `param${i}`,
           type: "text" as const,
+          label: `Param ${i}`,
           default: "test",
         })),
       };
@@ -143,6 +182,22 @@ describe("Manifest Validation", () => {
       expect(result.valid).toBe(false);
       expect(result.errors).toBeDefined();
       expect(result.errors?.length).toBeGreaterThan(0);
+      expect(result.errors?.[0]?.errorCode).toBe(ERROR_MANIFEST_INVALID);
+    });
+
+    it("should set errorCode when bundle size exceeds limit", () => {
+      const manifest: Manifest = {
+        ...baseManifest,
+        bundleSize: 26 * 1024 * 1024,
+      };
+
+      const result = validateManifest(manifest);
+      expect(result.valid).toBe(false);
+      expect(
+        result.errors?.some(
+          (err) => err.path === "bundleSize" && err.errorCode === ERROR_MANIFEST_TOO_LARGE
+        )
+      ).toBe(true);
     });
 
     it("should reject worker-edge manifest without configuration", () => {

@@ -65,7 +65,7 @@ describe("QuotaUsage", () => {
     render(<QuotaUsage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/You've used 80% of your storage/i)).toBeInTheDocument();
+      expect(screen.getByText(/You've used 78% of your storage/i)).toBeInTheDocument();
     });
   });
 

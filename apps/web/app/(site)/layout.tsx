@@ -1,14 +1,15 @@
 import { Suspense } from "react";
 import { ClerkProvider, SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
-import Link from "next/link";
 import { NotificationBell } from "@/components/Notifications";
 import { AnalyticsProvider } from "@/providers/posthog-provider";
 import { TopbarSearch } from "../../components/TopbarSearch";
 import { ModerationNavLinks } from "@/components/ModerationNavLinks";
+import Link from "next/link";
+import { VibecodrWordmark } from "@/components/VibecodrWordmark";
 
 export const metadata = {
   title: "Vibecodr",
-  description: "Runnable micro-apps feed for makers",
+  description: "Runnable micro-apps feed for Vibecoders",
 };
 
 export const runtime = "edge";
@@ -19,9 +20,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       <AnalyticsProvider>
           <header className="border-b">
             <nav className="container mx-auto flex items-center gap-6 py-4">
-              <Link href="/" className="text-xl font-bold">
-                Vibecodr
-              </Link>
+              <VibecodrWordmark />
               <Link href="/studio" className="hover:text-primary">
                 Studio
               </Link>

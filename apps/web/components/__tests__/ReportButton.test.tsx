@@ -3,14 +3,49 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReportButton } from "../ReportButton";
 
+declare global {
+  // eslint-disable-next-line no-var
+  var PointerEvent: typeof window.PointerEvent;
+}
+
+if (typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    pointerType?: string;
+    isPrimary?: boolean;
+    constructor(type: string, params: PointerEventInit = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 1;
+      this.pointerType = params.pointerType ?? "mouse";
+      this.isPrimary = params.isPrimary ?? true;
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof window.PointerEvent;
+}
+
+const elementProto = Element.prototype as Element & {
+  hasPointerCapture?: (pointerId: number) => boolean;
+  setPointerCapture?: (pointerId: number) => void;
+  releasePointerCapture?: (pointerId: number) => void;
+};
+
+if (!elementProto.hasPointerCapture) {
+  elementProto.hasPointerCapture = () => false;
+}
+if (!elementProto.setPointerCapture) {
+  elementProto.setPointerCapture = () => {};
+}
+if (!elementProto.releasePointerCapture) {
+  elementProto.releasePointerCapture = () => {};
+}
+
 describe("ReportButton", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
 
   it("should render icon variant by default", () => {
@@ -65,11 +100,9 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(async () => {
-      const textarea = screen.getByPlaceholderText(/Provide any additional context/i);
-      await user.type(textarea, "a".repeat(500));
-      expect(screen.getByText("500/500")).toBeInTheDocument();
-    });
+    const textarea = await screen.findByPlaceholderText(/Provide any additional context/i);
+    await user.type(textarea, "a".repeat(500));
+    expect(screen.getByText("500/500")).toBeInTheDocument();
   });
 
   it("should submit report successfully", async () => {
@@ -83,18 +116,14 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(async () => {
-      expect(screen.getByText("Report Post")).toBeInTheDocument();
-    });
+    await screen.findByText("Report Post");
 
-    // Select reason (using fireEvent since userEvent has issues with custom selects)
+    // Select reason
     const selectTrigger = screen.getByRole("combobox");
-    fireEvent.click(selectTrigger);
+    await user.click(selectTrigger);
 
-    await waitFor(() => {
-      const spamOption = screen.getByText("Spam or misleading");
-      fireEvent.click(spamOption);
-    });
+    const spamOption = await screen.findByText("Spam or misleading");
+    await user.click(spamOption);
 
     // Submit
     const submitButton = screen.getByRole("button", { name: /Submit Report/i });
@@ -122,15 +151,11 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(() => {
-      const selectTrigger = screen.getByRole("combobox");
-      fireEvent.click(selectTrigger);
-    });
+    const selectTrigger = await screen.findByRole("combobox");
+    await user.click(selectTrigger);
 
-    await waitFor(() => {
-      const spamOption = screen.getByText("Spam or misleading");
-      fireEvent.click(spamOption);
-    });
+    const spamOption = await screen.findByText("Spam or misleading");
+    await user.click(spamOption);
 
     const submitButton = screen.getByRole("button", { name: /Submit Report/i });
     await user.click(submitButton);
@@ -152,15 +177,11 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(() => {
-      const selectTrigger = screen.getByRole("combobox");
-      fireEvent.click(selectTrigger);
-    });
+    const selectTrigger = await screen.findByRole("combobox");
+    await user.click(selectTrigger);
 
-    await waitFor(() => {
-      const harassmentOption = screen.getByText("Harassment or bullying");
-      fireEvent.click(harassmentOption);
-    });
+    const harassmentOption = await screen.findByText("Harassment or bullying");
+    await user.click(harassmentOption);
 
     const submitButton = screen.getByRole("button", { name: /Submit Report/i });
     await user.click(submitButton);
@@ -169,17 +190,15 @@ describe("ReportButton", () => {
       expect(screen.getByText("Report Submitted")).toBeInTheDocument();
     });
 
-    // Fast-forward 2 seconds
-    vi.advanceTimersByTime(2000);
+    // Wait for auto-close timeout (2s) using real timers
+    await new Promise((resolve) => setTimeout(resolve, 2100));
 
-    await waitFor(() => {
-      expect(screen.queryByText("Report Submitted")).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText("Report Submitted")).not.toBeInTheDocument();
   });
 
   it("should handle API errors gracefully", async () => {
     const user = userEvent.setup({ delay: null });
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -190,24 +209,23 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(() => {
-      const selectTrigger = screen.getByRole("combobox");
-      fireEvent.click(selectTrigger);
-    });
+    const selectTrigger = await screen.findByRole("combobox");
+    await user.click(selectTrigger);
 
-    await waitFor(() => {
-      const otherOption = screen.getByText("Other");
-      fireEvent.click(otherOption);
-    });
+    const otherOption = await screen.findByText("Other");
+    await user.click(otherOption);
 
     const submitButton = screen.getByRole("button", { name: /Submit Report/i });
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith("Rate limit exceeded");
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "Failed to submit report:",
+        expect.any(Error)
+      );
     });
 
-    alertSpy.mockRestore();
+    consoleSpy.mockRestore();
   });
 
   it("should include optional details in submission", async () => {
@@ -221,15 +239,11 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(() => {
-      const selectTrigger = screen.getByRole("combobox");
-      fireEvent.click(selectTrigger);
-    });
+    const selectTrigger = await screen.findByRole("combobox");
+    await user.click(selectTrigger);
 
-    await waitFor(() => {
-      const copyrightOption = screen.getByText("Copyright violation");
-      fireEvent.click(copyrightOption);
-    });
+    const copyrightOption = await screen.findByText("Copyright violation");
+    await user.click(copyrightOption);
 
     const textarea = screen.getByPlaceholderText(/Provide any additional context/i);
     await user.type(textarea, "This violates my copyright");
@@ -260,15 +274,11 @@ describe("ReportButton", () => {
 
     await user.click(screen.getByRole("button"));
 
-    await waitFor(() => {
-      const selectTrigger = screen.getByRole("combobox");
-      fireEvent.click(selectTrigger);
-    });
+    const selectTrigger = await screen.findByRole("combobox");
+    await user.click(selectTrigger);
 
-    await waitFor(() => {
-      const inappropriateOption = screen.getByText("Inappropriate content");
-      fireEvent.click(inappropriateOption);
-    });
+    const inappropriateOption = await screen.findByText("Inappropriate content");
+    await user.click(inappropriateOption);
 
     const submitButton = screen.getByRole("button", { name: /Submit Report/i });
     await user.click(submitButton);

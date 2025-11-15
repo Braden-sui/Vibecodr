@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -40,23 +40,41 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const hasFetchedInitialCountRef = useRef(false);
 
   useEffect(() => {
-    fetchUnreadCount();
+    let isMounted = true;
+
+    const initialize = async () => {
+      await fetchUnreadCount();
+      if (isMounted) {
+        hasFetchedInitialCountRef.current = true;
+      }
+    };
+
+    initialize();
     const interval = setInterval(fetchUnreadCount, 300000); // Refresh every 5 minutes
-    return () => clearInterval(interval);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
-    // Fetch unread count whenever the user navigates to a new page
+    // Fetch unread count whenever the user navigates to a new page (skip initial render)
+    if (!hasFetchedInitialCountRef.current) {
+      return;
+    }
     fetchUnreadCount();
   }, [pathname]);
 
-  useEffect(() => {
-    if (isOpen) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    setIsOpen(nextOpen);
+    if (nextOpen) {
       fetchNotifications();
     }
-  }, [isOpen]);
+  };
 
   const fetchUnreadCount = async () => {
     try {
@@ -147,7 +165,7 @@ export function NotificationBell() {
   };
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    <DropdownMenu open={isOpen} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
@@ -182,14 +200,14 @@ export function NotificationBell() {
                       ? `/profile/${notification.actor.handle}`
                       : `/player/${notification.post?.id}`
                   }
-                  onClick={() => {
-                    if (!notification.read) {
-                      markAsRead([notification.id]);
-                    }
-                    setIsOpen(false);
-                  }}
                 >
                   <div
+                    onClick={() => {
+                      if (!notification.read) {
+                        markAsRead([notification.id]);
+                      }
+                      setIsOpen(false);
+                    }}
                     className={cn(
                       "flex gap-3 p-4 transition-colors hover:bg-accent",
                       !notification.read && "bg-blue-50 dark:bg-blue-950/20"

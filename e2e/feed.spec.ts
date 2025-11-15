@@ -19,7 +19,7 @@ test.describe("Feed Page", () => {
     await page.getByRole("tab", { name: "Following" }).click();
 
     // Should show empty state for Following
-    await expect(page.getByText("Follow makers to see their posts here!")).toBeVisible();
+    await expect(page.getByText("Follow other Vibecoders to personalize this lane.")).toBeVisible();
 
     // Switch back to Latest
     await page.getByRole("tab", { name: "Latest" }).click();
