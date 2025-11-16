@@ -11,17 +11,36 @@ import {
 import { PlayerControls } from "@/components/Player/PlayerControls";
 import { PlayerDrawer } from "@/components/Player/PlayerDrawer";
 import { ParamControls } from "@/components/Player/ParamControls";
+import { PlayerConsole, type PlayerConsoleEntry } from "@/components/Player/PlayerConsole";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sliders } from "lucide-react";
-import { postsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
+import { postsApi, runsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
-import { readPreviewHandoff } from "@/lib/handoff";
+import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { budgeted } from "@/lib/perf";
+import { ApiPostResponseSchema } from "@vibecodr/shared";
 
 type PlayerPageClientProps = {
   postId: string;
+};
+
+const MAX_CONSOLE_LOGS = 120;
+const LOG_SAMPLE_RATE = 0.2;
+const LOG_BATCH_TARGET = 10;
+
+type RunSession = {
+  id: string;
+  startedAt: number;
+};
+
+type PendingAnalyticsLog = {
+  level: PlayerConsoleEntry["level"];
+  message: string;
+  timestamp: number;
+  source: PlayerConsoleEntry["source"];
+  sampleRate: number;
 };
 
 export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
@@ -32,7 +51,13 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [post, setPost] = useState<FeedPost | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [consoleEntries, setConsoleEntries] = useState<PlayerConsoleEntry[]>([]);
+  const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(true);
   const iframeHandleRef = useRef<PlayerIframeHandle | null>(null);
+  const currentRunRef = useRef<RunSession | null>(null);
+  const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
+  const flushLogsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handoffPrefillAppliedRef = useRef(false);
   const { user: _user } = useUser();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
@@ -58,6 +83,199 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   );
 
   useEffect(() => {
+    handoffPrefillAppliedRef.current = false;
+  }, [postId]);
+
+  useEffect(() => {
+    setConsoleEntries([]);
+    setIsConsoleCollapsed(true);
+  }, [postId]);
+
+  const appendConsoleEntry = useCallback((entry: PlayerConsoleEntry) => {
+    setConsoleEntries((prev) => [...prev, entry].slice(-MAX_CONSOLE_LOGS));
+  }, []);
+
+  const flushLogBatch = useCallback(
+    (explicitRunId?: string) => {
+      if (pendingLogBatchRef.current.length === 0) {
+        return;
+      }
+      const capsuleId = post?.capsule?.id;
+      if (!capsuleId || !post?.id) {
+        pendingLogBatchRef.current = [];
+        return;
+      }
+      const runId = explicitRunId ?? currentRunRef.current?.id;
+      if (!runId) {
+        return;
+      }
+
+      const payload = pendingLogBatchRef.current.splice(0, pendingLogBatchRef.current.length);
+      if (flushLogsTimeoutRef.current) {
+        clearTimeout(flushLogsTimeoutRef.current);
+        flushLogsTimeoutRef.current = null;
+      }
+
+      runsApi
+        .appendLogs(runId, {
+          capsuleId,
+          postId: post.id,
+          logs: payload.map((item) => ({
+            level: item.level,
+            message: item.message,
+            timestamp: item.timestamp,
+            source: item.source,
+            sampleRate: item.sampleRate,
+          })),
+        })
+        .catch(() => {});
+    },
+    [post?.capsule?.id, post?.id]
+  );
+
+  const enqueueAnalyticsLog = useCallback(
+    (entry: PlayerConsoleEntry, sampleRate: number) => {
+      pendingLogBatchRef.current.push({
+        level: entry.level,
+        message: entry.message,
+        timestamp: entry.timestamp,
+        source: entry.source,
+        sampleRate,
+      });
+
+      if (pendingLogBatchRef.current.length >= LOG_BATCH_TARGET) {
+        flushLogBatch();
+      } else if (!flushLogsTimeoutRef.current) {
+        flushLogsTimeoutRef.current = window.setTimeout(() => {
+          flushLogBatch();
+        }, 1500);
+      }
+    },
+    [flushLogBatch]
+  );
+
+  const maybeSendLogAnalytics = useCallback(
+    (entry: PlayerConsoleEntry) => {
+      if (!post?.capsule?.id || !post?.id) {
+        return;
+      }
+      if (!currentRunRef.current) {
+        return;
+      }
+      const forced = entry.level === "error";
+      const shouldSample = forced || Math.random() < LOG_SAMPLE_RATE;
+      if (!shouldSample) {
+        return;
+      }
+      const sampleRate = forced ? 1 : LOG_SAMPLE_RATE;
+      trackEvent("player_console_log", {
+        postId: post.id,
+        capsuleId: post.capsule.id,
+        runId: currentRunRef.current.id,
+        level: entry.level,
+        source: entry.source,
+        sampleRate,
+      });
+      enqueueAnalyticsLog(entry, sampleRate);
+    },
+    [enqueueAnalyticsLog, post?.capsule?.id, post?.id]
+  );
+
+  const handleConsoleLog = useCallback(
+    (log: { level?: string; message?: string; timestamp?: number }) => {
+      if (!post) {
+        return;
+      }
+      const level = log.level;
+      const normalizedLevel: PlayerConsoleEntry["level"] =
+        level === "warn" || level === "error" || level === "info" ? level : "log";
+      const message =
+        typeof log.message === "string"
+          ? log.message
+          : log.message != null
+          ? JSON.stringify(log.message)
+          : "Console event";
+      const entry: PlayerConsoleEntry = {
+        id: createStableId("log"),
+        level: normalizedLevel,
+        message: message.slice(0, 500),
+        timestamp: typeof log.timestamp === "number" ? log.timestamp : Date.now(),
+        source: "player",
+      };
+      appendConsoleEntry(entry);
+      maybeSendLogAnalytics(entry);
+    },
+    [appendConsoleEntry, maybeSendLogAnalytics, post]
+  );
+
+  const handleClearConsole = useCallback(() => {
+    setConsoleEntries([]);
+  }, []);
+
+  const startRunSession = useCallback(() => {
+    currentRunRef.current = {
+      id: createStableId("run"),
+      startedAt: Date.now(),
+    };
+  }, []);
+
+  const finalizeRunSession = useCallback(
+    (status: "completed" | "failed", errorMessage?: string) => {
+      const session = currentRunRef.current;
+      if (!session || !post?.capsule) {
+        return;
+      }
+      flushLogBatch(session.id);
+      currentRunRef.current = null;
+      runsApi
+        .complete({
+          runId: session.id,
+          capsuleId: post.capsule.id,
+          postId: post.id,
+          durationMs: Math.max(0, Date.now() - session.startedAt),
+          status,
+          errorMessage,
+        })
+        .catch(() => {});
+    },
+    [flushLogBatch, post?.capsule, post?.id]
+  );
+
+  useEffect(() => {
+    return () => {
+      flushLogBatch();
+      finalizeRunSession("completed");
+    };
+  }, [finalizeRunSession, flushLogBatch]);
+
+  const handleRunnerReady = useCallback(() => {
+    startRunSession();
+    setIsRunning(true);
+    if (post?.capsule) {
+      trackEvent("player_run_started", {
+        postId: post.id,
+        capsuleId: post.capsule.id,
+        runner: post.capsule.runner,
+      });
+    }
+  }, [post, startRunSession]);
+
+  const handleBootMetrics = useCallback(
+    (metrics: { bootTimeMs: number }) => {
+      setStats((prev) => ({ ...prev, bootTime: metrics.bootTimeMs }));
+      if (post?.capsule) {
+        trackEvent("player_boot_time", {
+          postId: post.id,
+          capsuleId: post.capsule.id,
+          runner: post.capsule.runner,
+          bootTimeMs: metrics.bootTimeMs,
+        });
+      }
+    },
+    [post]
+  );
+
+  useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
@@ -74,7 +292,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           return;
         }
 
-        const data = await response.json();
+        const data = ApiPostResponseSchema.parse(await response.json());
         const mapped = mapApiFeedPostToFeedPost(data.post);
         if (!cancelled) {
           setPost(mapped);
@@ -123,13 +341,24 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     });
   }, [manifestParams]);
 
-  // Apply any preview→player handoff param state and log timing.
+  // Apply any preview→player handoff param state and prefill logs.
   useEffect(() => {
     budgeted(`[player] handoff_read:${postId}`, () => {
+      if (handoffPrefillAppliedRef.current) {
+        return;
+      }
       const { state } = readPreviewHandoff(postId);
       if (!state) return;
+      handoffPrefillAppliedRef.current = true;
       if (state.params && typeof state.params === "object") {
         setCapsuleParams((prev) => ({ ...prev, ...(state.params as Record<string, unknown>) }));
+      }
+      if (state.logs && state.logs.length > 0) {
+        setConsoleEntries((prev) => {
+          const mapped = mapPreviewLogs(state.logs!, postId);
+          return [...mapped, ...prev].slice(-MAX_CONSOLE_LOGS);
+        });
+        setIsConsoleCollapsed(false);
       }
     });
   }, [postId, manifestParams.length]);
@@ -154,7 +383,11 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   }, [capsuleParams, isRunning, post?.capsule, postMessageToCapsule]);
 
   const handleRestart = () => {
-    if (!postMessageToCapsule("restart")) {
+    finalizeRunSession("completed");
+    const restarted =
+      (typeof iframeHandleRef.current?.restart === "function" && iframeHandleRef.current.restart()) ||
+      postMessageToCapsule("restart");
+    if (!restarted) {
       return;
     }
     setIsRunning(false);
@@ -169,9 +402,12 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   };
 
   const handleKill = () => {
-    const killed = iframeHandleRef.current?.kill() ?? false;
-    if (!killed) {
+    const sent =
+      (typeof iframeHandleRef.current?.kill === "function" && iframeHandleRef.current?.kill()) ||
       postMessageToCapsule("kill");
+    finalizeRunSession("failed", "killed_by_user");
+    if (!sent) {
+      return;
     }
     setIsRunning(false);
     setStats({ fps: 0, memory: 0, bootTime: 0 });
@@ -269,16 +505,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
                 capsuleId={post.capsule.id}
                 artifactId={post.capsule.artifactId ?? undefined}
                 params={capsuleParams}
-                onReady={() => {
-                  setIsRunning(true);
-                  trackEvent("player_run_started", {
-                    postId: post.id,
-                    capsuleId: post.capsule?.id,
-                    runner: post.capsule?.runner,
-                  });
-                }}
-                onLog={(log) => console.log("Capsule log:", log)}
+                onReady={handleRunnerReady}
+                onLog={handleConsoleLog}
                 onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
+                onBoot={handleBootMetrics}
               />
             ) : (
               <div className="flex h-full items-center justify-center rounded-lg border border-dashed">
@@ -301,6 +531,12 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             onKill={handleKill}
             onShare={handleShare}
             onReport={handleReport}
+          />
+          <PlayerConsole
+            entries={consoleEntries}
+            collapsed={isConsoleCollapsed}
+            onToggle={() => setIsConsoleCollapsed((prev) => !prev)}
+            onClear={handleClearConsole}
           />
         </div>
 
@@ -398,4 +634,21 @@ function isManifestParam(param: unknown): param is ManifestParam {
     PARAM_TYPES.includes(candidate.type as ManifestParam["type"]) &&
     Object.prototype.hasOwnProperty.call(candidate, "default")
   );
+}
+
+function mapPreviewLogs(logs: PreviewLogEntry[], postId: string): PlayerConsoleEntry[] {
+  return logs.map((log, idx) => ({
+    id: `preview-${postId}-${idx}-${log.timestamp}`,
+    level: log.level,
+    message: log.message.slice(0, 500),
+    timestamp: log.timestamp,
+    source: "preview",
+  }));
+}
+
+function createStableId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

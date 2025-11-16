@@ -5,14 +5,34 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertCircle, Loader2, FileCode, Sliders, Upload, Send } from "lucide-react";
 import type { Manifest } from "@vibecodr/shared/manifest";
 
+export interface DraftFile {
+  path: string;
+  type: string;
+  size: number;
+  file: File;
+}
+
+export interface DraftArtifact {
+  id?: string;
+  runtimeVersion?: string | null;
+  bundleDigest?: string | null;
+  bundleSizeBytes?: number | null;
+  status?: "pending" | "queued" | "ready" | "failed";
+}
+
 export interface CapsuleDraft {
   id: string;
   manifest?: Manifest;
-  files: Map<string, string>;
+  files?: DraftFile[];
+  sourceZipName?: string;
   validationStatus: "idle" | "validating" | "valid" | "invalid";
   validationErrors?: Array<{ path: string; message: string }>;
   validationWarnings?: Array<{ path: string; message: string }>;
   buildStatus: "idle" | "building" | "success" | "failed";
+  artifact?: DraftArtifact | null;
+  capsuleId?: string;
+  publishStatus?: "idle" | "publishing" | "success" | "error";
+  postId?: string;
 }
 
 export interface StudioShellProps {

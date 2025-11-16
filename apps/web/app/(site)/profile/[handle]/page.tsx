@@ -6,12 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FeedCard } from "@/components/FeedCard";
 import { UserPlus, UserMinus, Calendar, Sparkles, GitFork, Heart } from "lucide-react";
-import {
-  usersApi,
-  type FeedPost,
-  type ApiFeedPostPayload,
-  mapApiFeedPostToFeedPost,
-} from "@/lib/api";
+import { usersApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
+import { ApiUserPostsResponseSchema } from "@vibecodr/shared";
 
 interface UserProfile {
   id: string;
@@ -70,8 +66,8 @@ export default function ProfilePage() {
     try {
       const response = await usersApi.getPosts(handle, { limit: 20 });
       if (!response.ok) throw new Error("Failed to fetch posts");
-      const data = (await response.json()) as { posts?: ApiFeedPostPayload[] };
-      setPosts((data.posts ?? []).map((post) => mapApiFeedPostToFeedPost(post)));
+      const data = ApiUserPostsResponseSchema.parse(await response.json());
+      setPosts(data.posts.map((post) => mapApiFeedPostToFeedPost(post)));
     } catch (error) {
       console.error("Failed to fetch posts:", error);
     }

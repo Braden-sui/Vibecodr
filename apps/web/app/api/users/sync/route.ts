@@ -4,7 +4,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { getWorkerApiBase } from "@/lib/worker-api";
 
 export const runtime = "edge";
-const API_BASE = getWorkerApiBase();
 const WORKER_TEMPLATE = "workers";
 
 export async function POST() {
@@ -30,7 +29,7 @@ export async function POST() {
     plan: undefined,
   };
 
-  const res = await fetch(`${API_BASE}/users/sync`, {
+  const res = await fetch(`${getWorkerApiBase()}/users/sync`, {
     method: "POST",
     headers: {
       "content-type": "application/json",

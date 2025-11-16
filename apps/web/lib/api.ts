@@ -1,4 +1,5 @@
 import { ensureUserSynced } from "./user-sync";
+import type { ApiFeedPost } from "@vibecodr/shared";
 
 // Tiny API client for the Worker API. Consider centralizing auth headers here later.
 
@@ -72,6 +73,18 @@ export const commentsApi = {
 } as const;
 
 // Shared feed post type used by HomePageClient, FeedCard, and Player page.
+type FeedCapsule = {
+  id: string;
+  runner: "client-static" | "webcontainer";
+  capabilities?: {
+    net?: string[];
+    storage?: boolean;
+    workers?: boolean;
+  };
+  params?: unknown[];
+  artifactId?: string | null;
+};
+
 export type FeedPost = {
   id: string;
   type: "app" | "report";
@@ -83,18 +96,7 @@ export type FeedPost = {
     name?: string | null;
     avatarUrl?: string | null;
   };
-  capsule?: {
-    id: string;
-    // Runner and capabilities are derived from capsule manifest_json in the Worker.
-    runner: "client-static" | "webcontainer";
-    capabilities?: {
-      net?: string[];
-      storage?: boolean;
-      workers?: boolean;
-    };
-    params?: unknown[];
-    artifactId?: string | null;
-  } | null;
+  capsule?: FeedCapsule | null;
   coverKey?: string | null;
   tags?: string[];
   stats: {
@@ -106,80 +108,55 @@ export type FeedPost = {
   createdAt: string;
 };
 
-type ApiFeedPostCapsule = {
-  id?: string | number;
-  runner?: "client-static" | "webcontainer" | string;
-  capabilities?: {
-    net?: string[];
-    storage?: boolean;
-    workers?: boolean;
-  };
-  params?: unknown[];
-  artifactId?: string | number | null;
-} | null;
-
-export type ApiFeedPostPayload = {
-  id: string | number;
-  type?: "app" | "report" | string;
-  title?: string;
-  description?: string | null;
-  author?: {
-    id?: string | number;
-    handle?: string;
-    name?: string | null;
-    avatarUrl?: string | null;
-  };
-  capsule?: ApiFeedPostCapsule;
-  coverKey?: string | null;
-  tags?: string[] | null;
-  stats?: {
-    runs?: number;
-    comments?: number;
-    likes?: number;
-    remixes?: number;
-  };
-  createdAt?: number | string;
-};
-
 // Map Worker ApiFeedPost payload into the client-side FeedPost shape.
-export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPostPayload): FeedPost {
-  const capsule = apiPost.capsule
+export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
+  const capsulePayload = (apiPost.capsule as Record<string, unknown> & { id: string }) || null;
+  const capsule: FeedCapsule | null = capsulePayload
     ? {
-        id: String(apiPost.capsule.id),
-        runner: (apiPost.capsule.runner || "client-static") as "client-static" | "webcontainer",
-        capabilities: apiPost.capsule.capabilities,
-        params: apiPost.capsule.params,
+        id: String(capsulePayload.id),
+        runner: (typeof capsulePayload.runner === "string" ? capsulePayload.runner : "client-static") as
+          | "client-static"
+          | "webcontainer",
+        capabilities: capsulePayload.capabilities as FeedCapsule["capabilities"],
+        params: Array.isArray(capsulePayload.params) ? (capsulePayload.params as unknown[]) : undefined,
         artifactId:
-          apiPost.capsule.artifactId != null
-            ? String(apiPost.capsule.artifactId)
-            : null,
+          capsulePayload.artifactId != null ? String(capsulePayload.artifactId as string | number) : null,
       }
     : null;
 
   const createdAtValue = apiPost.createdAt;
-  const createdAt = typeof createdAtValue === "number"
-    ? new Date(createdAtValue * 1000).toISOString()
-    : String(createdAtValue ?? "");
+  let createdAt: string;
+  if (typeof createdAtValue === "number") {
+    createdAt = new Date(createdAtValue * 1000).toISOString();
+  } else {
+    const numeric = Number(createdAtValue);
+    if (Number.isFinite(numeric)) {
+      createdAt = new Date(numeric * 1000).toISOString();
+    } else {
+      const parsed = new Date(createdAtValue);
+      createdAt = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+    }
+  }
 
   return {
     id: String(apiPost.id),
     type: apiPost.type === "app" ? "app" : "report",
-    title: String(apiPost.title ?? ""),
+    title: apiPost.title,
     description: apiPost.description ?? undefined,
     author: {
-      id: String(apiPost.author?.id ?? ""),
-      handle: String(apiPost.author?.handle ?? ""),
-      name: apiPost.author?.name ?? null,
-      avatarUrl: apiPost.author?.avatarUrl ?? null,
+      id: String(apiPost.author.id),
+      handle: apiPost.author.handle,
+      name: apiPost.author.name ?? null,
+      avatarUrl: apiPost.author.avatarUrl ?? null,
     },
     capsule,
     coverKey: apiPost.coverKey ?? null,
-    tags: Array.isArray(apiPost.tags) ? apiPost.tags : [],
+    tags: apiPost.tags ?? [],
     stats: {
-      runs: Number(apiPost.stats?.runs ?? 0),
-      comments: Number(apiPost.stats?.comments ?? 0),
-      likes: Number(apiPost.stats?.likes ?? 0),
-      remixes: Number(apiPost.stats?.remixes ?? 0),
+      runs: apiPost.stats.runs,
+      comments: apiPost.stats.comments,
+      likes: apiPost.stats.likes,
+      remixes: apiPost.stats.remixes,
     },
     createdAt,
   };
@@ -214,12 +191,15 @@ export const postsApi = {
   get(postId: string) {
     return fetch(`/api/posts/${postId}`);
   },
-  list(params: {
-    mode: "latest" | "following" | "foryou";
-    limit?: number;
-    q?: string;
-    tags?: string[];
-  }) {
+  list(
+    params: {
+      mode: "latest" | "following" | "foryou";
+      limit?: number;
+      q?: string;
+      tags?: string[];
+    },
+    init?: RequestInit
+  ) {
     const search = new URLSearchParams();
     search.set("mode", params.mode);
     if (params.limit != null) {
@@ -232,7 +212,7 @@ export const postsApi = {
       search.set("tags", params.tags.join(","));
     }
 
-    return fetch(`/api/posts?${search.toString()}`);
+    return fetch(`/api/posts?${search.toString()}`, init);
   },
   like(postId: string) {
     return fetch(`/api/posts/${postId}/like`, {
@@ -359,6 +339,49 @@ export const capsulesApi = {
     return fetch("/api/import/zip", {
       method: "POST",
       body: formData,
+    });
+  },
+} as const;
+
+export const runsApi = {
+  complete(input: {
+    capsuleId: string;
+    postId?: string | null;
+    runId?: string;
+    durationMs?: number;
+    status?: "completed" | "failed";
+    errorMessage?: string | null;
+  }) {
+    return fetch("/api/runs/complete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      keepalive: true,
+    });
+  },
+  appendLogs(
+    runId: string,
+    payload: {
+      capsuleId: string;
+      postId: string;
+      logs: Array<{
+        level: string;
+        message: string;
+        timestamp: number;
+        source: string;
+        sampleRate: number;
+      }>;
+    }
+  ) {
+    return fetch(`/api/runs/${runId}/logs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      keepalive: true,
     });
   },
 } as const;

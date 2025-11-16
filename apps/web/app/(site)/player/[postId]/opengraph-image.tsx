@@ -4,11 +4,8 @@
 
 import { ImageResponse } from "next/og";
 import { getWorkerApiBase } from "@/lib/worker-api";
-import {
-  mapApiFeedPostToFeedPost,
-  type ApiFeedPostPayload,
-  type FeedPost,
-} from "@/lib/api";
+import { mapApiFeedPostToFeedPost, type FeedPost } from "@/lib/api";
+import { ApiPostResponseSchema } from "@vibecodr/shared";
 
 // Route segment config
 export const runtime = "edge";
@@ -37,11 +34,7 @@ async function fetchPost(postId: string): Promise<FeedPost | null> {
       return null;
     }
 
-    const payload = (await res.json()) as { post?: ApiFeedPostPayload };
-    if (!payload.post) {
-      return null;
-    }
-
+    const payload = ApiPostResponseSchema.parse(await res.json());
     return mapApiFeedPostToFeedPost(payload.post);
   } catch (error) {
     console.error("E-VIBECODR-1101 og:image fetch failed", {

@@ -17,9 +17,7 @@ type StudioTab = "import" | "params" | "files" | "publish";
  */
 export default function StudioIndex() {
   const [currentTab, setCurrentTab] = useState<StudioTab>("import");
-
-  // TODO: Load draft from localStorage or API
-  const [draft] = useState<CapsuleDraft | undefined>(undefined);
+  const [draft, setDraft] = useState<CapsuleDraft | undefined>();
 
   const handleTabChange = (tab: string) => {
     if (tab === "import" || tab === "params" || tab === "files" || tab === "publish") {
@@ -29,10 +27,12 @@ export default function StudioIndex() {
 
   return (
     <StudioShell currentTab={currentTab} draft={draft} onTabChange={handleTabChange}>
-      {currentTab === "import" && <ImportTab />}
+      {currentTab === "import" && (
+        <ImportTab draft={draft} onDraftChange={setDraft} onNavigateToTab={handleTabChange} />
+      )}
       {currentTab === "params" && <ParamsTab />}
       {currentTab === "files" && <FilesTab />}
-      {currentTab === "publish" && <PublishTab />}
+      {currentTab === "publish" && <PublishTab draft={draft} onDraftChange={setDraft} />}
     </StudioShell>
   );
 }

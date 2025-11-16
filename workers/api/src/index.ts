@@ -79,14 +79,10 @@ import {
   embedIframeHandler,
   ogImageHandler,
 } from "./handlers/embeds";
-import { completeRun } from "./handlers/runs";
+import { completeRun, appendRunLogs } from "./handlers/runs";
 import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest } from "./handlers/artifacts";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
 export { ArtifactCompiler } from "./durable/ArtifactCompiler";
-
-async function appendRunLogs(_req: Request, _env: Env, _ctx: ExecutionContext, params: Record<string, string>): Promise<Response> {
-  return json({ ok: false, runId: params.p1, todo: "logs not implemented" }, 501);
-}
 
 async function doStatus(_req: Request, env: Env): Promise<Response> {
   try {

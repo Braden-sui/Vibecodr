@@ -74,9 +74,9 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] postMessage bridge implemented (`ready`, `setParams`, logs, stats).
 - [x] Capability badges surfaced (currently runner + storage only; net/workers reserved for premium tiers).
 - [x] Micro-player variant reused in Feed cards for inline runs.
-- [ ] Console proxy + sampled analytics wired to PostHog/Analytics Engine.
-- [ ] Restart without full reload where possible (warm restarts).
-- [ ] Preview-to-Player handoff preserves param state and logs.
+- [x] Console proxy + sampled analytics wired to PostHog/Analytics Engine.
+- [x] Restart without full reload where possible (warm restarts).
+- [x] Preview-to-Player handoff preserves param state and logs.
 
 ## 6) Manifest, Runner, and Runtime Artifacts (Phase 2)
 
@@ -99,6 +99,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 
 - [x] Studio shell with tabs: Import, Params, Files, Publish.
 - [x] Import adapters: GitHub URL and ZIP upload wired to Worker endpoints.
+- [ ] Refactor `/import/zip` into an analyze + prebuild helper (manifest + warnings only) so `/capsules/publish` remains the single write path for capsule creation.
 - [x] Files editor for entry/assets/manifest.json with validation hooks.
 - [x] Publish flow with title, tags, cover upload, visibility, and capability prompts (backed by capsule publish endpoint).
 - [x] Immutable bundles written to R2 under `capsules/{contentHash}/...` with manifest and metadata.

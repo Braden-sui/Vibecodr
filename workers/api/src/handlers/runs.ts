@@ -97,3 +97,120 @@ export const completeRun: Handler = async (req, env) => {
     return json({ error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" }, 500);
   }
 };
+
+const LOG_LEVELS = new Set(["log", "info", "warn", "error"]);
+const MAX_LOGS_PER_REQUEST = 25;
+
+type IncomingLog = {
+  level?: string;
+  message?: unknown;
+  timestamp?: number;
+  source?: string;
+  sampleRate?: number;
+};
+
+type SanitizedLog = {
+  level: "log" | "info" | "warn" | "error";
+  message: string;
+  timestamp: number;
+  source: "preview" | "player";
+  sampleRate: number;
+};
+
+function sanitizeLogs(logs: unknown): SanitizedLog[] {
+  if (!Array.isArray(logs)) {
+    return [];
+  }
+  const sanitized: SanitizedLog[] = [];
+  for (const raw of logs) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = raw as IncomingLog;
+    const normalizedLevel =
+      typeof entry.level === "string" && LOG_LEVELS.has(entry.level)
+        ? (entry.level as SanitizedLog["level"])
+        : "log";
+    const message =
+      typeof entry.message === "string"
+        ? entry.message
+        : entry.message != null
+        ? JSON.stringify(entry.message)
+        : "";
+    if (!message) continue;
+    const timestamp =
+      typeof entry.timestamp === "number" && Number.isFinite(entry.timestamp)
+        ? entry.timestamp
+        : Date.now();
+    const source =
+      entry.source === "preview" || entry.source === "player" ? entry.source : "player";
+    const rate =
+      typeof entry.sampleRate === "number" && entry.sampleRate > 0
+        ? Math.min(entry.sampleRate, 1)
+        : 1;
+    sanitized.push({
+      level: normalizedLevel,
+      message: message.slice(0, 500),
+      timestamp,
+      source,
+      sampleRate: rate,
+    });
+    if (sanitized.length >= MAX_LOGS_PER_REQUEST) {
+      break;
+    }
+  }
+  return sanitized;
+}
+
+export const appendRunLogs: Handler = async (req, env, _ctx, params) => {
+  if (req.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405);
+  }
+  const runId = params.p1;
+  if (!runId) {
+    return json({ error: "runId is required" }, 400);
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const payload = body as {
+    capsuleId?: string;
+    postId?: string | null;
+    logs?: unknown;
+  };
+
+  const logs = sanitizeLogs(payload.logs);
+  if (logs.length === 0) {
+    return json({ error: "logs array required" }, 400);
+  }
+
+  const dataset = env.vibecodr_analytics_engine;
+  if (dataset && typeof dataset.writeDataPoint === "function") {
+    for (const entry of logs) {
+      try {
+        dataset.writeDataPoint({
+          indexes: [runId],
+          blobs: [
+            "player_console_log",
+            entry.level,
+            entry.source,
+            entry.message,
+            payload.capsuleId || "",
+            payload.postId || "",
+          ],
+          doubles: [entry.timestamp, entry.sampleRate],
+        });
+      } catch (err) {
+        console.error("E-API-0015 appendRunLogs analytics write failed", {
+          runId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  return json({ ok: true, accepted: logs.length });
+};

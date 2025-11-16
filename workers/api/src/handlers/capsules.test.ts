@@ -188,6 +188,11 @@ describe("publishCapsule runtime artifacts", () => {
 
     const res = await publishCapsule(req, env, {} as any, {} as any);
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body?.capsule?.id).toBeDefined();
+    expect(body?.artifact?.id).toBeDefined();
+    expect(body.artifactId).toBe(body.artifact.id);
+    expect(body.capsule.contentHash).toBeDefined();
 
     const r2Put = (env.R2 as any).put as ReturnType<typeof vi.fn>;
     const putCalls = r2Put.mock.calls as any[];

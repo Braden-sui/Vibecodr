@@ -214,6 +214,16 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
         .run();
     }
 
+    let artifactSummary:
+      | {
+          id: string;
+          runtimeVersion?: string | null;
+          bundleDigest?: string | null;
+          bundleSizeBytes?: number | null;
+          queued?: boolean;
+        }
+      | null = null;
+
     if (
       env.RUNTIME_ARTIFACTS_ENABLED &&
       env.RUNTIME_ARTIFACTS_ENABLED !== "false" &&
@@ -293,6 +303,14 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
             });
           }
         }
+
+        artifactSummary = {
+          id: artifactId,
+          runtimeVersion,
+          bundleDigest: runtimeManifest.bundle.digest,
+          bundleSizeBytes,
+          queued: false,
+        };
       } catch (err) {
         console.error("artifact creation failed", {
           capsuleId,
@@ -326,14 +344,28 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
       });
     }
 
-    return json({
+    const responsePayload: Record<string, unknown> = {
       success: true,
       capsuleId,
       contentHash: uploadResult.contentHash,
       totalSize: uploadResult.totalSize,
       fileCount: uploadResult.fileCount,
       warnings: validation.warnings,
-    });
+      capsule: {
+        id: capsuleId,
+        contentHash: uploadResult.contentHash,
+        totalSize: uploadResult.totalSize,
+        fileCount: uploadResult.fileCount,
+      },
+    };
+
+    if (artifactSummary) {
+      responsePayload.artifact = artifactSummary;
+      responsePayload.artifactId = artifactSummary.id;
+      responsePayload.bundleDigest = artifactSummary.bundleDigest;
+    }
+
+    return json(responsePayload);
   } catch (error) {
     console.error("Publish error:", error);
     return json(

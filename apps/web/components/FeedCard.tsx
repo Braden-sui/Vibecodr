@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -18,6 +18,8 @@ import {
   MoreHorizontal,
   ShieldAlert,
   Trash2,
+  Wifi,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
@@ -35,7 +37,7 @@ import {
 import type { FeedPost } from "@/lib/api";
 import { budgeted } from "@/lib/perf";
 import { budgetedAsync } from "@/lib/perf";
-import { writePreviewHandoff } from "@/lib/handoff";
+import { writePreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 
 type PublicMetadata = {
@@ -54,6 +56,7 @@ const MAX_ACTIVE_PREVIEWS = 2;
 // Global cap for manifest preloads to avoid stampedes
 let manifestPreloadsInFlight = 0;
 const MAX_MANIFEST_PREFETCH = 3;
+const PREVIEW_LOG_LIMIT = 40;
 
 export function FeedCard({ post }: FeedCardProps) {
   const router = useRouter();
@@ -80,6 +83,23 @@ export function FeedCard({ post }: FeedCardProps) {
   const pauseStateRef = useRef<"paused" | "running">("running");
   const lastIntersectionRatioRef = useRef(1);
   const [isModerating, setIsModerating] = useState(false);
+  const previewLogsRef = useRef<PreviewLogEntry[]>([]);
+
+  useEffect(() => {
+    previewLogsRef.current = [];
+  }, [post.id]);
+
+  const pushPreviewLog = useCallback(
+    (entry: { level: PreviewLogEntry["level"]; message: string; timestamp?: number }) => {
+      const normalized: PreviewLogEntry = {
+        level: entry.level,
+        message: entry.message.slice(0, 500),
+        timestamp: entry.timestamp ?? Date.now(),
+      };
+      previewLogsRef.current = [...previewLogsRef.current, normalized].slice(-PREVIEW_LOG_LIMIT);
+    },
+    []
+  );
 
   const handleModerationAction = async (action: "quarantine" | "remove") => {
     if (isModerating) return;
@@ -108,6 +128,16 @@ export function FeedCard({ post }: FeedCardProps) {
       setIsModerating(false);
     }
   };
+
+  const persistPreviewHandoff = useCallback(
+    (source: string) => {
+      writePreviewHandoff(post.id, {
+        source,
+        logs: previewLogsRef.current,
+      });
+    },
+    [post.id]
+  );
 
   const capsuleId = post.capsule?.id;
   const isWebContainer = post.capsule?.runner === "webcontainer";
@@ -277,6 +307,42 @@ export function FeedCard({ post }: FeedCardProps) {
     };
   }, [isRunning, capsuleId, post.id]);
 
+  useEffect(() => {
+    if (!isApp || !capsuleId) {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
+        return;
+      }
+      const data = event.data;
+      if (!data || typeof data.type !== "string") {
+        return;
+      }
+
+      if (data.type === "log" && data.payload) {
+        const payload = data.payload as { level?: string; message?: string; timestamp?: number };
+        const level = payload.level;
+        const normalizedLevel: PreviewLogEntry["level"] =
+          level === "warn" || level === "error" || level === "info" ? level : "log";
+        const message = typeof payload.message === "string" ? payload.message : JSON.stringify(payload);
+        pushPreviewLog({ level: normalizedLevel, message, timestamp: payload.timestamp });
+      } else if (data.type === "error") {
+        const payload = data.payload as { message?: string };
+        pushPreviewLog({
+          level: "error",
+          message: payload?.message || "Runtime error",
+        });
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [capsuleId, isApp, pushPreviewLog]);
+
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
     hoverTimeoutRef.current = setTimeout(() => {
@@ -354,7 +420,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const handleComment = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    writePreviewHandoff(post.id, { source: "comments" });
+    persistPreviewHandoff("comments");
     router.push(`/player/${post.id}?tab=comments`);
   };
 
@@ -396,7 +462,7 @@ export function FeedCard({ post }: FeedCardProps) {
         onMouseLeave={handleMouseLeave}
         className="relative"
       >
-        <Link href={`/player/${post.id}`} onClick={() => writePreviewHandoff(post.id, { source: "cover" })}>
+        <Link href={`/player/${post.id}`} onClick={() => persistPreviewHandoff("cover")}>
           <div
             className={cn(
               "relative aspect-video w-full overflow-hidden bg-gradient-to-br",
@@ -491,7 +557,7 @@ export function FeedCard({ post }: FeedCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 space-y-1">
-            <Link href={`/player/${post.id}`} onClick={() => writePreviewHandoff(post.id, { source: "title" })}>
+            <Link href={`/player/${post.id}`} onClick={() => persistPreviewHandoff("title")}>
               <h3 className="line-clamp-2 font-semibold leading-tight hover:text-primary">
                 {post.title}
               </h3>
@@ -557,6 +623,20 @@ export function FeedCard({ post }: FeedCardProps) {
             <Badge variant="outline" className="gap-1">
               <Sliders className="h-3 w-3" />
               {post.capsule.params.length} params
+            </Badge>
+          )}
+
+          {isApp && Array.isArray(post.capsule?.capabilities?.net) && post.capsule.capabilities.net.length > 0 && (
+            <Badge variant="outline" className="gap-1">
+              <Wifi className="h-3 w-3" />
+              <span>Network</span>
+            </Badge>
+          )}
+
+          {isApp && post.capsule?.capabilities?.storage && (
+            <Badge variant="outline" className="gap-1">
+              <Database className="h-3 w-3" />
+              Storage
             </Badge>
           )}
 

@@ -17,8 +17,9 @@ export interface PlayerIframeProps {
   capsuleId: string;
   params?: Record<string, unknown>;
   onReady?: () => void;
-  onLog?: (log: { level: string; message: string }) => void;
+  onLog?: (log: { level: string; message: string; timestamp?: number }) => void;
   onStats?: (stats: { fps: number; memory: number }) => void;
+  onBoot?: (metrics: { bootTimeMs: number }) => void;
   artifactId?: string;
 }
 
@@ -30,7 +31,7 @@ export interface PlayerIframeHandle {
 
 export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
   function PlayerIframe(
-    { capsuleId, params = {}, onReady, onLog, onStats, artifactId },
+    { capsuleId, params = {}, onReady, onLog, onStats, onBoot, artifactId },
     ref
   ) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -64,7 +65,19 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       ref,
       () => ({
         postMessage: (type: string, payload?: unknown) => sendToIframe(type, payload),
-        restart: () => sendToIframe("restart"),
+        restart: () => {
+          const sent = sendToIframe("restart");
+          if (!sent) {
+            const iframe = iframeRef.current;
+            if (iframe) {
+              iframe.src = capsulesApi.bundleSrc(capsuleId);
+            }
+            setStatus("loading");
+            setErrorMessage("");
+          }
+          pauseStateRef.current = "running";
+          return sent;
+        },
         kill: () => {
           const sent = sendToIframe("kill");
           if (!sent) {
@@ -77,7 +90,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return sent;
         },
       }),
-      [sendToIframe]
+      [capsuleId, sendToIframe]
     );
 
     useEffect(() => {
@@ -88,13 +101,19 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         // TODO: Verify origin matches our R2 domain
         // if (!event.origin.startsWith('https://capsules.vibecodr.space')) return;
 
-        const { type, payload } = event.data;
+        const { type, payload } = event.data as { type?: string; payload?: any };
 
         switch (type) {
-          case "ready":
+          case "ready": {
             setStatus("ready");
+            const bootTime =
+              payload && typeof payload.bootTime === "number" ? payload.bootTime : undefined;
+            if (bootTime != null) {
+              onBoot?.({ bootTimeMs: bootTime });
+            }
             onReady?.();
             break;
+          }
 
           case "log":
             onLog?.(payload);
@@ -116,7 +135,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       return () => {
         window.removeEventListener("message", handleMessage);
       };
-    }, [onReady, onLog, onStats]);
+    }, [onReady, onLog, onStats, onBoot]);
 
     // Send params to iframe when they change
     useEffect(() => {

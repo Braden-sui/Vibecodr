@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FeedCard } from "@/components/FeedCard";
@@ -12,129 +12,132 @@ import { trackEvent } from "@/lib/analytics";
 import {
   postsApi,
   type FeedPost,
-  type ApiFeedPostPayload,
   mapApiFeedPostToFeedPost,
 } from "@/lib/api";
+import { ApiFeedResponseSchema } from "@vibecodr/shared";
 
 type FeedMode = "latest" | "following" | "foryou";
 
 const availableTags = ["ai", "visualization", "canvas", "cli", "webcontainer", "data"];
 
-const fallbackPosts = [
-    {
-      id: "1",
-      type: "app" as const,
-      title: "Interactive Boids Simulation",
-      description: "Watch flocking behavior emerge with adjustable parameters",
-      author: {
-        id: "user1",
-        handle: "marta",
-        name: "Marta Chen",
-        avatarUrl: "/avatars/marta.png",
-      },
-      capsule: {
-        id: "capsule1",
-        runner: "client-static" as const,
-        capabilities: {
-          net: [],
-          storage: false,
-          workers: false,
-        },
-        params: [{ name: "count" }, { name: "speed" }],
-      },
-      tags: ["simulation", "canvas", "animation"],
-      stats: {
-        runs: 342,
-        comments: 12,
-        likes: 89,
-        remixes: 5,
-      },
-      createdAt: "2025-11-10T15:30:00Z",
-      score: 0.91,
+const fallbackPosts: FeedPost[] = [
+  {
+    id: "1",
+    type: "app",
+    title: "Interactive Boids Simulation",
+    description: "Watch flocking behavior emerge with adjustable parameters",
+    author: {
+      id: "user1",
+      handle: "marta",
+      name: "Marta Chen",
+      avatarUrl: "/avatars/marta.png",
     },
-    {
-      id: "2",
-      type: "report" as const,
-      title: "Building a Tiny Paint App",
-      description: "A walkthrough of creating a minimal canvas-based drawing tool",
-      author: {
-        id: "user2",
-        handle: "tom",
-        name: "Tom Anderson",
-        avatarUrl: "/avatars/tom.png",
+    capsule: {
+      id: "capsule1",
+      runner: "client-static",
+      capabilities: {
+        net: [],
+        storage: false,
+        workers: false,
       },
-      tags: ["tutorial", "canvas", "beginner"],
-      stats: {
-        runs: 0,
-        comments: 8,
-        likes: 45,
-        remixes: 0,
-      },
-      createdAt: "2025-11-10T12:00:00Z",
-      score: 0.78,
+      params: [{ name: "count" }, { name: "speed" }],
+      artifactId: null,
     },
-    {
-      id: "3",
-      type: "app" as const,
-      title: "Weather Dashboard",
-      description: "Real-time weather data with beautiful visualizations",
-      author: {
-        id: "user3",
-        handle: "sarah_dev",
-        name: "Sarah Johnson",
-        avatarUrl: "/avatars/sarah.png",
-      },
-      capsule: {
-        id: "capsule3",
-        runner: "client-static" as const,
-        capabilities: {
-          net: ["api.openweathermap.org"],
-          storage: true,
-          workers: false,
-        },
-        params: [{ name: "city" }, { name: "units" }],
-      },
-      tags: ["weather", "api", "data-viz"],
-      stats: {
-        runs: 523,
-        comments: 24,
-        likes: 156,
-        remixes: 12,
-      },
-      createdAt: "2025-11-09T18:45:00Z",
-      score: 0.84,
+    coverKey: null,
+    tags: ["simulation", "canvas", "animation"],
+    stats: {
+      runs: 342,
+      comments: 12,
+      likes: 89,
+      remixes: 5,
     },
-    {
-      id: "4",
-      type: "app" as const,
-      title: "Markdown Preview Editor",
-      description: "Write and preview markdown in real-time with syntax highlighting",
-      author: {
-        id: "user4",
-        handle: "alex_codes",
-        name: "Alex Rivera",
-        avatarUrl: "/avatars/alex.png",
-      },
-      capsule: {
-        id: "capsule4",
-        runner: "webcontainer" as const,
-        capabilities: {
-          net: ["cdn.jsdelivr.net"],
-          storage: true,
-          workers: false,
-        },
-        params: [{ name: "theme" }],
-      },
-      tags: ["markdown", "editor", "productivity", "live"],
-      stats: {
-        runs: 789,
-        comments: 34,
-        likes: 234,
-        remixes: 18,
-      },
-      createdAt: "2025-11-09T10:20:00Z",
-      score: 0.88,
+    createdAt: "2025-11-10T15:30:00Z",
+  },
+  {
+    id: "2",
+    type: "report",
+    title: "Building a Tiny Paint App",
+    description: "A walkthrough of creating a minimal canvas-based drawing tool",
+    author: {
+      id: "user2",
+      handle: "tom",
+      name: "Tom Anderson",
+      avatarUrl: "/avatars/tom.png",
     },
+    coverKey: null,
+    tags: ["tutorial", "canvas", "beginner"],
+    stats: {
+      runs: 0,
+      comments: 8,
+      likes: 45,
+      remixes: 0,
+    },
+    createdAt: "2025-11-10T12:00:00Z",
+  },
+  {
+    id: "3",
+    type: "app",
+    title: "Weather Dashboard",
+    description: "Real-time weather data with beautiful visualizations",
+    author: {
+      id: "user3",
+      handle: "sarah_dev",
+      name: "Sarah Johnson",
+      avatarUrl: "/avatars/sarah.png",
+    },
+    capsule: {
+      id: "capsule3",
+      runner: "client-static",
+      capabilities: {
+        net: ["api.openweathermap.org"],
+        storage: true,
+        workers: false,
+      },
+      params: [{ name: "city" }, { name: "units" }],
+      artifactId: null,
+    },
+    coverKey: null,
+    tags: ["weather", "api", "data-viz"],
+    stats: {
+      runs: 523,
+      comments: 24,
+      likes: 156,
+      remixes: 12,
+    },
+    createdAt: "2025-11-09T18:45:00Z",
+  },
+  {
+    id: "4",
+    type: "app",
+    title: "Markdown Preview Editor",
+    description: "Write and preview markdown in real-time with syntax highlighting",
+    author: {
+      id: "user4",
+      handle: "alex_codes",
+      name: "Alex Rivera",
+      avatarUrl: "/avatars/alex.png",
+    },
+    capsule: {
+      id: "capsule4",
+      runner: "webcontainer",
+      capabilities: {
+        net: ["cdn.jsdelivr.net"],
+        storage: true,
+        workers: false,
+      },
+      params: [{ name: "theme" }],
+      artifactId: null,
+    },
+    coverKey: null,
+    tags: ["markdown", "editor", "productivity", "live"],
+    stats: {
+      runs: 789,
+      comments: 34,
+      likes: 234,
+      remixes: 18,
+    },
+    createdAt: "2025-11-09T10:20:00Z",
+  },
 ];
 
 export default function FeedPage() {
@@ -144,6 +147,8 @@ export default function FeedPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [isFallbackData, setIsFallbackData] = useState(false);
   const searchParams = useSearchParams();
 
   // Keep searchTerm synced with URL `q`
@@ -151,45 +156,94 @@ export default function FeedPage() {
     setSearchTerm(searchParams.get("q") ?? "");
   }, [searchParams]);
 
-  const fetchPosts = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const response = await postsApi.list({
-        mode,
-        limit: 20,
-        q: searchTerm,
-        tags: selectedTags,
-      });
-      if (!response.ok) {
-        setPosts(fallbackPosts as FeedPost[]);
-        return;
-      }
-
-      const data = (await response.json()) as { posts?: ApiFeedPostPayload[] };
-      const mapped: FeedPost[] = (data.posts ?? []).map((p) => mapApiFeedPostToFeedPost(p));
-      setPosts(mapped);
-      setLastUpdated(new Date().toISOString());
-      trackEvent("feed_results_loaded", {
-        mode,
-        count: mapped.length,
-        fromNetwork: true,
-      });
-    } catch (error) {
-      console.error("Failed to fetch posts:", error);
-      setPosts(fallbackPosts as FeedPost[]);
-      trackEvent("feed_results_loaded", {
-        mode,
-        count: fallbackPosts.length,
-        fromNetwork: false,
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [mode, searchTerm, selectedTags]);
-
   useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+    const controller = new AbortController();
+    let cancelled = false;
+
+    setIsLoading(true);
+    setFeedError(null);
+    setIsFallbackData(false);
+
+    const load = async () => {
+      try {
+        const response = await postsApi.list(
+          {
+            mode,
+            limit: 20,
+            q: searchTerm,
+            tags: selectedTags,
+          },
+          { signal: controller.signal }
+        );
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          if (cancelled) return;
+          setPosts([]);
+          setLastUpdated(null);
+          setIsFallbackData(false);
+          const friendly =
+            mode === "following" && response.status === 400
+              ? "Sign in to see the creators you follow."
+              : (payload && typeof payload.error === "string"
+                  ? payload.error
+                  : response.status >= 500
+                  ? "Feed temporarily unavailable. Please try again."
+                  : "Unable to load feed.");
+          setFeedError(friendly);
+          trackEvent("feed_results_failed", {
+            mode,
+            status: response.status,
+            tagCount: selectedTags.length,
+          });
+          return;
+        }
+
+        const raw = await response.json();
+        const parsed = ApiFeedResponseSchema.parse(raw);
+        if (cancelled) return;
+
+        const mapped = parsed.posts.map((p) => mapApiFeedPostToFeedPost(p));
+        setPosts(mapped);
+        setLastUpdated(new Date().toISOString());
+        setFeedError(null);
+        setIsFallbackData(false);
+        trackEvent("feed_results_loaded", {
+          mode,
+          count: mapped.length,
+          fromNetwork: true,
+          tagCount: selectedTags.length,
+        });
+      } catch (error) {
+        if ((error as DOMException)?.name === "AbortError" || cancelled) {
+          return;
+        }
+        console.error("Failed to fetch posts:", error);
+        if (cancelled) return;
+        setPosts(fallbackPosts);
+        setIsFallbackData(true);
+        setFeedError("Showing demo vibes while the feed recovers.");
+        setLastUpdated(null);
+        trackEvent("feed_results_loaded", {
+          mode,
+          count: fallbackPosts.length,
+          fromNetwork: false,
+          tagCount: selectedTags.length,
+        });
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [mode, searchTerm, selectedTags]);
 
   useEffect(() => {
     if (!searchTerm) return;
@@ -201,28 +255,11 @@ export default function FeedPage() {
     return () => clearTimeout(timer);
   }, [searchTerm, selectedTags, mode]);
 
-  const filteredPosts = useMemo(() => {
-    const source = posts;
-    const query = searchTerm.trim().toLowerCase();
-
-    return source.filter((post) => {
-      const matchesTags =
-        selectedTags.length === 0 ||
-        selectedTags.some((tag) => post.tags?.map((t: string) => t.toLowerCase()).includes(tag));
-
-      const matchesQuery =
-        query.length === 0 ||
-        post.title.toLowerCase().includes(query) ||
-        post.description?.toLowerCase().includes(query) ||
-        post.tags?.some((tag: string) => tag.toLowerCase().includes(query));
-
-      return matchesTags && matchesQuery;
-    });
-  }, [posts, selectedTags, searchTerm]);
-
   const handlePostCreated = (newPost: FeedPost) => {
     // Add new post to the top of the feed optimistically
     setPosts((prev) => [newPost, ...prev]);
+    setFeedError(null);
+    setIsFallbackData(false);
     trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
   };
 
@@ -232,9 +269,9 @@ export default function FeedPage() {
     </div>
   );
 
-  const renderPostList = () => (
+  const renderPostList = (items: FeedPost[]) => (
     <div className="mx-auto max-w-2xl space-y-4">
-      {filteredPosts.map((post) => (
+      {items.map((post) => (
         <FeedCard key={post.id} post={post} />
       ))}
     </div>
@@ -326,6 +363,12 @@ export default function FeedPage() {
           </div>
         </div>
 
+        {feedError && (
+          <div className="rounded-lg border border-dashed border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {feedError}
+          </div>
+        )}
+
         {mode === "foryou" && (
           <div className="flex flex-col gap-2 rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
@@ -333,7 +376,9 @@ export default function FeedPage() {
               Personalized using runs, remixes, and tags you follow.
             </div>
             <div className="text-xs">
-              Updated {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : "just now"}
+              {isFallbackData
+                ? "Showing sample vibes while we reconnect"
+                : `Updated ${lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : "just now"}`}
             </div>
           </div>
         )}
@@ -355,7 +400,7 @@ export default function FeedPage() {
           ) : (
             <div className="space-y-6">
               {composerSection}
-              {filteredPosts.length > 0 ? renderPostList() : <div className="mx-auto max-w-2xl">{emptyState}</div>}
+              {posts.length > 0 ? renderPostList(posts) : <div className="mx-auto max-w-2xl">{emptyState}</div>}
             </div>
           )}
         </TabsContent>
@@ -366,8 +411,8 @@ export default function FeedPage() {
           ) : (
             <div className="space-y-6">
               {composerSection}
-              {filteredPosts.length > 0 ? (
-                renderPostList()
+              {posts.length > 0 ? (
+                renderPostList(posts)
               ) : (
                 <div className="mx-auto max-w-2xl">
                   <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-12 text-center">
@@ -402,7 +447,7 @@ export default function FeedPage() {
           ) : (
             <div className="space-y-6">
               {composerSection}
-              {filteredPosts.length > 0 ? renderPostList() : <div className="mx-auto max-w-2xl">{emptyState}</div>}
+              {posts.length > 0 ? renderPostList(posts) : <div className="mx-auto max-w-2xl">{emptyState}</div>}
             </div>
           )}
         </TabsContent>

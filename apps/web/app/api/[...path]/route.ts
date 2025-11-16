@@ -4,8 +4,6 @@ import { getWorkerApiBase } from "@/lib/worker-api";
 
 export const runtime = "edge";
 
-const API_BASE = getWorkerApiBase();
-
 async function injectClerkAuthHeader(headers: Headers) {
   if (headers.has("authorization")) {
     return;
@@ -30,7 +28,7 @@ async function injectClerkAuthHeader(headers: Headers) {
 
 async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname.replace(/^\/api\/?/, "");
-  const target = `${API_BASE}/${path}${req.nextUrl.search}`;
+  const target = `${getWorkerApiBase()}/${path}${req.nextUrl.search}`;
 
   const headers = new Headers(req.headers);
   headers.delete("host");
@@ -45,8 +43,7 @@ async function proxy(req: NextRequest) {
   };
 
   if (!["GET", "HEAD"].includes(req.method)) {
-    const body = await req.arrayBuffer();
-    init.body = body;
+    init.body = req.body;
   }
 
   const res = await fetch(target, init);
