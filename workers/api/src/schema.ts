@@ -276,6 +276,7 @@ export const createPostSchema = z.object({
   description: z.string().max(1000).optional(),
   tags: z.array(z.string()).optional(),
   visibility: z.enum(["public", "unlisted", "private"]).default("public"),
+  coverKey: z.string().max(500).optional(),
 });
 
 // Comment schema

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FeedCard } from "@/components/FeedCard";
+import { VibesComposer } from "@/components/VibesComposer";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Filter, Sparkles, Tag as TagIcon } from "lucide-react";
@@ -221,6 +222,7 @@ export default function FeedPage() {
 
   const renderTimeline = () => (
     <div className="relative mx-auto max-w-2xl">
+      <VibesComposer onPostCreated={handlePostCreated} className="mb-6" />
       <div className="space-y-4">
         {filteredPosts.map((post) => (
           <FeedCard key={post.id} post={post} />
@@ -257,6 +259,12 @@ export default function FeedPage() {
       trackEvent("feed_tag_toggle", { tag, active: !exists, mode });
       return next;
     });
+  };
+
+  const handlePostCreated = (newPost: FeedPost) => {
+    // Add new post to the top of the feed optimistically
+    setPosts((prev) => [newPost, ...prev]);
+    trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
   };
 
   const emptyState = (

@@ -34,6 +34,7 @@ export const ApiFeedPostSchema = z.object({
   tags: z.array(z.string()),
   author: ApiAuthorSummarySchema,
   capsule: ApiCapsuleSummarySchema.nullable(),
+  coverKey: z.string().nullable().optional(),
   createdAt: z.union([z.number(), z.string()]),
   stats: ApiPostStatsSchema,
   score: z.number().optional(),

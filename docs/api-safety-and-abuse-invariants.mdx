@@ -110,6 +110,15 @@ If any invariant would be violated by a change, **the change is not allowed** wi
     - Use reasonable timeouts and limit per-request fan-out.
     - Avoid unbounded loops making external calls inside a single request.
 
+- **[INV-API-0302] Runtime iframes are cross-origin and sandboxed**
+  - **Goal**: Prevent shared state between the host UI and user-authored runtime code, even if sandbox guards are bypassed.
+  - **Examples of what we are preventing**
+    - Capsules reading or writing the host app's `localStorage`, cookies, or other same-origin data.
+    - Service workers or timing side channels spanning both host and runtime.
+  - **How we enforce it**
+    - Serve runtime HTML and bundles from a separate origin (for example, `runtime.vibecodr.com`) and embed them with `sandbox="allow-scripts"`.
+    - Use `postMessage` as the only communication channel between host and runtime iframes, with explicit origin checks.
+
 ---
 
 ## 5) Cost & Billing Guardrails
@@ -187,6 +196,16 @@ This section collects concrete abuse scenarios and maps them to invariants above
   - **Mitigations**
     - Strict host allowlist from manifest/vars. (**INV-API-0300**)
     - Per-route rate limits. (**INV-API-0200**)
+
+- **Scenario E: Auto-run miner in the feed**
+  - Auto-run in the feed starts capsules when cards enter the viewport. An attacker attempts to ship a capsule that mines cryptocurrency or wastes CPU while users scroll past.
+  - **Impact**: Elevated CPU on client devices, possible battery drain, and wasted bandwidth if left unchecked.
+  - **Mitigations**
+    - Runtime iframes are cross-origin and sandboxed; capsules cannot access host storage or cookies. (**INV-API-0302**)
+    - CSP and network allowlists on `/api/proxy` block calls to mining pool hosts and other unapproved endpoints. (**INV-API-0300**)
+    - Feed auto-run is bounded by an engagement window: if the user never interacts (no hover/click/param changes), the host kills the iframe after a short period (for example, ~10 seconds) and unloads it when far outside the viewport.
+    - Global concurrency caps on auto-run iframes ensure only a small number of runtimes execute simultaneously, keeping CPU/memory usage within budget.
+    - Low-engagement capsules are de-ranked by feed algorithms and can be quarantined or removed via moderation flows.
 
 ---
 

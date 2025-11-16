@@ -40,6 +40,8 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 - ASCII only, strict lint/type settings, and no TODO/FIXME markers per repo policy.
 - Observability: compile and runtime telemetry must emit structured events with artifact/user identifiers.
 - Hosting target: Cloudflare Workers + R2/KV for bundles, Cloudflare Pages (or Workers static) for runtime assets, Next.js for host UI.
+- Runtime iframes are cross-origin from the host UI (for example, `runtime.vibecodr.com` vs `vibecodr.space`) and use `sandbox="allow-scripts"`; all coordination happens via `postMessage`.
+- Feed auto-run is allowed, but lifetime must be bounded: auto-started iframes that never receive user interaction are killed quickly (for example, after roughly 10 seconds), scrolled-out iframes are unloaded, and global concurrency caps keep the number of active iframes within safe limits.
 
 ## High-Level Architecture
 1. **Artifact Spec Layer:** Backend API stores artifact metadata, version, type, dependency declarations, and runtime manifest references. Acts as source of truth for loaders.
@@ -95,8 +97,8 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 ### Sandbox Frame Component
 - `SandboxFrame` props: `manifest`, `title`, `height`, `onReady`, `onError`, `onPolicyViolation`.
 - Generates `<iframe>` with:
-  - `srcdoc` containing skeleton HTML, runtime bootstrap script, and inline guard script digest.
-  - Attributes: `sandbox="allow-scripts allow-same-origin"`, `referrerpolicy="no-referrer"`, `aria-label`.
+  - `src` pointing at prebuilt runtime HTML on `runtime.vibecodr.com` (or equivalent runtime host) that includes the skeleton UI, guard script, and runtime bootstrap; the host page only uses `postMessage` to send params and receive telemetry.
+  - Attributes: `sandbox="allow-scripts"`, `referrerpolicy="no-referrer"`, `aria-label`.
   - `style` enforcing responsive sizing + fallback message.
 - Guard script responsibilities:
   - Override forbidden APIs (`localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`).
@@ -130,6 +132,7 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 - Provide optional Worker proxy endpoint for approved domains so we retain logging + caching.
 - Heartbeat: guard script posts `{"type":"heartbeat"}` every 5 s; host kills iframe if missing >15 s.
 - Rate limits: host tracks per-user concurrent artifacts to prevent resource abuse.
+- Auto-run lifecycle (feed): the host may auto-start runtime when a card enters the viewport, but must enforce an engagement window (for example, kill if there is no hover/click/param interaction within roughly 10 seconds), unload iframes that are far outside the viewport, and cap the number of simultaneously active auto-run iframes (for example, 5–7) to keep CPU and memory usage bounded.
 
 ### Observability & Admin Tooling
 - **Compile logs:** artifact id, owner, duration, bundle size, violations. Export to analytics pipeline + Grafana dashboard.
@@ -186,7 +189,8 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
    5.2 Add heartbeat protocol + host-side timeout handling.  
    5.3 Enforce CSP + sandbox flags via Next.js middleware or headers.  
    5.4 Build Worker proxy for allowed network calls (optional but recommended for audit).  
-   5.5 Document policy behavior for creators.
+   5.5 Document policy behavior for creators.  
+   5.6 Design and implement feed auto-run behavior: viewport-based auto-start, an engagement-window kill (for example, roughly 10 seconds for non-interacted apps), viewport-based unload, and global concurrency caps for auto-run iframes.
 6. **Observability & Admin**
    6.1 Hook telemetry events to analytics/log pipeline.  
    6.2 Build Grafana (or alternative) dashboards.  

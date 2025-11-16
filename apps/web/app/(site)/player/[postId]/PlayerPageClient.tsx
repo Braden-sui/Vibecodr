@@ -17,6 +17,8 @@ import { ArrowLeft, Sliders } from "lucide-react";
 import { postsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
+import { readPreviewHandoff } from "@/lib/handoff";
+import { budgeted } from "@/lib/perf";
 
 type PlayerPageClientProps = {
   postId: string;
@@ -120,6 +122,17 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       return next;
     });
   }, [manifestParams]);
+
+  // Apply any preview→player handoff param state and log timing.
+  useEffect(() => {
+    budgeted(`[player] handoff_read:${postId}`, () => {
+      const { state } = readPreviewHandoff(postId);
+      if (!state) return;
+      if (state.params && typeof state.params === "object") {
+        setCapsuleParams((prev) => ({ ...prev, ...(state.params as Record<string, unknown>) }));
+      }
+    });
+  }, [postId, manifestParams.length]);
 
   const postMessageToCapsule = useCallback(
     (type: string, payload?: unknown) => {

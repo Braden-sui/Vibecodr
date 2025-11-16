@@ -190,8 +190,9 @@ export const postsApi = {
     type?: "app" | "report";
     capsuleId?: string | null;
     tags?: string[];
+    coverKey?: string | null;
   }) {
-    const { title, description, type = "report", capsuleId, tags } = input;
+    const { title, description, type = "report", capsuleId, tags, coverKey } = input;
     return fetch("/api/posts", {
       method: "POST",
       headers: {
@@ -203,6 +204,7 @@ export const postsApi = {
         type,
         capsuleId: capsuleId ?? undefined,
         tags,
+        coverKey: coverKey ?? undefined,
       }),
     });
   },
@@ -237,6 +239,19 @@ export const postsApi = {
   unlike(postId: string) {
     return fetch(`/api/posts/${postId}/like`, {
       method: "DELETE",
+    });
+  },
+} as const;
+
+export const coversApi = {
+  upload(file: File) {
+    const contentType = file.type || "application/octet-stream";
+    return fetch("/api/covers", {
+      method: "POST",
+      headers: {
+        "Content-Type": contentType,
+      },
+      body: file,
     });
   },
 } as const;

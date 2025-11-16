@@ -114,7 +114,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
 
     let query = `
       SELECT
-        p.id, p.type, p.title, p.description, p.tags, p.created_at,
+        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.created_at,
         c.id as capsule_id, c.manifest_json
       FROM posts p
       LEFT JOIN capsules c ON p.capsule_id = c.id
@@ -225,6 +225,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
           source: "profilePosts",
           postId: row.id,
         }),
+        coverKey: row.cover_key ?? null,
         createdAt: row.created_at,
         stats: {
           likes: likeCount,

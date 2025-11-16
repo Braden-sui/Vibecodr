@@ -34,6 +34,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { FeedPost } from "@/lib/api";
+import { budgeted } from "@/lib/perf";
+import { budgetedAsync } from "@/lib/perf";
+import { writePreviewHandoff } from "@/lib/handoff";
+import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 
 type PublicMetadata = {
   role?: string;
@@ -47,6 +51,10 @@ export interface FeedCardProps {
 // Global concurrency cap for active previews
 let activePreviewCount = 0;
 const MAX_ACTIVE_PREVIEWS = 2;
+
+// Global cap for manifest preloads to avoid stampedes
+let manifestPreloadsInFlight = 0;
+const MAX_MANIFEST_PREFETCH = 3;
 
 export function FeedCard({ post }: FeedCardProps) {
   const router = useRouter();
@@ -63,7 +71,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const [previewError, setPreviewError] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout>();
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const prebootStartRef = useRef<number>();
   const cardRef = useRef<HTMLDivElement>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
@@ -113,12 +121,14 @@ export function FeedCard({ post }: FeedCardProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
+        budgeted(`[feed] view_io:${post.id}`, () => {
+          const entry = entries[0];
+          if (!entry) return;
 
-        setIsNearViewport((prev) => (prev === entry.isIntersecting ? prev : entry.isIntersecting));
-        const warmZone = entry.intersectionRatio >= 0.35;
-        setIsWarmZoneActive((prev) => (prev === warmZone ? prev : warmZone));
+          setIsNearViewport((prev) => (prev === entry.isIntersecting ? prev : entry.isIntersecting));
+          const warmZone = entry.intersectionRatio >= 0.35;
+          setIsWarmZoneActive((prev) => (prev === warmZone ? prev : warmZone));
+        });
       },
       {
         root: null,
@@ -132,7 +142,7 @@ export function FeedCard({ post }: FeedCardProps) {
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [post.id]);
 
   // Fire preconnect hints once a card is near the viewport
   useEffect(() => {
@@ -159,6 +169,30 @@ export function FeedCard({ post }: FeedCardProps) {
   }, [isNearViewport]);
 
   // We no longer prefetch manifests per-card; manifest data arrives with the feed.
+  // Preload runtime manifest for artifact-based runners when card nears viewport.
+  const manifestPrefetchedRef = useRef(false);
+  useEffect(() => {
+    if (!isNearViewport || manifestPrefetchedRef.current) return;
+    const artifactId = post.capsule?.artifactId ?? null;
+    if (!artifactId) return;
+    if (manifestPreloadsInFlight >= MAX_MANIFEST_PREFETCH) return;
+
+    manifestPrefetchedRef.current = true;
+    manifestPreloadsInFlight++;
+    void budgetedAsync(`[feed] manifest_preload:${post.id}`, async () => {
+      try {
+        await loadRuntimeManifest(String(artifactId));
+      } catch {
+        // soft-fail: rely on Player to surface errors
+      } finally {
+        manifestPreloadsInFlight = Math.max(0, manifestPreloadsInFlight - 1);
+      }
+    });
+
+    return () => {
+      // No-op cleanup; preload is best-effort and managed via global counter.
+    };
+  }, [isNearViewport, post.capsule?.artifactId, post.id]);
 
   useEffect(() => {
     return () => {
@@ -177,31 +211,33 @@ export function FeedCard({ post }: FeedCardProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
+        budgeted(`[feed] pause_resume_io:${post.id}`, () => {
+          const entry = entries[0];
+          if (!entry) return;
 
-        const iframeWindow = iframeRef.current?.contentWindow;
-        if (!iframeWindow || !capsuleId || !isRunning) {
-          return;
-        }
+          const iframeWindow = iframeRef.current?.contentWindow;
+          if (!iframeWindow || !capsuleId || !isRunning) {
+            return;
+          }
 
-        const ratio = entry.intersectionRatio;
-        lastIntersectionRatioRef.current = ratio;
+          const ratio = entry.intersectionRatio;
+          lastIntersectionRatioRef.current = ratio;
 
-        const hidden = typeof document !== "undefined" && document.hidden;
-        const shouldPause = hidden || ratio < 0.3;
-        const nextState: "paused" | "running" = shouldPause ? "paused" : "running";
-        if (nextState === pauseStateRef.current) {
-          return;
-        }
-        pauseStateRef.current = nextState;
+          const hidden = typeof document !== "undefined" && document.hidden;
+          const shouldPause = hidden || ratio < 0.3;
+          const nextState: "paused" | "running" = shouldPause ? "paused" : "running";
+          if (nextState === pauseStateRef.current) {
+            return;
+          }
+          pauseStateRef.current = nextState;
 
-        iframeWindow.postMessage(
-          {
-            type: nextState === "paused" ? "pause" : "resume",
-          },
-          "*"
-        );
+          iframeWindow.postMessage(
+            {
+              type: nextState === "paused" ? "pause" : "resume",
+            },
+            "*"
+          );
+        });
       },
       {
         root: null,
@@ -215,30 +251,32 @@ export function FeedCard({ post }: FeedCardProps) {
     return () => {
       observer.disconnect();
     };
-  }, [isRunning, capsuleId]);
+  }, [isRunning, capsuleId, post.id]);
 
   useEffect(() => {
     const onVisibility = () => {
-      const target = iframeRef.current?.contentWindow;
-      if (!isRunning || !target || !capsuleId) {
-        return;
-      }
-      const ratio = lastIntersectionRatioRef.current;
-      const hidden = document.hidden;
-      const shouldPause = hidden || ratio < 0.3;
-      const nextState: "paused" | "running" = shouldPause ? "paused" : "running";
-      if (nextState === pauseStateRef.current) {
-        return;
-      }
-      pauseStateRef.current = nextState;
-      target.postMessage({ type: nextState === "paused" ? "pause" : "resume" }, "*");
+      budgeted(`[feed] visibility_change:${post.id}`, () => {
+        const target = iframeRef.current?.contentWindow;
+        if (!isRunning || !target || !capsuleId) {
+          return;
+        }
+        const ratio = lastIntersectionRatioRef.current;
+        const hidden = document.hidden;
+        const shouldPause = hidden || ratio < 0.3;
+        const nextState: "paused" | "running" = shouldPause ? "paused" : "running";
+        if (nextState === pauseStateRef.current) {
+          return;
+        }
+        pauseStateRef.current = nextState;
+        target.postMessage({ type: nextState === "paused" ? "pause" : "resume" }, "*");
+      });
     };
 
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isRunning, capsuleId]);
+  }, [isRunning, capsuleId, post.id]);
 
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
@@ -317,6 +355,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const handleComment = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    writePreviewHandoff(post.id, { source: "comments" });
     router.push(`/player/${post.id}?tab=comments`);
   };
 
@@ -358,7 +397,7 @@ export function FeedCard({ post }: FeedCardProps) {
         onMouseLeave={handleMouseLeave}
         className="relative"
       >
-        <Link href={`/player/${post.id}`}>
+        <Link href={`/player/${post.id}`} onClick={() => writePreviewHandoff(post.id, { source: "cover" })}>
           <div
             className={cn(
               "relative aspect-video w-full overflow-hidden bg-gradient-to-br",
@@ -453,7 +492,7 @@ export function FeedCard({ post }: FeedCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 space-y-1">
-            <Link href={`/player/${post.id}`}>
+            <Link href={`/player/${post.id}`} onClick={() => writePreviewHandoff(post.id, { source: "title" })}>
               <h3 className="line-clamp-2 font-semibold leading-tight hover:text-primary">
                 {post.title}
               </h3>

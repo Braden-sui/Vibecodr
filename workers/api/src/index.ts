@@ -154,7 +154,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
     let query = `
       SELECT
-        p.id, p.type, p.title, p.description, p.tags, p.created_at,
+        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.created_at,
         u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar,
         u.followers_count as author_followers_count,
         u.runs_count as author_runs_count,
@@ -326,6 +326,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
           source: "feed",
           postId: row.id,
         }),
+        coverKey: row.cover_key ?? null,
         createdAt: row.created_at,
         stats: {
           runs: runsCount,
@@ -477,6 +478,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         plan: row.author_plan || "free",
       },
       capsule: capsuleSummary,
+      coverKey: row.cover_key ?? null,
       createdAt: row.created_at,
       stats: {
         runs: (runCount as any)?.count || 0,
@@ -540,7 +542,7 @@ const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) 
         parsed.description ?? null,
         tagsJson,
         parsed.reportMd ?? null,
-        null
+        parsed.coverKey ?? null
       )
       .run();
 
@@ -563,6 +565,40 @@ const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) 
       500
     );
   }
+});
+
+const uploadCover: Handler = requireUser(async (req, env, _ctx, _params, userId) => {
+  const contentType = req.headers.get("content-type") || "";
+
+  if (!contentType.startsWith("image/")) {
+    return json({ error: "Only image uploads are allowed" }, 400);
+  }
+
+  const body = await req.arrayBuffer();
+  const size = body.byteLength;
+
+  if (size === 0) {
+    return json({ error: "Empty image upload" }, 400);
+  }
+
+  // 5MB limit to match frontend validation
+  const maxBytes = 5 * 1024 * 1024;
+  if (size > maxBytes) {
+    return json({ error: "Image too large" }, 400);
+  }
+
+  const extFromType = contentType.split("/")[1] || "bin";
+  const safeExt = extFromType.split(";")[0].trim() || "bin";
+  const coverId = crypto.randomUUID();
+  const key = `covers/${userId}/${coverId}.${safeExt}`;
+
+  await env.R2.put(key, body, {
+    httpMetadata: {
+      contentType,
+    },
+  });
+
+  return json({ ok: true, key }, 201);
 });
 
 async function getDiscoverPosts(req: Request, env: Env): Promise<Response> {
@@ -621,6 +657,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "GET", pattern: /^\/posts\/discover$/, handler: getDiscoverPosts },
   { method: "GET", pattern: /^\/posts\/([^\/]+)$/, handler: getPostById },
   { method: "POST", pattern: /^\/posts$/, handler: createPost },
+  { method: "POST", pattern: /^\/covers$/, handler: uploadCover },
 
   // Likes
   { method: "POST", pattern: /^\/posts\/([^\/]+)\/like$/, handler: likePost },
