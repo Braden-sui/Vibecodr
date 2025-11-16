@@ -220,14 +220,23 @@ export default function FeedPage() {
     });
   }, [posts, selectedTags, searchTerm]);
 
-  const renderTimeline = () => (
+  const handlePostCreated = (newPost: FeedPost) => {
+    // Add new post to the top of the feed optimistically
+    setPosts((prev) => [newPost, ...prev]);
+    trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
+  };
+
+  const composerSection = (
     <div className="relative mx-auto max-w-2xl">
       <VibesComposer onPostCreated={handlePostCreated} className="mb-6" />
-      <div className="space-y-4">
-        {filteredPosts.map((post) => (
-          <FeedCard key={post.id} post={post} />
-        ))}
-      </div>
+    </div>
+  );
+
+  const renderPostList = () => (
+    <div className="mx-auto max-w-2xl space-y-4">
+      {filteredPosts.map((post) => (
+        <FeedCard key={post.id} post={post} />
+      ))}
     </div>
   );
 
@@ -259,12 +268,6 @@ export default function FeedPage() {
       trackEvent("feed_tag_toggle", { tag, active: !exists, mode });
       return next;
     });
-  };
-
-  const handlePostCreated = (newPost: FeedPost) => {
-    // Add new post to the top of the feed optimistically
-    setPosts((prev) => [newPost, ...prev]);
-    trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
   };
 
   const emptyState = (
@@ -347,21 +350,35 @@ export default function FeedPage() {
         </TabsList>
 
         <TabsContent value="latest">
-          {isLoading ? renderSkeleton() : filteredPosts.length > 0 ? renderTimeline() : emptyState}
+          {isLoading ? (
+            renderSkeleton()
+          ) : (
+            <div className="space-y-6">
+              {composerSection}
+              {filteredPosts.length > 0 ? renderPostList() : <div className="mx-auto max-w-2xl">{emptyState}</div>}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="following">
           {isLoading ? (
             renderSkeleton()
-          ) : filteredPosts.length > 0 ? (
-            renderTimeline()
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-12 text-center">
-              <p className="text-lg font-semibold">Follow other Vibecoders to personalize this lane.</p>
-              <p className="text-sm text-muted-foreground">
-                Once you follow a creator, their new posts land here automatically.
-              </p>
-              <Button variant="outline">Discover Vibecoders</Button>
+            <div className="space-y-6">
+              {composerSection}
+              {filteredPosts.length > 0 ? (
+                renderPostList()
+              ) : (
+                <div className="mx-auto max-w-2xl">
+                  <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-12 text-center">
+                    <p className="text-lg font-semibold">Follow other Vibecoders to personalize this lane.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Once you follow a creator, their new posts land here automatically.
+                    </p>
+                    <Button variant="outline">Discover Vibecoders</Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </TabsContent>
@@ -380,7 +397,14 @@ export default function FeedPage() {
               </div>
             </div>
           </div>
-          {isLoading ? renderSkeleton() : filteredPosts.length > 0 ? renderTimeline() : emptyState}
+          {isLoading ? (
+            renderSkeleton()
+          ) : (
+            <div className="space-y-6">
+              {composerSection}
+              {filteredPosts.length > 0 ? renderPostList() : <div className="mx-auto max-w-2xl">{emptyState}</div>}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
