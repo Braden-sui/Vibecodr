@@ -39,7 +39,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] OAuth (GitHub + Google) configured.
 - [x] Basic user model integrated with D1.
 - [x] Protected routes and soft auth gating for create/publish/remix.
-- [ ] Session handling and token propagation between Pages and Workers documented and validated end-to-end.
+- [x] Session handling and token propagation between Pages and Workers documented and validated end-to-end (`docs/cross-surface-auth.mdx`, `apps/web/lib/__tests__/crossSurfaceAuth.test.ts`).
 
 ## 3) Database & Schema (Phase 1)
 
@@ -53,7 +53,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 ## 4) Feed (Phase 1 + 3)
 
 - [x] Card components for App and Report posts, with "Coming Soon" badges where appropriate.
-- [x] Badges on cards: runner type, net access, params count.
+- [x] Badges on cards: runner type and params count (network/worker badges are disabled until those premium capabilities ship).
 - [x] Remix chip on cards.
 - [x] Hover/click preview: preboot capsule in isolated iframe with reasonable budget.
 - [x] Sorting: Latest (MVP) and Following.
@@ -72,7 +72,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] Player layout with right-hand tabs (Notes, Remix, Chat as simplified MVP).
 - [x] Bottom bar with restart, performance meter, params, share, and report entrypoints.
 - [x] postMessage bridge implemented (`ready`, `setParams`, logs, stats).
-- [x] Capability badges surfaced (net/storage/workers).
+- [x] Capability badges surfaced (currently runner + storage only; net/workers reserved for premium tiers).
 - [x] Micro-player variant reused in Feed cards for inline runs.
 - [ ] Console proxy + sampled analytics wired to PostHog/Analytics Engine.
 - [ ] Restart without full reload where possible (warm restarts).
@@ -80,7 +80,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 
 ## 6) Manifest, Runner, and Runtime Artifacts (Phase 2)
 
-- [x] Manifest schema defined (params, capabilities: `net[]`, `storage`, `workers`, live, concurrency).
+- [x] Manifest schema defined (params, capabilities: `storage` active today; `net[]`/`workers` fields reserved for premium runtimes), live, concurrency.
 - [x] `POST /manifest/validate` endpoint built; returns structured errors and warnings.
 - [x] Client-static runner shim implemented (`client-static-shim.js`) with console proxy, pause/resume, and restart wiring.
 - [x] Runtime artifact schema and shared error codes defined for compile/runtime failures (`E-VIBECODR-11xx`, `120x`, `21xx`).
@@ -231,4 +231,3 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [ ] CPU/memory/time budgets and kill switch in Player/UI for abusive runtimes.
 - [x] Immutable bundles with integrity hash verification and content-hash keys.
 - [x] Moderation/reporting + quarantine flows implemented with clear user notices; policy docs to be expanded.
-

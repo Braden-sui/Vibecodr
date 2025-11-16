@@ -29,7 +29,6 @@ export function PublishTab() {
   const [tags, setTags] = useState<string[]>(["demo", "interactive"]);
   const [tagInput, setTagInput] = useState("");
   const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">("public");
-  const [enableNetwork, setEnableNetwork] = useState(false);
   const [enableStorage, setEnableStorage] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<"idle" | "validating" | "uploading" | "success" | "error">("idle");
@@ -266,20 +265,10 @@ export function PublishTab() {
 
           <div className="space-y-3">
             <h4 className="text-sm font-medium">Capabilities</h4>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="network">Network Access</Label>
-                <p className="text-xs text-muted-foreground">
-                  Allow this vibe to make network requests
-                </p>
-              </div>
-              <Switch
-                id="network"
-                checked={enableNetwork}
-                onCheckedChange={setEnableNetwork}
-              />
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Outbound network access is disabled until premium VM tiers launch. Configure storage
+              access below.
+            </p>
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">

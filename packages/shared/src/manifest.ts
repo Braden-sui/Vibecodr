@@ -277,16 +277,13 @@ export function validateManifest(data: unknown): ValidationResult {
     }
 
     // Check for common security issues
-    if (manifest.capabilities?.net) {
-      const suspiciousHosts = manifest.capabilities.net.filter((host) =>
-        host.includes("localhost")
-      );
-      if (suspiciousHosts.length > 0) {
-        warnings.push({
-          path: "capabilities.net",
-          message: `Localhost hosts detected: ${suspiciousHosts.join(", ")}. This may not work in production.`,
-        });
-      }
+    if (manifest.capabilities?.net && manifest.capabilities.net.length > 0) {
+      errors.push({
+        path: "capabilities.net",
+        message:
+          "Network access is currently disabled. Remove allowed hosts and retry once premium VM tiers launch.",
+        errorCode: ERROR_MANIFEST_INVALID,
+      });
     }
 
     if (errors.length > 0) {
@@ -326,7 +323,6 @@ export function createDefaultManifest(runner: RunnerType = "client-static"): Man
     description: "A runnable micro-app",
     params: [],
     capabilities: {
-      net: [],
       storage: false,
       workers: false,
     },

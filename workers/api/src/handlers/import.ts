@@ -449,7 +449,6 @@ async function generateManifest(
     description: "Imported from GitHub or ZIP",
     params,
     capabilities: {
-      net: [],
       storage: false,
       workers: false,
     },

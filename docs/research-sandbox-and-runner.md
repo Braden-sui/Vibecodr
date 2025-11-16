@@ -9,9 +9,9 @@ Define how we safely run user apps inside the feed, what capabilities are allowe
 - Permission Policy: disallow sensors, camera, mic by default.
 
 ## Capability Model (Manifest)
-- net: [] allowlist of hosts; proxied and rate-limited.
+- net: [] allowlist of hosts; proxied and rate-limited. (Currently disabled until premium VM tiers launch.)
 - storage: false by default; if true, limit to IndexedDB quota with guard.
-- workers: true to allow web workers within the sandbox.
+- workers: reserved for future premium runtimes; current MVP disables web worker access entirely.
 - params: declarative UI controls surfaced in Player.
 
 ## Runner Bridge
@@ -32,4 +32,3 @@ Define how we safely run user apps inside the feed, what capabilities are allowe
 ## Sources
 - MDN iframe sandbox: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/iframe#attr-sandbox
 - CSP basics: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
-

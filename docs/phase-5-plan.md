@@ -11,7 +11,7 @@ Phase 5 extends the initial four-phase MVP program by tackling the “Post-MVP P
 
 Early indicators of success:
 - ≥10 live sessions/week with >70% completion and TTFF ≤1.5 s for webcontainer/live handoff.
-- 25% of weekly posts use advanced capabilities (net/storage/workers/live) without exceeding quotas.
+- 25% of weekly posts use advanced capabilities (storage/live today; workers unlock alongside future premium VM tiers, and network access returns when those land) without exceeding quotas.
 - Search + For You drive ≥30% of runs from non-followers; embed traffic converts ≥10% to Player opens.
 - Incident response time <15 min and no Sev1 caused by new runtimes.
 
@@ -34,8 +34,8 @@ Early indicators of success:
 
 ### 2. Advanced Runner Stack
 - Move WebContainer preview out of feature flag: enforce 1.5 s P95 boot, concurrency caps, kill switch UI.
-- Worker-edge runner alpha: allow tiny Workers per capsule for server logic, proxied through Cloudflare; align with manifest capability declarations.
-- Manifest/schema updates for new capabilities (net scopes, worker entrypoints, storage quotas); update `/api/manifest/validate`.
+- Worker-edge runner alpha (future premium tier): allow tiny Workers per capsule for server logic, proxied through Cloudflare; align with manifest capability declarations once the runtime is provisioned.
+- Manifest/schema updates for new capabilities (prep net scopes for future premium tiers, worker entrypoints, storage quotas); update `/api/manifest/validate`.
 - GitHub import upgrades: repo analyzer for server code flags, SPDX detection, and build queue scaling (BuildCoordinator Durable Object).
 
 ### 3. Discovery, Collaboration & Sharing

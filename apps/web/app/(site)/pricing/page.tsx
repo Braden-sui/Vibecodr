@@ -164,8 +164,8 @@ export default function PricingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                All vibes run in sandboxed environments with strict security policies and
-                network allowlists.
+                All vibes run in sandboxed environments with strict security policies and no
+                outbound network access (premium VM tiers coming soon).
               </p>
             </CardContent>
           </Card>

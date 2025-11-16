@@ -250,15 +250,9 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           </div>
           <div className="flex items-center gap-2">
             {post && (
-              <>
-                <Badge variant="secondary">
-                  {post.type === "app" ? post.capsule?.runner || "client-static" : "report"}
-                </Badge>
-                {post.type === "app" && post.capsule?.capabilities?.net &&
-                  post.capsule.capabilities.net.length > 0 && (
-                    <Badge variant="outline">Network</Badge>
-                  )}
-              </>
+              <Badge variant="secondary">
+                {post.type === "app" ? post.capsule?.runner || "client-static" : "report"}
+              </Badge>
             )}
           </div>
         </div>

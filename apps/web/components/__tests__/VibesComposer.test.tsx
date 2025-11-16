@@ -199,16 +199,9 @@ describe("VibesComposer inline code mode", () => {
     );
     await user.type(codeTextarea, "<div>Advanced</div>");
 
-    const netInput = screen.getByLabelText("Network allowlist (hosts)");
-    await user.type(netInput, "api.example.com, data.example.com");
-
     const storageSwitch = document.getElementById("inline-code-storage") as HTMLButtonElement;
     await user.click(storageSwitch);
     await waitFor(() => expect(storageSwitch).toHaveAttribute("data-state", "checked"));
-
-    const workersSwitch = document.getElementById("inline-code-workers") as HTMLButtonElement;
-    await user.click(workersSwitch);
-    await waitFor(() => expect(workersSwitch).toHaveAttribute("data-state", "checked"));
 
     const paramSwitch = document.getElementById("inline-code-param") as HTMLButtonElement;
     await user.click(paramSwitch);
@@ -249,9 +242,7 @@ describe("VibesComposer inline code mode", () => {
     expect(manifest.runner).toBe("client-static");
     expect(manifest.entry).toBe("index.html");
     expect(manifest.capabilities).toEqual({
-      net: ["api.example.com", "data.example.com"],
       storage: true,
-      workers: true,
     });
     expect(Array.isArray(manifest.params)).toBe(true);
     expect(manifest.params[0]).toMatchObject({
@@ -297,14 +288,8 @@ describe("VibesComposer inline code mode", () => {
     );
     await user.type(codeTextarea, "<div>Reset</div>");
 
-    const netInput = screen.getByLabelText("Network allowlist (hosts)");
-    await user.type(netInput, "api.example.com");
-
     const storageSwitch = screen.getByLabelText("Allow storage");
     await user.click(storageSwitch);
-
-    const workersSwitch = screen.getByLabelText("Allow Web Workers");
-    await user.click(workersSwitch);
 
     const paramSwitch = document.getElementById("inline-code-param") as HTMLButtonElement;
     await user.click(paramSwitch);
@@ -327,14 +312,9 @@ describe("VibesComposer inline code mode", () => {
     const titleInput2 = screen.getByPlaceholderText("Title for your vibe");
     fireEvent.focus(titleInput2);
 
-    const netInput2 = screen.getByLabelText("Network allowlist (hosts)") as HTMLInputElement;
-    expect(netInput2.value).toBe("");
-
     const storageSwitch2 = screen.getByLabelText("Allow storage") as HTMLInputElement;
     expect(storageSwitch2).not.toBeChecked();
 
-    const workersSwitch2 = screen.getByLabelText("Allow Web Workers") as HTMLInputElement;
-    expect(workersSwitch2).not.toBeChecked();
 
     const paramSwitch2 = document.getElementById("inline-code-param") as HTMLButtonElement;
     expect(paramSwitch2).toHaveAttribute("data-state", "unchecked");

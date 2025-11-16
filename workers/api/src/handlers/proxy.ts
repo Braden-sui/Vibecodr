@@ -130,7 +130,8 @@ export const netProxy: Handler = async (req, env) => {
       source: "proxyAllowlist",
       capsuleId,
     });
-    const allowlist: string[] = manifest.capabilities?.net || [];
+    // Network access is currently disabled until premium VM tiers launch
+    const allowlist: string[] = [];
 
     // Check if host is allowed
     if (!isHostAllowed(targetUrl, allowlist)) {

@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Heart,
   Share2,
-  Globe,
   Cpu,
   Sliders,
   Loader2,
@@ -553,13 +552,6 @@ export function FeedCard({ post }: FeedCardProps) {
             {isApp ? <Cpu className="h-3 w-3" /> : <span>📝</span>}
             {isApp ? post.capsule?.runner || "client-static" : "Report"}
           </Badge>
-
-          {isApp && post.capsule?.capabilities?.net && post.capsule.capabilities.net.length > 0 && (
-            <Badge variant="outline" className="gap-1">
-              <Globe className="h-3 w-3" />
-              Network
-            </Badge>
-          )}
 
           {isApp && post.capsule?.params && post.capsule.params.length > 0 && (
             <Badge variant="outline" className="gap-1">

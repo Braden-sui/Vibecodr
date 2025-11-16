@@ -200,6 +200,23 @@ describe("Manifest Validation", () => {
       ).toBe(true);
     });
 
+    it("should reject manifests that request network access", () => {
+      const manifest: Manifest = {
+        ...baseManifest,
+        capabilities: {
+          net: ["api.example.com"],
+        },
+      };
+
+      const result = validateManifest(manifest);
+      expect(result.valid).toBe(false);
+      expect(
+        result.errors?.some(
+          (err) => err.path === "capabilities.net" && err.errorCode === ERROR_MANIFEST_INVALID
+        )
+      ).toBe(true);
+    });
+
     it("should reject worker-edge manifest without configuration", () => {
       const manifest: Manifest = {
         ...baseManifest,

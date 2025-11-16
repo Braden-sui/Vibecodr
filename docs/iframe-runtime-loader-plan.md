@@ -129,6 +129,7 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 
 ### Network & Policy Controls
 - Default network allowlist is empty; artifacts must declare domains to fetch (hosted proxies recommended).
+- Until premium VM tiers launch, `capabilities.net` declarations are rejected so capsules have zero outbound network.
 - Provide optional Worker proxy endpoint for approved domains so we retain logging + caching.
 - Heartbeat: guard script posts `{"type":"heartbeat"}` every 5 s; host kills iframe if missing >15 s.
 - Rate limits: host tracks per-user concurrent artifacts to prevent resource abuse.

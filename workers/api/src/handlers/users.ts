@@ -1,5 +1,6 @@
 import type { Handler } from "../index";
-import { createUserSchema, updateUserSchema } from "../schema";
+import { updateUserSchema } from "../schema";
+import { requireUser } from "../auth";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -11,7 +12,7 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
 
 // POST /users/sync
 // Upsert user from Clerk payload. users.id == Clerk user.id
-export const syncUser: Handler = async (req, env) => {
+export const syncUser: Handler = requireUser(async (req, env, _ctx, _params, authedUserId) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);
 
   let body: any;
@@ -27,6 +28,9 @@ export const syncUser: Handler = async (req, env) => {
     return json({ error: "Validation failed", details: base.error.flatten() }, 400);
   }
   const { id, handle, name, avatarUrl, bio, plan } = base.data;
+  if (id !== authedUserId) {
+    return json({ error: "E-VIBECODR-0404 sync mismatch" }, 403);
+  }
 
   try {
     // Try update first
@@ -57,4 +61,4 @@ export const syncUser: Handler = async (req, env) => {
     }
     return json({ error: "Failed to sync user", details: e?.message || "unknown" }, 500);
   }
-};
+});

@@ -66,9 +66,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const [code, setCode] = useState("");
 
   // Inline capabilities & params (Advanced section)
-  const [netHosts, setNetHosts] = useState("");
   const [allowStorage, setAllowStorage] = useState(false);
-  const [allowWorkers, setAllowWorkers] = useState(false);
   const [enableParam, setEnableParam] = useState(false);
   const [paramLabel, setParamLabel] = useState("Intensity");
   const [paramDefault, setParamDefault] = useState(50);
@@ -299,23 +297,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
           ? inlineHtmlSource
           : `<!doctype html><html><head><meta charset="utf-8"><title>Vibecodr App</title></head><body>${inlineHtmlSource}</body></html>`;
 
-        // Derive capabilities from Advanced controls
-        const netList = netHosts
-          .split(",")
-          .map((h) => h.trim())
-          .filter((h) => h.length > 0);
-
-        const capabilities = {
-          ...(netList.length > 0 ? { net: netList } : {}),
-          ...(allowStorage ? { storage: true } : {}),
-          ...(allowWorkers ? { workers: true } : {}),
-        } as
-          | {
-              net?: string[];
-              storage?: boolean;
-              workers?: boolean;
-            }
-          | undefined;
+        // Derive capabilities from Advanced controls (network disabled until premium tiers)
+        const capabilities = allowStorage ? ({ storage: true } as { storage?: boolean }) : undefined;
 
         // Optional single slider param
         let params: Array<{
@@ -478,9 +461,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       setTitle("");
       setDescription("");
       setCode("");
-      setNetHosts("");
       setAllowStorage(false);
-      setAllowWorkers(false);
       setEnableParam(false);
       setParamLabel("Intensity");
       setParamDefault(50);
@@ -649,21 +630,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                         <p className="text-xs text-muted-foreground">
                           Configure basic capabilities and a simple parameter for this app.
                         </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="inline-code-net-hosts" className="text-xs font-medium">
-                          Network allowlist (hosts)
-                        </Label>
-                        <Input
-                          id="inline-code-net-hosts"
-                          placeholder="api.example.com, data.myapi.com"
-                          value={netHosts}
-                          onChange={(e) => setNetHosts(e.target.value)}
-                          disabled={isSubmitting || isImporting}
-                        />
                         <p className="text-xs text-muted-foreground">
-                          Comma-separated hosts. Leave empty for no network access.
+                          Outbound network access is disabled until premium VM tiers launch.
                         </p>
                       </div>
 
@@ -680,23 +648,6 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                           id="inline-code-storage"
                           checked={allowStorage}
                           onCheckedChange={(checked) => setAllowStorage(Boolean(checked))}
-                          disabled={isSubmitting || isImporting}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <Label htmlFor="inline-code-workers" className="text-xs font-medium">
-                            Allow Web Workers
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            Let this app spawn Web Workers.
-                          </p>
-                        </div>
-                        <Switch
-                          id="inline-code-workers"
-                          checked={allowWorkers}
-                          onCheckedChange={(checked) => setAllowWorkers(Boolean(checked))}
                           disabled={isSubmitting || isImporting}
                         />
                       </div>
@@ -987,9 +938,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                     setTitle("");
                     setDescription("");
                     setCode("");
-                    setNetHosts("");
                     setAllowStorage(false);
-                    setAllowWorkers(false);
                     setEnableParam(false);
                     setParamLabel("Intensity");
                     setParamDefault(50);
