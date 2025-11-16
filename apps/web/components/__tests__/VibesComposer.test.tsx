@@ -30,7 +30,6 @@ vi.mock("@/lib/api", () => ({
   capsulesApi: {
     publish: vi.fn(),
     importGithub: vi.fn(),
-    importZip: vi.fn(),
   },
   coversApi: {
     upload: vi.fn(),
@@ -40,7 +39,6 @@ vi.mock("@/lib/api", () => ({
 const postsApiCreateMock = postsApi.create as any;
 const capsulesPublishMock = capsulesApi.publish as any;
 const capsulesImportGithubMock = capsulesApi.importGithub as any;
-const capsulesImportZipMock = capsulesApi.importZip as any;
 const coversUploadMock = coversApi.upload as any;
 
 async function readFormDataEntry(value: FormDataEntryValue | null): Promise<string> {

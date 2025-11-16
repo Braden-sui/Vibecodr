@@ -20,6 +20,11 @@ export const ApiPostStatsSchema = z.object({
   remixes: z.number(),
 });
 
+export const ApiFeedViewerStateSchema = z.object({
+  liked: z.boolean().optional(),
+  followingAuthor: z.boolean().optional(),
+});
+
 export const ApiCapsuleSummarySchema = z
   .object({
     id: z.string(),
@@ -37,6 +42,7 @@ export const ApiFeedPostSchema = z.object({
   coverKey: z.string().nullable().optional(),
   createdAt: z.union([z.number(), z.string()]),
   stats: ApiPostStatsSchema,
+  viewer: ApiFeedViewerStateSchema.optional(),
   score: z.number().optional(),
 });
 

@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
-import { capsulesApi, moderationApi, postsApi } from "@/lib/api";
+import { capsulesApi, moderationApi, postsApi, usersApi } from "@/lib/api";
 import { ReportButton } from "@/components/ReportButton";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -88,6 +88,12 @@ export function FeedCard({ post }: FeedCardProps) {
   useEffect(() => {
     previewLogsRef.current = [];
   }, [post.id]);
+
+  useEffect(() => {
+    setLiked(post.viewer?.liked ?? false);
+    setLikeCount(post.stats.likes);
+    setIsFollowingAuthor(post.viewer?.followingAuthor ?? false);
+  }, [post.id, post.stats.likes, post.viewer?.liked, post.viewer?.followingAuthor]);
 
   const pushPreviewLog = useCallback(
     (entry: { level: PreviewLogEntry["level"]; message: string; timestamp?: number }) => {
@@ -379,21 +385,28 @@ export function FeedCard({ post }: FeedCardProps) {
   };
 
   // Optimistic UI state for like
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(post.viewer?.liked ?? false);
   const [likeCount, setLikeCount] = useState(post.stats.likes);
   const [isLiking, setIsLiking] = useState(false);
+  // Optimistic follow state for author
+  const [isFollowingAuthor, setIsFollowingAuthor] = useState(post.viewer?.followingAuthor ?? false);
+  const [isFollowMutating, setIsFollowMutating] = useState(false);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (isLiking) return;
+    if (!isSignedIn) {
+      redirectToSignIn();
+      return;
+    }
 
     // Optimistic update
     const wasLiked = liked;
     const prevCount = likeCount;
-    setLiked(!liked);
-    setLikeCount(liked ? likeCount - 1 : likeCount + 1);
+    setLiked(!wasLiked);
+    setLikeCount((prev) => (wasLiked ? Math.max(0, prev - 1) : prev + 1));
     setIsLiking(true);
 
     try {
@@ -414,6 +427,49 @@ export function FeedCard({ post }: FeedCardProps) {
       console.error("Failed to like post:", error);
     } finally {
       setIsLiking(false);
+    }
+  };
+
+  const handleFollowToggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isFollowMutating) return;
+
+    if (!isSignedIn) {
+      redirectToSignIn();
+      return;
+    }
+
+    if (!user || user.id === post.author.id) {
+      return;
+    }
+
+    const nextState = !isFollowingAuthor;
+    setIsFollowMutating(true);
+    setIsFollowingAuthor(nextState);
+
+    try {
+      const response = nextState ? await usersApi.follow(post.author.id) : await usersApi.unfollow(post.author.id);
+
+      if (response.status === 401) {
+        redirectToSignIn();
+        throw new Error("Unauthorized");
+      }
+
+      if (!response.ok) {
+        throw new Error("Failed to update follow");
+      }
+    } catch (error) {
+      console.error("Failed to toggle follow:", error);
+      setIsFollowingAuthor(!nextState);
+      toast({
+        title: "Action failed",
+        description: error instanceof Error ? error.message : "Unable to update follow right now",
+        variant: "error",
+      });
+    } finally {
+      setIsFollowMutating(false);
     }
   };
 
@@ -602,13 +658,33 @@ export function FeedCard({ post }: FeedCardProps) {
         </div>
 
         {/* Author */}
-        <Link
-          href={`/profile/${post.author.handle}`}
-          className="flex items-center gap-2 text-sm hover:underline"
-        >
-          <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />
-          <span className="font-medium">@{post.author.handle}</span>
-        </Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            href={`/profile/${post.author.handle}`}
+            className="flex items-center gap-2 text-sm hover:underline"
+          >
+            <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />
+            <span className="font-medium">@{post.author.handle}</span>
+          </Link>
+          {post.author.id !== user?.id && (
+            <Button
+              size="sm"
+              variant={isFollowingAuthor ? "outline" : "secondary"}
+              className="h-7 px-3 text-xs"
+              disabled={isFollowMutating}
+              onClick={handleFollowToggle}
+              aria-pressed={isFollowingAuthor}
+            >
+              {isFollowMutating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : isFollowingAuthor ? (
+                "Following"
+              ) : (
+                "Follow"
+              )}
+            </Button>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="pb-3">

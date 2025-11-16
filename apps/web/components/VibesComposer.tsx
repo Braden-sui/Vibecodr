@@ -25,6 +25,12 @@ import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { postsApi, capsulesApi, coversApi, type FeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
+import {
+  analyzeZipFile,
+  buildCapsuleFormData,
+  formatBytes,
+  type ZipManifestIssue,
+} from "@/lib/zipBundle";
 
 type ComposerMode = "status" | "image" | "github" | "zip" | "code";
 
@@ -53,6 +59,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
   const [importError, setImportError] = useState<string | null>(null);
   const [capsuleId, setCapsuleId] = useState<string | null>(null);
+  const [capsuleSource, setCapsuleSource] = useState<"github" | "zip" | "code" | null>(null);
 
   // Image state
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -61,6 +68,9 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   // ZIP state
   const [zipFile, setZipFile] = useState<File | null>(null);
+  const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
+  const [zipManifestWarnings, setZipManifestWarnings] = useState<ZipManifestIssue[]>([]);
+  const [zipPublishWarnings, setZipPublishWarnings] = useState<string[]>([]);
 
   // Inline code state
   const [code, setCode] = useState("");
@@ -78,7 +88,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const isImporting = importStatus === "importing";
-  const hasImportedCapsule = importStatus === "ready" && !!capsuleId;
+  const hasImportedCapsule = !!capsuleId;
 
   // Auto-detect GitHub URLs in text input
   const handleTextChange = (value: string) => {
@@ -172,6 +182,11 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     setZipFile(file);
     setError(null);
+    setImportError(null);
+    setZipSummary(null);
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
+    setImportStatus("idle");
   };
 
   const handleGithubImport = async () => {
@@ -179,6 +194,9 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     if (!trimmedUrl || isImporting) return;
 
     setImportError(null);
+    setZipSummary(null);
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
     setImportStatus("importing");
 
     try {
@@ -205,6 +223,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       }
 
       setCapsuleId(data.capsuleId);
+      setCapsuleSource("github");
       if (!title.trim() && data.manifest?.title) {
         setTitle(data.manifest.title);
       }
@@ -223,19 +242,43 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     setImportError(null);
     setImportStatus("importing");
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
 
     try {
-      const response = await capsulesApi.importZip(zipFile);
+      const analysis = await analyzeZipFile(zipFile);
+
+      if (analysis.errors && analysis.errors.length > 0) {
+        setZipSummary({
+          fileName: zipFile.name,
+          totalSize: analysis.totalSize,
+        });
+        setZipManifestWarnings(analysis.errors);
+        setImportStatus("error");
+        setImportError("Manifest validation failed. Please fix the issues in manifest.json.");
+        trackEvent("composer_zip_import_failed", { error: "manifest-invalid" });
+        return;
+      }
+
+      setZipSummary({
+        fileName: zipFile.name,
+        totalSize: analysis.totalSize,
+      });
+      setZipManifestWarnings(analysis.warnings ?? []);
+
+      const formData = buildCapsuleFormData(analysis.manifest, analysis.files);
+      const response = await capsulesApi.publish(formData);
 
       if (response.status === 401) {
         redirectToSignIn();
+        setImportStatus("idle");
         return;
       }
 
       const data = (await response.json()) as {
         success?: boolean;
         capsuleId?: string;
-        manifest?: { title?: string };
+        warnings?: string[];
         error?: string;
       };
 
@@ -248,15 +291,26 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       }
 
       setCapsuleId(data.capsuleId);
-      if (!title.trim() && data.manifest?.title) {
-        setTitle(data.manifest.title);
+      setCapsuleSource("zip");
+      setZipPublishWarnings(data.warnings ?? []);
+      if (!title.trim() && analysis.manifest.title) {
+        setTitle(analysis.manifest.title);
       }
       setImportStatus("ready");
       trackEvent("composer_zip_import_success", { capsuleId: data.capsuleId });
+      setZipFile(null);
+      if (zipInputRef.current) {
+        zipInputRef.current.value = "";
+      }
     } catch (err) {
       console.error("Failed to import ZIP:", err);
-      setImportError("Upload failed. Please try again.");
+      setImportError(
+        err instanceof Error ? err.message : "Upload failed. Please check your ZIP and try again."
+      );
       setImportStatus("error");
+      setZipSummary(null);
+      setZipManifestWarnings([]);
+      setZipPublishWarnings([]);
       trackEvent("composer_zip_import_error");
     }
   };
@@ -372,6 +426,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
         effectiveCapsuleId = publishData.capsuleId;
         setCapsuleId(publishData.capsuleId);
+        setCapsuleSource("code");
         setImportStatus("ready");
       }
 
@@ -503,8 +558,60 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   const clearZip = () => {
     setZipFile(null);
+    setZipSummary(null);
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
+    setImportError(null);
     if (zipInputRef.current) {
       zipInputRef.current.value = "";
+    }
+  };
+
+  const resetZipImport = () => {
+    setZipFile(null);
+    setZipSummary(null);
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
+    if (zipInputRef.current) {
+      zipInputRef.current.value = "";
+    }
+    if (capsuleSource === "zip") {
+      setCapsuleId(null);
+      setCapsuleSource(null);
+      setImportStatus("idle");
+      setImportError(null);
+    }
+  };
+
+  const resetComposer = () => {
+    setIsExpanded(false);
+    setTitle("");
+    setDescription("");
+    setCode("");
+    setAllowStorage(false);
+    setEnableParam(false);
+    setParamLabel("Intensity");
+    setParamDefault(50);
+    setParamMin(0);
+    setParamMax(100);
+    setParamStep(1);
+    setError(null);
+    setImportError(null);
+    setGithubUrl("");
+    setCapsuleId(null);
+    setCapsuleSource(null);
+    setImportStatus("idle");
+    setZipFile(null);
+    setZipSummary(null);
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
+    setImagePreview(null);
+    setCoverKey(null);
+    if (zipInputRef.current) {
+      zipInputRef.current.value = "";
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
@@ -795,7 +902,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                       onChange={handleZipSelect}
                       className="hidden"
                     />
-                    {!zipFile && !hasImportedCapsule && (
+                    {!zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
                       <Button
                         type="button"
                         variant="outline"
@@ -806,7 +913,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                         Select ZIP File
                       </Button>
                     )}
-                    {zipFile && !hasImportedCapsule && (
+                    {zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
                       <div className="flex items-center justify-between rounded-md bg-muted p-2">
                         <span className="text-sm">{zipFile.name}</span>
                         <div className="flex gap-2">
@@ -838,16 +945,49 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                         </div>
                       </div>
                     )}
-                    {importError && (
+                    {importError && mode === "zip" && (
                       <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
                         <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                         <span>{importError}</span>
                       </div>
                     )}
-                    {hasImportedCapsule && (
+                    {hasImportedCapsule && capsuleSource === "zip" && (
                       <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
                         <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
                         <span>ZIP imported successfully</span>
+                      </div>
+                    )}
+                    {zipSummary && (
+                      <div className="space-y-2 rounded-md border p-3 text-xs">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium">{zipSummary.fileName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatBytes(zipSummary.totalSize)}
+                            </p>
+                          </div>
+                          <Button variant="ghost" size="sm" onClick={resetZipImport}>
+                            Replace ZIP
+                          </Button>
+                        </div>
+                        {zipManifestWarnings.length > 0 && (
+                          <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                            <p className="text-xs font-medium">Manifest warnings</p>
+                            {zipManifestWarnings.slice(0, 4).map((warning, index) => (
+                              <p key={`${warning.path}-${index}`}>
+                                <span className="font-mono">{warning.path}</span>: {warning.message}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {zipPublishWarnings.length > 0 && (
+                          <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                            <p className="text-xs font-medium">Publish warnings</p>
+                            {zipPublishWarnings.map((warning, index) => (
+                              <p key={`${warning}-${index}`}>{warning}</p>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -933,20 +1073,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setIsExpanded(false);
-                    setTitle("");
-                    setDescription("");
-                    setCode("");
-                    setAllowStorage(false);
-                    setEnableParam(false);
-                    setParamLabel("Intensity");
-                    setParamDefault(50);
-                    setParamMin(0);
-                    setParamMax(100);
-                    setParamStep(1);
-                    setError(null);
-                  }}
+                  onClick={resetComposer}
                   disabled={isSubmitting || isImporting}
                 >
                   Cancel

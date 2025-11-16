@@ -23,6 +23,7 @@ interface Comment {
     name?: string;
     avatarUrl?: string;
   };
+  optimistic?: boolean;
 }
 
 type PublicMetadata = {
@@ -42,6 +43,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, isSignedIn } = useUser();
+  const viewerId = currentUserId ?? (user?.id ?? undefined);
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -69,11 +71,37 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || isSubmitting) return;
+    const trimmed = newComment.trim();
+    if (!trimmed || isSubmitting) return;
+    if (!isSignedIn) {
+      redirectToSignIn();
+      return;
+    }
 
     setIsSubmitting(true);
+    const optimisticId = `optimistic-${Date.now()}`;
+    const emailHandle = user?.primaryEmailAddress?.emailAddress
+      ? user.primaryEmailAddress.emailAddress.split("@")[0]
+      : undefined;
+    const optimisticHandle =
+      user?.username || emailHandle || (user?.id ? user.id.slice(0, 8) : undefined) || "you";
+    const optimisticComment: Comment = {
+      id: optimisticId,
+      body: trimmed,
+      createdAt: Math.floor(Date.now() / 1000),
+      user: {
+        id: viewerId ?? "temp-user",
+        handle: optimisticHandle,
+        name: user?.fullName ?? user?.username ?? undefined,
+        avatarUrl: user?.imageUrl ?? undefined,
+      },
+      optimistic: true,
+    };
+    setComments((prev) => [...prev, optimisticComment]);
+    setNewComment("");
+
     try {
-      const response = await commentsApi.create(postId, newComment.trim());
+      const response = await commentsApi.create(postId, trimmed);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -86,10 +114,13 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       const data = await response.json();
-      setComments((prev) => [...prev, data.comment]);
-      setNewComment("");
+      setComments((prev) =>
+        prev.map((comment) => (comment.id === optimisticId ? data.comment : comment))
+      );
     } catch (error) {
       console.error("Failed to create comment:", error);
+      setComments((prev) => prev.filter((comment) => comment.id !== optimisticId));
+      setNewComment(trimmed);
       toast({ title: "Failed to comment", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
     } finally {
       setIsSubmitting(false);
@@ -97,6 +128,13 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   };
 
   const handleDelete = async (commentId: string) => {
+    const target = comments.find((c) => c.id === commentId);
+    if (!target || target.optimistic) return;
+    if (!isSignedIn) {
+      redirectToSignIn();
+      return;
+    }
+
     try {
       const response = isModeratorOrAdmin
         ? await moderationApi.moderateComment(commentId, "remove")
@@ -112,7 +150,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
         throw new Error(msg);
       }
 
-      setComments(comments.filter((c) => c.id !== commentId));
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
       toast({ title: "Deleted", description: "Comment removed.", variant: "success" });
     } catch (error) {
       console.error("Failed to delete comment:", error);
@@ -157,7 +195,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
                       </div>
                     </div>
                   </div>
-                  {(currentUserId === comment.user.id || isModeratorOrAdmin) && (
+                  {(((viewerId && viewerId === comment.user.id) || isModeratorOrAdmin) && !comment.optimistic) && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -169,6 +207,9 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
                   )}
                 </div>
                 <p className="pl-10 text-sm">{comment.body}</p>
+                {comment.optimistic && (
+                  <p className="pl-10 text-xs italic text-muted-foreground">Sending…</p>
+                )}
                 {comment.atMs !== undefined && (
                   <p className="pl-10 text-xs text-muted-foreground">
                     at {Math.floor(comment.atMs / 1000)}s

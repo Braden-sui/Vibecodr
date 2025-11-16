@@ -3,8 +3,10 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FeedCard } from "../FeedCard";
 
+const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
+
 vi.mock("@clerk/nextjs", () => ({
-  useUser: () => ({ user: null, isSignedIn: false }),
+  useUser: () => mockUseUser(),
 }));
 
 class MockIntersectionObserver {
@@ -48,6 +50,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  mockUseUser.mockReturnValue({ user: { id: "viewer-1" }, isSignedIn: true });
   iframePostMessage = vi.fn();
   (window as any).__mockIOInstances = [] as MockIntersectionObserver[];
 });
@@ -86,6 +89,10 @@ describe("FeedCard", () => {
       comments: 5,
       likes: 10,
       remixes: 2,
+    },
+    viewer: {
+      liked: false,
+      followingAuthor: false,
     },
     createdAt: "2025-01-01T00:00:00Z",
   };
@@ -232,10 +239,49 @@ describe("FeedCard", () => {
     });
   });
 
-  it("should handle comment button click", () => {
-    const { container } = render(<FeedCard post={mockPost} />);
+  it("should optimistically follow and unfollow authors", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true });
 
-    const commentButton = screen.getAllByRole("button")[1];
+    render(<FeedCard post={mockPost} />);
+
+    const followButton = screen.getByRole("button", { name: /follow/i });
+    fireEvent.click(followButton);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/users/user1/follow",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    await waitFor(() => {
+      expect(followButton).toHaveTextContent(/Following/i);
+    });
+  });
+
+  it("should send delete request when unfollowing an author", async () => {
+    const followingPost = {
+      ...mockPost,
+      viewer: { ...(mockPost.viewer || {}), followingAuthor: true },
+    };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    render(<FeedCard post={followingPost} />);
+
+    const followButton = screen.getByRole("button", { name: /Following/i });
+    fireEvent.click(followButton);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/users/user1/follow",
+        expect.objectContaining({ method: "DELETE" })
+      );
+    });
+  });
+
+  it("should handle comment button click", () => {
+    render(<FeedCard post={mockPost} />);
+
+    const commentButton = screen.getByRole("button", { name: "5" });
     fireEvent.click(commentButton);
 
     // Verify router.push was called (mocked in setup)

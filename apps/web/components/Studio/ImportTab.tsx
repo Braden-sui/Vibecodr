@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Github, Upload, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Github, Upload, Loader2, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import JSZip from "jszip";
-import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
+import { analyzeZipFile, formatBytes } from "@/lib/zipBundle";
 import type { CapsuleDraft, DraftFile } from "./StudioShell";
 
 type ImportMethod = "github" | "zip";
@@ -69,99 +68,43 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
     setError("");
 
     try {
-      const zip = await JSZip.loadAsync(file);
       setImportStatus("analyzing");
+      const analysis = await analyzeZipFile(file);
 
-      const entries = Object.values(zip.files).filter(
-        (entry) => !entry.dir && !entry.name.startsWith("__MACOSX/")
-      );
-
-      if (entries.length === 0) {
-        throw new Error("ZIP archive is empty.");
+      if (analysis.errors && analysis.errors.length > 0) {
+        setImportStatus("error");
+        setError("Manifest validation failed. Review the errors below.");
+        onDraftChange(() => ({
+          id: crypto.randomUUID(),
+          manifest: analysis.manifest,
+          files: analysis.files as DraftFile[],
+          sourceZipName: file.name,
+          validationStatus: "invalid",
+          validationWarnings: analysis.warnings,
+          validationErrors: analysis.errors,
+          buildStatus: "idle",
+          artifact: null,
+          capsuleId: undefined,
+          publishStatus: "idle",
+          postId: undefined,
+        }));
+        return;
       }
-
-      const rootPrefix = detectCommonRoot(entries.map((entry) => entry.name));
-      const extractedFiles: DraftFile[] = [];
-      let manifestData: Manifest | undefined;
-      let manifestText: string | undefined;
-
-      for (const entry of entries) {
-        const cleanPath = normalizePath(entry.name, rootPrefix);
-        if (!cleanPath) continue;
-
-        if (cleanPath.toLowerCase() === "manifest.json" && !manifestData) {
-          manifestText = await entry.async("text");
-          try {
-            manifestData = JSON.parse(manifestText);
-          } catch (err) {
-            throw new Error("manifest.json is not valid JSON.");
-          }
-
-          const manifestFile = new File([manifestText], "manifest.json", {
-            type: "application/json",
-          });
-
-          extractedFiles.push({
-            path: "manifest.json",
-            type: "application/json",
-            size: manifestText.length,
-            file: manifestFile,
-          });
-          continue;
-        }
-
-        const arrayBuffer = await entry.async("arraybuffer");
-        const contentType = guessContentType(cleanPath);
-        const blobFile = new File([arrayBuffer], cleanPath.split("/").pop() ?? cleanPath, {
-          type: contentType,
-        });
-
-        extractedFiles.push({
-          path: cleanPath,
-          type: contentType,
-          size: arrayBuffer.byteLength,
-          file: blobFile,
-        });
-      }
-
-      if (!manifestData) {
-        throw new Error("manifest.json is required in the ZIP file.");
-      }
-
-      const validation = validateManifest(manifestData);
-      const mappedWarnings =
-        validation.warnings?.map((warning) => ({
-          path: warning.path,
-          message: warning.message,
-        })) ?? [];
-      const mappedErrors =
-        !validation.valid && validation.errors
-          ? validation.errors.map((err) => ({
-              path: err.path,
-              message: err.message,
-            }))
-          : undefined;
 
       onDraftChange(() => ({
         id: crypto.randomUUID(),
-        manifest: manifestData,
-        files: extractedFiles,
+        manifest: analysis.manifest,
+        files: analysis.files as DraftFile[],
         sourceZipName: file.name,
-        validationStatus: validation.valid ? "valid" : "invalid",
-        validationWarnings: mappedWarnings,
-        validationErrors: mappedErrors,
+        validationStatus: "valid",
+        validationWarnings: analysis.warnings,
+        validationErrors: undefined,
         buildStatus: "idle",
         artifact: null,
         capsuleId: undefined,
         publishStatus: "idle",
         postId: undefined,
       }));
-
-      if (!validation.valid) {
-        setImportStatus("error");
-        setError("Manifest validation failed. Review the errors below.");
-        return;
-      }
 
       setImportStatus("success");
     } catch (err) {
@@ -470,55 +413,4 @@ function ImportStep({
       {status === "active" && <Badge variant="secondary">In Progress</Badge>}
     </div>
   );
-}
-
-function detectCommonRoot(paths: string[]): string | undefined {
-  const candidates = paths
-    .map((path) => {
-      const idx = path.indexOf("/");
-      return idx === -1 ? null : path.slice(0, idx + 1);
-    })
-    .filter((value): value is string => Boolean(value));
-
-  if (candidates.length === 0) return undefined;
-  const first = candidates[0];
-  return candidates.every((candidate) => candidate === first) ? first : undefined;
-}
-
-function normalizePath(path: string, prefix?: string): string | null {
-  let clean = path;
-  if (prefix && clean.startsWith(prefix)) {
-    clean = clean.slice(prefix.length);
-  }
-  clean = clean.replace(/^\.\/+/, "");
-  if (!clean) return null;
-  return clean;
-}
-
-function guessContentType(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  const lookup: Record<string, string> = {
-    html: "text/html",
-    htm: "text/html",
-    js: "application/javascript",
-    mjs: "application/javascript",
-    css: "text/css",
-    json: "application/json",
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    svg: "image/svg+xml",
-    webp: "image/webp",
-    ico: "image/x-icon",
-    txt: "text/plain",
-  };
-  return lookup[ext] ?? "application/octet-stream";
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }

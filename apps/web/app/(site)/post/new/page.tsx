@@ -10,6 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, Code2, Image as ImageIcon, Link2, Github, Upload, Loader2 } from "lucide-react";
 import { postsApi, capsulesApi } from "@/lib/api";
 import { redirectToSignIn } from "@/lib/client-auth";
+import {
+  analyzeZipFile,
+  buildCapsuleFormData,
+  formatBytes,
+  type ZipManifestIssue,
+} from "@/lib/zipBundle";
 
 export default function ShareVibePage() {
   const [title, setTitle] = useState("");
@@ -17,6 +23,7 @@ export default function ShareVibePage() {
   const [linkUrl, setLinkUrl] = useState("");
   const [imageName, setImageName] = useState<string>("");
   const [capsuleId, setCapsuleId] = useState<string | null>(null);
+  const [capsuleSource, setCapsuleSource] = useState<"github" | "zip" | null>(null);
   const [githubUrl, setGithubUrl] = useState("");
   const [importStatus, setImportStatus] = useState<"idle" | "importing" | "ready" | "error">("idle");
   const [importError, setImportError] = useState<string | null>(null);
@@ -24,6 +31,9 @@ export default function ShareVibePage() {
   const [submitted, setSubmitted] = useState(false);
   const [sharedPostId, setSharedPostId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
+  const [zipWarnings, setZipWarnings] = useState<ZipManifestIssue[]>([]);
+  const [zipPublishWarnings, setZipPublishWarnings] = useState<string[]>([]);
 
   const isImporting = importStatus === "importing";
 
@@ -64,6 +74,7 @@ export default function ShareVibePage() {
       }
 
       setCapsuleId(data.capsuleId);
+      setCapsuleSource("github");
       if (!title.trim() && data.manifest?.title) {
         setTitle(data.manifest.title);
       }
@@ -81,21 +92,43 @@ export default function ShareVibePage() {
 
     setImportError(null);
     setImportStatus("importing");
+    setZipWarnings([]);
+    setZipPublishWarnings([]);
 
     try {
-      const response = await capsulesApi.importZip(file);
+      const analysis = await analyzeZipFile(file);
+
+      if (analysis.errors && analysis.errors.length > 0) {
+        setZipSummary({
+          fileName: file.name,
+          totalSize: analysis.totalSize,
+        });
+        setZipWarnings(analysis.errors);
+        setImportStatus("error");
+        setImportError("Manifest validation failed. Please fix manifest.json and try again.");
+        return;
+      }
+
+      setZipSummary({
+        fileName: file.name,
+        totalSize: analysis.totalSize,
+      });
+      setZipWarnings(analysis.warnings ?? []);
+
+      const formData = buildCapsuleFormData(analysis.manifest, analysis.files);
+      const response = await capsulesApi.publish(formData);
 
       if (response.status === 401) {
         redirectToSignIn("/post/new");
+        setImportStatus("idle");
         return;
       }
 
       const data = (await response.json()) as {
         success?: boolean;
         capsuleId?: string;
-        manifest?: { title?: string };
+        warnings?: string[];
         error?: string;
-        errors?: string[];
       };
 
       if (!response.ok || !data.success || !data.capsuleId) {
@@ -106,14 +139,19 @@ export default function ShareVibePage() {
       }
 
       setCapsuleId(data.capsuleId);
-      if (!title.trim() && data.manifest?.title) {
-        setTitle(data.manifest.title);
+      setCapsuleSource("zip");
+      setZipPublishWarnings(data.warnings ?? []);
+      if (!title.trim() && analysis.manifest.title) {
+        setTitle(analysis.manifest.title);
       }
       setImportStatus("ready");
     } catch (err) {
       console.error("Failed to import ZIP:", err);
       setImportError("Upload failed. Please try again.");
       setImportStatus("error");
+      setZipSummary(null);
+      setZipWarnings([]);
+      setZipPublishWarnings([]);
     } finally {
       // Allow re-uploading the same file if needed
       event.target.value = "";
@@ -164,6 +202,16 @@ export default function ShareVibePage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const resetZipUpload = () => {
+    setCapsuleId(null);
+    setCapsuleSource(null);
+    setZipSummary(null);
+    setZipWarnings([]);
+    setZipPublishWarnings([]);
+    setImportStatus("idle");
+    setImportError(null);
   };
 
   return (
@@ -250,6 +298,40 @@ export default function ShareVibePage() {
               {importStatus === "ready" && capsuleId && (
                 <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-xs text-emerald-700 dark:text-emerald-300">
                   The vibe is set — are you ready to share the vibe?
+                </div>
+              )}
+
+              {zipSummary && capsuleSource === "zip" && (
+                <div className="space-y-2 rounded-md border border-muted-foreground/20 p-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{zipSummary.fileName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatBytes(zipSummary.totalSize)}
+                      </p>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={resetZipUpload}>
+                      Replace ZIP
+                    </Button>
+                  </div>
+                  {zipWarnings.length > 0 && (
+                    <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                      <p className="text-xs font-medium">Manifest warnings</p>
+                      {zipWarnings.slice(0, 4).map((warning, index) => (
+                        <p key={`${warning.path}-${index}`}>
+                          <span className="font-mono">{warning.path}</span>: {warning.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {zipPublishWarnings.length > 0 && (
+                    <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                      <p className="text-xs font-medium">Publish warnings</p>
+                      {zipPublishWarnings.map((warning, index) => (
+                        <p key={`${warning}-${index}`}>{warning}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

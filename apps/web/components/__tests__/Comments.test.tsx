@@ -3,8 +3,20 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Comments } from "../Comments";
 
+const mockUseUser = vi.fn(() => ({
+  user: {
+    id: "viewer-123",
+    username: "viewer",
+    fullName: "Viewer Test",
+    primaryEmailAddress: { emailAddress: "viewer@example.com" },
+    imageUrl: "https://example.com/avatar.png",
+    publicMetadata: {},
+  } as any,
+  isSignedIn: true,
+}));
+
 vi.mock("@clerk/nextjs", () => ({
-  useUser: () => ({ user: null, isSignedIn: false }),
+  useUser: () => mockUseUser(),
 }));
 
 describe("Comments", () => {
@@ -34,6 +46,17 @@ describe("Comments", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseUser.mockReturnValue({
+      user: {
+        id: "viewer-123",
+        username: "viewer",
+        fullName: "Viewer Test",
+        primaryEmailAddress: { emailAddress: "viewer@example.com" },
+        imageUrl: "https://example.com/avatar.png",
+        publicMetadata: {},
+      } as any,
+      isSignedIn: true,
+    });
   });
 
   it("should display loading state initially", () => {
@@ -103,23 +126,17 @@ describe("Comments", () => {
 
   it("should allow posting new comments", async () => {
     const user = userEvent.setup();
+    let resolveCreate: ((value: any) => void) | undefined;
+    const createResponse = new Promise((resolve) => {
+      resolveCreate = resolve;
+    });
     global.fetch = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ comments: [] }),
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          comment: {
-            id: "comment3",
-            body: "New comment",
-            createdAt: Math.floor(Date.now() / 1000),
-            user: { id: "user3", handle: "charlie" },
-          },
-        }),
-      });
+      .mockImplementationOnce(() => createResponse as any);
 
     render(<Comments postId="post1" currentUserId="user3" />);
 
@@ -133,6 +150,9 @@ describe("Comments", () => {
     const postButton = screen.getByRole("button", { name: /Post/i });
     await user.click(postButton);
 
+    await screen.findByText("New comment");
+    await screen.findByText(/Sending/i);
+
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
         "/api/posts/post1/comments",
@@ -143,8 +163,20 @@ describe("Comments", () => {
       );
     });
 
+    resolveCreate?.({
+      ok: true,
+      json: async () => ({
+        comment: {
+          id: "comment3",
+          body: "New comment",
+          createdAt: Math.floor(Date.now() / 1000),
+          user: { id: "user3", handle: "charlie" },
+        },
+      }),
+    });
+
     await waitFor(() => {
-      expect(screen.getByText("New comment")).toBeInTheDocument();
+      expect(screen.queryByText(/Sending/i)).not.toBeInTheDocument();
     });
   });
 

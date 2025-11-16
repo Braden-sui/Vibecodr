@@ -142,6 +142,8 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
     const commentsByPost = new Map<string, number>();
     const runsByCapsule = new Map<string, number>();
     const remixesByCapsule = new Map<string, number>();
+    const viewerLikedPosts = new Set<string>();
+    let viewerFollowsAuthor = false;
 
     if (postIds.length > 0) {
       const placeholders = postIds.map(() => "?").join(",");
@@ -209,11 +211,37 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       }
     }
 
+    if (authedUser) {
+      if (postIds.length > 0) {
+        const placeholders = postIds.map(() => "?").join(",");
+        const viewerLikes = await env.DB.prepare(
+          `SELECT post_id FROM likes WHERE user_id = ? AND post_id IN (${placeholders})`
+        )
+          .bind(authedUser.userId, ...postIds)
+          .all();
+        for (const row of viewerLikes.results || []) {
+          viewerLikedPosts.add(String((row as any).post_id));
+        }
+      }
+      const followRow = await env.DB.prepare(
+        "SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?"
+      )
+        .bind(authedUser.userId, user.id)
+        .first();
+      viewerFollowsAuthor = !!followRow;
+    }
+
     const posts = rows.map((row: any) => {
       const likeCount = likesByPost.get(row.id) ?? 0;
       const commentCount = commentsByPost.get(row.id) ?? 0;
       const runsCount = row.capsule_id ? runsByCapsule.get(row.capsule_id) ?? 0 : 0;
       const remixCount = row.capsule_id ? remixesByCapsule.get(row.capsule_id) ?? 0 : 0;
+      const viewer = authedUser
+        ? {
+            liked: viewerLikedPosts.has(row.id),
+            followingAuthor: viewerFollowsAuthor,
+          }
+        : undefined;
 
       return {
         id: row.id,
@@ -233,6 +261,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
           remixes: remixCount,
           runs: runsCount,
         },
+        viewer,
       };
     });
 

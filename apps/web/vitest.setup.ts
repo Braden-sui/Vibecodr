@@ -64,3 +64,34 @@ global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
 } as any;
+
+const RADIX_STACK_REGEX = /@radix-ui\/react-/i;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+function isRadixNoise(args: unknown[]): boolean {
+  return args.some((arg) => {
+    if (!arg) return false;
+    if (typeof arg === "string") {
+      return RADIX_STACK_REGEX.test(arg);
+    }
+    if (arg instanceof Error && typeof arg.stack === "string") {
+      return RADIX_STACK_REGEX.test(arg.stack);
+    }
+    return false;
+  });
+}
+
+console.error = (...args: unknown[]) => {
+  if (isRadixNoise(args)) {
+    return;
+  }
+  originalConsoleError(...args);
+};
+
+console.warn = (...args: unknown[]) => {
+  if (isRadixNoise(args)) {
+    return;
+  }
+  originalConsoleWarn(...args);
+};

@@ -105,6 +105,10 @@ export type FeedPost = {
     likes: number;
     remixes: number;
   };
+  viewer?: {
+    liked?: boolean;
+    followingAuthor?: boolean;
+  };
   createdAt: string;
 };
 
@@ -138,6 +142,13 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
     }
   }
 
+  const viewer = apiPost.viewer
+    ? {
+        liked: apiPost.viewer.liked === true,
+        followingAuthor: apiPost.viewer.followingAuthor === true,
+      }
+    : undefined;
+
   return {
     id: String(apiPost.id),
     type: apiPost.type === "app" ? "app" : "report",
@@ -158,6 +169,7 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
       likes: apiPost.stats.likes,
       remixes: apiPost.stats.remixes,
     },
+    viewer,
     createdAt,
   };
 }
@@ -331,14 +343,6 @@ export const capsulesApi = {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(input),
-    });
-  },
-  importZip(file: File) {
-    const formData = new FormData();
-    formData.append("file", file);
-    return fetch("/api/import/zip", {
-      method: "POST",
-      body: formData,
     });
   },
 } as const;

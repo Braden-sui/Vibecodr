@@ -216,6 +216,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const safeRows = (results || []).filter((row: any) => row.author_is_suspended === 0 && row.author_shadow_banned === 0);
 
     const postIds = safeRows.map((row: any) => row.id);
+    const authorIds = Array.from(new Set(safeRows.map((row: any) => row.author_id))) as string[];
     const capsuleIds = Array.from(
       new Set(
         safeRows
@@ -228,6 +229,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const commentsByPost = new Map<string, number>();
     const runsByCapsule = new Map<string, number>();
     const remixesByCapsule = new Map<string, number>();
+    const viewerLikedPosts = new Set<string>();
+    const viewerFollowedAuthors = new Set<string>();
 
     if (postIds.length > 0) {
       const placeholders = postIds.map(() => "?").join(",");
@@ -295,6 +298,43 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       }
     }
 
+    if (authedUser) {
+      const viewerTasks: Promise<void>[] = [];
+      if (postIds.length > 0) {
+        const placeholders = postIds.map(() => "?").join(",");
+        viewerTasks.push(
+          env.DB.prepare(
+            `SELECT post_id FROM likes WHERE user_id = ? AND post_id IN (${placeholders})`
+          )
+            .bind(authedUser.userId, ...postIds)
+            .all()
+            .then((res) => {
+              for (const row of res.results || []) {
+                viewerLikedPosts.add(String((row as any).post_id));
+              }
+            })
+        );
+      }
+      if (authorIds.length > 0) {
+        const placeholders = authorIds.map(() => "?").join(",");
+        viewerTasks.push(
+          env.DB.prepare(
+            `SELECT followee_id FROM follows WHERE follower_id = ? AND followee_id IN (${placeholders})`
+          )
+            .bind(authedUser.userId, ...authorIds)
+            .all()
+            .then((res) => {
+              for (const row of res.results || []) {
+                viewerFollowedAuthors.add(String((row as any).followee_id));
+              }
+            })
+        );
+      }
+      if (viewerTasks.length > 0) {
+        await Promise.all(viewerTasks);
+      }
+    }
+
     const posts: ApiFeedPost[] = safeRows.map((row: any) => {
       const runsCount = row.capsule_id ? runsByCapsule.get(row.capsule_id) ?? 0 : 0;
       const remixCount = row.capsule_id ? remixesByCapsule.get(row.capsule_id) ?? 0 : 0;
@@ -331,6 +371,13 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
           remixes: remixCount,
         },
       } as any;
+
+      if (authedUser) {
+        post.viewer = {
+          liked: viewerLikedPosts.has(row.id),
+          followingAuthor: viewerFollowedAuthors.has(row.author_id),
+        };
+      }
 
       // Attach a score field for potential re-ranking
       if (mode === "foryou") {
@@ -483,6 +530,21 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         remixes: (remixCount as any)?.count || 0,
       },
     };
+
+    if (authedUser) {
+      const [likedRow, followRow] = await Promise.all([
+        env.DB.prepare("SELECT 1 FROM likes WHERE user_id = ? AND post_id = ?")
+          .bind(authedUser.userId, row.id)
+          .first(),
+        env.DB.prepare("SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?")
+          .bind(authedUser.userId, row.author_id)
+          .first(),
+      ]);
+      post.viewer = {
+        liked: !!likedRow,
+        followingAuthor: !!followRow,
+      };
+    }
 
     const parsed = ApiFeedPostSchema.parse(post);
     return json({ post: parsed });
