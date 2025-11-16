@@ -1,3 +1,5 @@
+import { ensureUserSynced } from "./user-sync";
+
 // Tiny API client for the Worker API. Consider centralizing auth headers here later.
 
 type ModerationPostAction = "quarantine" | "remove";
@@ -184,14 +186,15 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPostPayload): FeedPost 
 }
 
 export const postsApi = {
-  create(input: {
+  create: async (input: {
     title: string;
     description?: string;
     type?: "app" | "report";
     capsuleId?: string | null;
     tags?: string[];
     coverKey?: string | null;
-  }) {
+  }) => {
+    await ensureUserSynced();
     const { title, description, type = "report", capsuleId, tags, coverKey } = input;
     return fetch("/api/posts", {
       method: "POST",
