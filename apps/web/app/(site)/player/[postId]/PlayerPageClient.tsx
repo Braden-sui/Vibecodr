@@ -581,9 +581,9 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             </div>
             <div>
               <Button
-                size="xs"
+                size="sm"
                 variant="outline"
-                className="border-orange-300 text-orange-800 hover:bg-orange-100"
+                className="h-7 px-2 text-xs border-orange-300 text-orange-800 hover:bg-orange-100"
                 disabled={isUnquarantining}
                 onClick={handleUnquarantine}
               >
