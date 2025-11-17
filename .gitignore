@@ -58,3 +58,5 @@ pnpm-debug.log*
 # Common local caches
 .cache/
 .eslintcache
+
+.vercel

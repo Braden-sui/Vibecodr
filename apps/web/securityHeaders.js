@@ -5,6 +5,7 @@ const DEFAULTS = {
   posthogHost: "https://us.i.posthog.com",
   posthogAssetOrigin: "https://us-assets.i.posthog.com",
   clerkScriptOrigin: "https://clerk.vibecodr.space",
+  clerkAccountsOrigin: "https://accounts.vibecodr.space",
   fontCdnOrigin: "https://r2cdn.perplexity.ai",
   cloudflareBeaconOrigin: "https://static.cloudflareinsights.com",
 };
@@ -109,6 +110,15 @@ function resolveClerkScriptOrigin() {
   return origin || DEFAULTS.clerkScriptOrigin;
 }
 
+function resolveClerkAccountsOrigin() {
+  const raw = firstDefined([
+    process.env.NEXT_PUBLIC_CLERK_ACCOUNTS_ORIGIN,
+    process.env.CLERK_ACCOUNTS_ORIGIN,
+  ]);
+  const origin = normalizeOrigin(raw);
+  return origin || DEFAULTS.clerkAccountsOrigin;
+}
+
 function resolveFontOrigin() {
   const raw = firstDefined([
     process.env.NEXT_PUBLIC_FONT_CDN_ORIGIN,
@@ -151,6 +161,7 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
   const posthogOrigin = resolvePosthogOrigin();
   const posthogAssetOrigin = resolvePosthogAssetOrigin();
   const clerkScriptOrigin = resolveClerkScriptOrigin();
+  const clerkAccountsOrigin = resolveClerkAccountsOrigin();
   const fontOrigin = resolveFontOrigin();
   const cloudflareBeaconOrigin = DEFAULTS.cloudflareBeaconOrigin;
   const clerkImageOrigins = resolveClerkImageOrigins();
@@ -170,6 +181,7 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     posthogAssetOrigin,
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
     clerkScriptOrigin,
+    clerkAccountsOrigin,
     ...CLERK_FRONTEND_HOSTS,
   ]);
 

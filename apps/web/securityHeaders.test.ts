@@ -25,6 +25,14 @@ describe("securityHeaders", () => {
     expect(cspHeader?.value).toContain("https://us-assets.i.posthog.com");
   });
 
+  it("allows the Clerk accounts origin in connect-src", () => {
+    const headers = securityHeaders.buildSecurityHeaders();
+    const cspHeader = headers.find((header) => header.key === "Content-Security-Policy");
+
+    expect(cspHeader).toBeDefined();
+    expect(cspHeader?.value).toContain("https://accounts.vibecodr.space");
+  });
+
   it("permits Clerk image CDN hosts in img-src", () => {
     const headers = securityHeaders.buildSecurityHeaders();
     const cspHeader = headers.find((header) => header.key === "Content-Security-Policy");
