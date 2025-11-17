@@ -274,8 +274,8 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
           <Button
             type="button"
             variant="ghost"
-            size="xs"
-            className="px-2 text-xs text-muted-foreground hover:text-primary"
+            size="sm"
+            className="h-6 px-2 text-xs text-muted-foreground hover:text-primary"
             onClick={() => setReplyTo(comment)}
           >
             Reply
@@ -321,7 +321,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
               <Button
                 type="button"
                 variant="ghost"
-                size="xs"
+                size="sm"
                 className="h-6 px-2 text-xs"
                 onClick={() => setReplyTo(null)}
               >
