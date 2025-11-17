@@ -154,6 +154,11 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     fontOrigin,
   ]);
 
+  const workerSrc = uniqueSources([
+    "'self'",
+    "blob:",
+  ]);
+
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
@@ -164,6 +169,7 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     `img-src 'self' data: blob:`,
     `object-src 'none'`,
     `script-src ${scriptSrc.join(" ")} 'unsafe-inline'`,
+    `worker-src ${workerSrc.join(" ")}`,
     `style-src 'self' 'unsafe-inline'`,
     `connect-src ${connectSrc.join(" ")}`,
     `upgrade-insecure-requests`,
@@ -184,7 +190,7 @@ function buildSecurityHeaders({ allowEmbedding = false } = {}) {
     {
       key: "Permissions-Policy",
       value:
-        "accelerometer=(), autoplay=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), microphone=(), midi=(), payment=(), usb=()",
+        "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), microphone=(), midi=(), payment=(), usb=()",
     },
   ];
 
