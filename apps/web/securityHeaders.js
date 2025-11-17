@@ -16,6 +16,11 @@ const CLERK_FRONTEND_HOSTS = [
   "https://*.clerk.services",
 ];
 
+const CLERK_IMAGE_DEFAULT_ORIGINS = [
+  "https://img.clerk.com",
+  "https://images.clerk.dev",
+];
+
 const EMBED_PATH_PREFIX = "/e";
 
 function firstDefined(candidates) {
@@ -121,6 +126,24 @@ function resolvePosthogAssetOrigin() {
   return normalizeOrigin(raw) || DEFAULTS.posthogAssetOrigin;
 }
 
+function resolveClerkImageOrigins() {
+  const raw = firstDefined([
+    process.env.NEXT_PUBLIC_CLERK_IMAGE_ORIGINS,
+    process.env.CLERK_IMAGE_ORIGINS,
+  ]);
+
+  if (!raw) {
+    return [...CLERK_IMAGE_DEFAULT_ORIGINS];
+  }
+
+  const origins = raw
+    .split(",")
+    .map((value) => normalizeOrigin(value))
+    .filter((value) => typeof value === "string");
+
+  return origins.length > 0 ? uniqueSources(origins) : [...CLERK_IMAGE_DEFAULT_ORIGINS];
+}
+
 function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
   const runtimeCdnSource = resolveRuntimeCdnSource();
   const playerOrigin = resolvePlayerOrigin();
@@ -130,6 +153,7 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
   const clerkScriptOrigin = resolveClerkScriptOrigin();
   const fontOrigin = resolveFontOrigin();
   const cloudflareBeaconOrigin = DEFAULTS.cloudflareBeaconOrigin;
+  const clerkImageOrigins = resolveClerkImageOrigins();
 
   const scriptSrc = uniqueSources([
     "'self'",
@@ -143,6 +167,7 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     "'self'",
     workerApiOrigin,
     posthogOrigin,
+    posthogAssetOrigin,
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
     clerkScriptOrigin,
     ...CLERK_FRONTEND_HOSTS,
@@ -159,6 +184,13 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     "blob:",
   ]);
 
+  const imgSrc = uniqueSources([
+    "'self'",
+    "data:",
+    "blob:",
+    ...clerkImageOrigins,
+  ]);
+
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
@@ -166,7 +198,7 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     `form-action 'self'`,
     `frame-src ${playerOrigin}`,
     `frame-ancestors ${allowEmbedding ? "*" : "'none'"}`,
-    `img-src 'self' data: blob:`,
+    `img-src ${imgSrc.join(" ")}`,
     `object-src 'none'`,
     `script-src ${scriptSrc.join(" ")} 'unsafe-inline'`,
     `worker-src ${workerSrc.join(" ")}`,
