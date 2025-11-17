@@ -15,7 +15,7 @@ import { PlayerConsole, type PlayerConsoleEntry } from "@/components/Player/Play
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sliders } from "lucide-react";
-import { postsApi, runsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
+import { postsApi, runsApi, moderationApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
@@ -59,6 +59,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [consoleEntries, setConsoleEntries] = useState<PlayerConsoleEntry[]>([]);
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(true);
   const [moderationStatus, setModerationStatus] = useState<{ quarantined: boolean; pendingFlags: number } | null>(null);
+  const [isUnquarantining, setIsUnquarantining] = useState(false);
   const iframeHandleRef = useRef<PlayerIframeHandle | null>(null);
   const currentRunRef = useRef<RunSession | null>(null);
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
@@ -106,6 +107,22 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const appendConsoleEntry = useCallback((entry: PlayerConsoleEntry) => {
     setConsoleEntries((prev) => [...prev, entry].slice(-MAX_CONSOLE_LOGS));
   }, []);
+
+  const handleUnquarantine = useCallback(async () => {
+    if (!post || !isModeratorOrAdmin || isUnquarantining) return;
+
+    setIsUnquarantining(true);
+    try {
+      const response = await moderationApi.moderatePost(post.id, "unquarantine");
+      if (!response.ok) {
+        // Soft-fail: leave current banner; moderators can retry or use other tools.
+        return;
+      }
+      setModerationStatus((prev) => (prev ? { ...prev, quarantined: false } : prev));
+    } finally {
+      setIsUnquarantining(false);
+    }
+  }, [isModeratorOrAdmin, isUnquarantining, post]);
 
   const flushLogBatch = useCallback(
     (explicitRunId?: string) => {
@@ -554,12 +571,25 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           </div>
         </div>
         {isModeratorOrAdmin && moderationStatus?.quarantined && (
-          <div className="mt-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-            <p className="font-medium">This post is quarantined.</p>
-            <p className="mt-1">
-              It is hidden from non-moderators in feeds, profiles, and the player. Resolve or update reports from the
-              moderation tools if this was applied in error.
-            </p>
+          <div className="mt-2 flex flex-col gap-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+            <div>
+              <p className="font-medium">This post is quarantined.</p>
+              <p className="mt-1">
+                It is hidden from feeds and profile lists for all users. Use the tools below if this status was applied
+                in error.
+              </p>
+            </div>
+            <div>
+              <Button
+                size="xs"
+                variant="outline"
+                className="border-orange-300 text-orange-800 hover:bg-orange-100"
+                disabled={isUnquarantining}
+                onClick={handleUnquarantine}
+              >
+                {isUnquarantining ? "Working…" : "Unquarantine post"}
+              </Button>
+            </div>
           </div>
         )}
       </div>

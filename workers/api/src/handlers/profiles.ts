@@ -121,9 +121,8 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       LEFT JOIN capsules c ON p.capsule_id = c.id
       WHERE p.author_id = ?`;
 
-    if (!isMod) {
-      query += " AND (p.quarantined IS NULL OR p.quarantined = 0)";
-    }
+    // Hide quarantined posts from profile timelines for all viewers, including moderators/admins.
+    query += " AND (p.quarantined IS NULL OR p.quarantined = 0)";
 
     query += " ORDER BY p.created_at DESC LIMIT ? OFFSET ?";
 

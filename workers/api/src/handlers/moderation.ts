@@ -423,7 +423,7 @@ export const resolveModerationReport: Handler = requireModerator(async (req, env
  * Direct moderation actions on a post (admin/moderator only)
  *
  * Body: {
- *   action: "quarantine" | "remove",
+ *   action: "quarantine" | "unquarantine" | "remove",
  *   notes?: string
  * }
  */
@@ -438,13 +438,13 @@ export const moderatePostAction: Handler = requireModerator(async (req, env, ctx
     }
 
     const body = await req.json() as {
-      action?: "quarantine" | "remove";
+      action?: "quarantine" | "unquarantine" | "remove";
       notes?: string | null;
     };
     const { action, notes } = body;
 
-    if (!action || !["quarantine", "remove"].includes(action)) {
-      return json({ error: "Invalid action (must be 'quarantine' or 'remove')" }, 400);
+    if (!action || !["quarantine", "unquarantine", "remove"].includes(action)) {
+      return json({ error: "Invalid action (must be 'quarantine', 'unquarantine', or 'remove')" }, 400);
     }
 
     const post = await env.DB.prepare("SELECT id FROM posts WHERE id = ?")
@@ -468,20 +468,38 @@ export const moderatePostAction: Handler = requireModerator(async (req, env, ctx
           error: "Quarantine action is currently unavailable. Please contact an administrator.",
         }, 503);
       }
+    } else if (action === "unquarantine") {
+      try {
+        await env.DB.prepare("UPDATE posts SET quarantined = 0 WHERE id = ?")
+          .bind(postId).run();
+      } catch (error) {
+        console.error("E-VIBECODR-0105 direct post unquarantine failed", {
+          postId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        return json({
+          error: "Quarantine action is currently unavailable. Please contact an administrator.",
+        }, 503);
+      }
     } else if (action === "remove") {
       await env.DB.prepare("DELETE FROM posts WHERE id = ?")
         .bind(postId).run();
     }
 
-    await env.DB.prepare(`
-      UPDATE moderation_reports
-      SET status = 'resolved',
-          resolved_by = ?,
-          resolved_at = ?,
-          resolution_action = ?,
-          resolution_notes = COALESCE(resolution_notes, ?)
-      WHERE target_type = 'post' AND target_id = ? AND status = 'pending'
-    `).bind(user.userId, Math.floor(Date.now() / 1000), action, notes || null, postId).run();
+    // When resolving reports as part of quarantine/remove flows, update pending reports.
+    // Unquarantine is a direct safety reversal that does not change existing report resolution_action.
+    if (action === "quarantine" || action === "remove") {
+      await env.DB.prepare(`
+        UPDATE moderation_reports
+        SET status = 'resolved',
+            resolved_by = ?,
+            resolved_at = ?,
+            resolution_action = ?,
+            resolution_notes = COALESCE(resolution_notes, ?)
+        WHERE target_type = 'post' AND target_id = ? AND status = 'pending'
+      `).bind(user.userId, Math.floor(Date.now() / 1000), action, notes || null, postId).run();
+    }
 
     const auditId = generateId();
     await env.DB.prepare(`
@@ -506,7 +524,7 @@ export const moderatePostAction: Handler = requireModerator(async (req, env, ctx
  * Direct moderation actions on a comment (admin/moderator only)
  *
  * Body: {
- *   action: "quarantine" | "remove",
+ *   action: "quarantine" | "unquarantine" | "remove",
  *   notes?: string
  * }
  */
@@ -521,13 +539,13 @@ export const moderateCommentAction: Handler = requireModerator(async (req, env, 
     }
 
     const body = await req.json() as {
-      action?: "quarantine" | "remove";
+      action?: "quarantine" | "unquarantine" | "remove";
       notes?: string | null;
     };
     const { action, notes } = body;
 
-    if (!action || !["quarantine", "remove"].includes(action)) {
-      return json({ error: "Invalid action (must be 'quarantine' or 'remove')" }, 400);
+    if (!action || !["quarantine", "unquarantine", "remove"].includes(action)) {
+      return json({ error: "Invalid action (must be 'quarantine', 'unquarantine', or 'remove')" }, 400);
     }
 
     const comment = await env.DB.prepare("SELECT id FROM comments WHERE id = ?")
@@ -543,6 +561,20 @@ export const moderateCommentAction: Handler = requireModerator(async (req, env, 
           .bind(commentId).run();
       } catch (error) {
         console.error("E-VIBECODR-0104 direct comment quarantine failed", {
+          commentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        return json({
+          error: "Quarantine action is currently unavailable. Please contact an administrator.",
+        }, 503);
+      }
+    } else if (action === "unquarantine") {
+      try {
+        await env.DB.prepare("UPDATE comments SET quarantined = 0 WHERE id = ?")
+          .bind(commentId).run();
+      } catch (error) {
+        console.error("E-VIBECODR-0106 direct comment unquarantine failed", {
           commentId,
           error: error instanceof Error ? error.message : String(error),
         });

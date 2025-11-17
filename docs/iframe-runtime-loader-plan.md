@@ -128,9 +128,9 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
   - Enforces size constraints by observing layout shifts (optional).
 
 ### Network & Policy Controls
-- Default network allowlist is empty; artifacts must declare domains to fetch (hosted proxies recommended).
-- Until premium VM tiers launch, `capabilities.net` declarations are rejected so capsules have zero outbound network.
-- Provide optional Worker proxy endpoint for approved domains so we retain logging + caching.
+- Default network allowlist is empty; artifacts must declare domains to fetch via `capabilities.net` in the capsule manifest, and those domains are enforced server-side by the Worker proxy.
+- `capabilities.net` entries are not direct carte blanche network access: they are combined with a global allowlist and only applied when the caller owns the capsule; requests that try to reuse another user’s capsule ID are rejected by `/api/proxy`.
+- The Worker proxy (`/api/proxy`) is the only supported path for runtime network calls and remains optional but recommended for auditability and SSRF defenses.
 - Heartbeat: guard script posts `{"type":"heartbeat"}` every 5 s; host kills iframe if missing >15 s.
 - Rate limits: host tracks per-user concurrent artifacts to prevent resource abuse.
 - Auto-run lifecycle (feed): the host may auto-start runtime when a card enters the viewport, but must enforce an engagement window (for example, kill if there is no hover/click/param interaction within roughly 10 seconds), unload iframes that are far outside the viewport, and cap the number of simultaneously active auto-run iframes (for example, 5–7) to keep CPU and memory usage bounded.

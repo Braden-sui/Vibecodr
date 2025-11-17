@@ -100,6 +100,7 @@ If any invariant would be violated by a change, **the change is not allowed** wi
     - Capsules or users abusing external calls to launch attacks or exfiltrate data.
   - **How we enforce it**
     - Proxy handler only allows hosts listed in allowlist (e.g. `ALLOWLIST_HOSTS`, manifest `net: []`).
+    - Proxy is authenticated and only uses manifests for capsules owned by the caller; requests with foreign `capsuleId` values are rejected.
     - Validate URLs and reject any host not in the allowlist.
 
 - **[INV-API-0301] External calls are bounded & time-limited**
@@ -196,6 +197,7 @@ This section collects concrete abuse scenarios and maps them to invariants above
   - **Mitigations**
     - Strict host allowlist from manifest/vars. (**INV-API-0300**)
     - Per-route rate limits. (**INV-API-0200**)
+    - Auth + per-owner scoping for `/api/proxy` so manifests cannot be borrowed across users.
 
 - **Scenario E: Auto-run miner in the feed**
   - Auto-run in the feed starts capsules when cards enter the viewport. An attacker attempts to ship a capsule that mines cryptocurrency or wastes CPU while users scroll past.

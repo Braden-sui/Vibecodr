@@ -124,6 +124,22 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Quarantine is temporarily unavailable. Please contact an administrator.",
     logMessage: "Direct comment quarantine failed",
   },
+  "E-VIBECODR-0105": {
+    code: "E-VIBECODR-0105",
+    category: "moderation",
+    httpStatus: 503,
+    severity: "error",
+    userMessage: "Quarantine is temporarily unavailable. Please contact an administrator.",
+    logMessage: "Direct post unquarantine failed",
+  },
+  "E-VIBECODR-0106": {
+    code: "E-VIBECODR-0106",
+    category: "moderation",
+    httpStatus: 503,
+    severity: "error",
+    userMessage: "Quarantine is temporarily unavailable. Please contact an administrator.",
+    logMessage: "Direct comment unquarantine failed",
+  },
 
   // 02xx: capsule manifest parsing and validation in feed/player paths
   "E-VIBECODR-0201": {

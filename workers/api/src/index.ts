@@ -173,9 +173,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const where: string[] = [];
     // Safety: exclude suspended or shadow-banned authors from surfaced feeds
     where.push("(u.is_suspended = 0 AND u.shadow_banned = 0)");
-    if (!isMod) {
-      where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
-    }
+    // Hide quarantined posts from all surfaced feeds, including moderators/admins.
+    where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
 
     if (mode === "following") {
       let followerId: string | null = null;

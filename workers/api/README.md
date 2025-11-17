@@ -39,7 +39,7 @@ High-level surface area:
   - `GET /oembed` – oEmbed JSON for `/player/:id` and `/e/:id`.
   - `GET /e/:id` – static iframe wrapper for embedding the Player.
   - `GET /og-image/:id` – branded SVG Open Graph image.
-  - `GET /proxy?url=…&capsuleId=…` – allowlisted network proxy with per-capsule/host rate limiting and cookie stripping.
+  - `GET /proxy?url=…&capsuleId=…` – authenticated, allowlisted network proxy that only honors manifests for capsules owned by the caller, with per-capsule/host rate limiting and cookie stripping.
 
 Infra notes:
 - D1 schema lives in `src/schema.sql` and `src/schema.ts` (Drizzle model + Zod contracts). Apply via wrangler migrations or Drizzle once ready.

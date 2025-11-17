@@ -33,7 +33,7 @@ A social timeline where every card is a runnable micro-app (“capsule”) you c
 ## Capsule Constraints (App Size & Safety)
 - **Bundle cap**: 25 MB total assets per capsule for free/creator tiers; 100 MB for Pro; 250 MB for Team (enforced via manifest validation and R2 object size).
 - **Entry requirements**: static HTML/JS/CSS bundle (`runner: client-static`) for MVP. Optional WebContainer runner stays behind a flag until performance budgets are proven.
-- **Resource guardrails**: iframe sandbox with `sandbox`, strict CSP, and zero outbound network access (the reserved `capabilities.net` flag will return when premium VM tiers ship). CPU timeouts (5 s boot, 60 s run) and memory checks via the runner shim.
+- **Resource guardrails**: iframe sandbox with `sandbox`, strict CSP, and no direct outbound network access from the runtime; any external calls flow through an authenticated Worker proxy (`/api/proxy`) that combines per-capsule manifest `capabilities.net` allowlists with a global env allowlist, applies rate limits, and enforces per-owner scoping so one user cannot borrow another user's network capabilities. CPU timeouts (5 s boot, 60 s run) and memory checks via the runner shim.
 
 ## Pricing & Usage Caps (Cloudflare economics)
 | Plan   | Price | Runs/mo | Storage cap | Included live minutes* |

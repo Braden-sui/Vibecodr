@@ -3,7 +3,7 @@ import type { ApiFeedPost } from "@vibecodr/shared";
 
 // Tiny API client for the Worker API. Consider centralizing auth headers here later.
 
-type ModerationPostAction = "quarantine" | "remove";
+type ModerationPostAction = "quarantine" | "unquarantine" | "remove";
 
 type ModerationCommentAction = "remove";
 
