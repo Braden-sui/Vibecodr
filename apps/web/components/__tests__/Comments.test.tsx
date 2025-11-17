@@ -60,7 +60,7 @@ describe("Comments", () => {
   });
 
   it("should display loading state initially", () => {
-    global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch; // Never resolves
+    global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -71,7 +71,7 @@ describe("Comments", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -88,7 +88,7 @@ describe("Comments", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: [] }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -101,7 +101,7 @@ describe("Comments", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -115,7 +115,7 @@ describe("Comments", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -130,13 +130,16 @@ describe("Comments", () => {
     const createResponse = new Promise((resolve) => {
       resolveCreate = resolve;
     });
-    global.fetch = vi
+
+    const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ comments: [] }),
       })
       .mockImplementationOnce(() => createResponse as any);
+
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     render(<Comments postId="post1" currentUserId="user3" />);
 
@@ -154,7 +157,7 @@ describe("Comments", () => {
     await screen.findByText(/Sending/i);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(fetchMock).toHaveBeenCalledWith(
         "/api/posts/post1/comments",
         expect.objectContaining({
           method: "POST",
@@ -182,12 +185,73 @@ describe("Comments", () => {
     });
   });
 
+  it("should send parentCommentId when replying to a comment", async () => {
+    const user = userEvent.setup();
+    const parentComment = {
+      id: "comment1",
+      body: "Parent comment",
+      createdAt: Math.floor(Date.now() / 1000) - 10,
+      user: { id: "user1", handle: "alice" },
+    };
+
+    let resolveCreate: ((value: any) => void) | undefined;
+    const createResponse = new Promise((resolve) => {
+      resolveCreate = resolve;
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ comments: [parentComment] }),
+      })
+      .mockImplementationOnce(() => createResponse as any);
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<Comments postId="post1" currentUserId="viewer-123" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Parent comment")).toBeInTheDocument();
+    });
+
+    const replyButton = screen.getByRole("button", { name: /Reply/i });
+    await user.click(replyButton);
+
+    const textarea = screen.getByPlaceholderText(/Add a comment/i);
+    await user.type(textarea, "Child reply");
+
+    const postButton = screen.getByRole("button", { name: /Post/i });
+    await user.click(postButton);
+
+    await waitFor(() => {
+      const body = (fetchMock.mock.calls[1]?.[1] as any)?.body as string;
+      expect(body).toContain("Child reply");
+      expect(body).toContain('"parentCommentId":"comment1"');
+    });
+
+    await act(async () => {
+      resolveCreate?.({
+        ok: true,
+        json: async () => ({
+          comment: {
+            id: "comment2",
+            body: "Child reply",
+            parentCommentId: "comment1",
+            createdAt: Math.floor(Date.now() / 1000),
+            user: { id: "viewer-123", handle: "viewer" },
+          },
+        }),
+      });
+    });
+  });
+
   it("should enforce 2000 character limit", async () => {
     const user = userEvent.setup();
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: [] }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -202,7 +266,7 @@ describe("Comments", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: [] }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -220,7 +284,7 @@ describe("Comments", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: [] }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -248,7 +312,7 @@ describe("Comments", () => {
             user: { id: "user1", handle: "test" },
           },
         }),
-      });
+      }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -279,7 +343,7 @@ describe("Comments", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({}),
-      });
+      }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" currentUserId="user1" />);
 
@@ -287,37 +351,28 @@ describe("Comments", () => {
       expect(screen.getByText("Great work!")).toBeInTheDocument();
     });
 
-    // Hover over comment to reveal delete button
-    const comment = screen.getByText("Great work!").closest("div");
-    fireEvent.mouseEnter(comment!);
+    const deleteButton = screen.getByRole("button", { name: /Delete comment/i });
+    await user.click(deleteButton);
 
-    const deleteButton = screen.getAllByRole("button").find((btn) =>
-      btn.querySelector("svg")
-    );
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/comments/comment1",
+        expect.objectContaining({
+          method: "DELETE",
+        })
+      );
+    });
 
-    if (deleteButton) {
-      await user.click(deleteButton);
-
-      await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          "/api/comments/comment1",
-          expect.objectContaining({
-            method: "DELETE",
-          })
-        );
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByText("Great work!")).not.toBeInTheDocument();
-      });
-    }
+    await waitFor(() => {
+      expect(screen.queryByText("Great work!")).not.toBeInTheDocument();
+    });
   });
 
   it("should not show delete button for other users' comments", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    });
+    }) as unknown as typeof fetch;
 
     render(<Comments postId="post1" currentUserId="user3" />);
 
@@ -325,14 +380,12 @@ describe("Comments", () => {
       expect(screen.getByText("Great work!")).toBeInTheDocument();
     });
 
-    // Delete button should not be visible for other users' comments
-    const allButtons = screen.getAllByRole("button");
-    expect(allButtons.length).toBe(1); // Only the Post button
+    expect(screen.queryByRole("button", { name: /Delete comment/i })).not.toBeInTheDocument();
   });
 
   it("should handle fetch errors gracefully", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+    global.fetch = vi.fn().mockRejectedValue(new Error("Network error")) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -359,7 +412,7 @@ describe("Comments", () => {
         ok: true,
         json: async () => ({ comments: [] }),
       })
-      .mockReturnValueOnce(submitPromise);
+      .mockReturnValueOnce(submitPromise) as unknown as typeof fetch;
 
     render(<Comments postId="post1" />);
 
@@ -374,12 +427,10 @@ describe("Comments", () => {
     const postButton = screen.getByRole("button", { name: /Post/i });
     await user.click(postButton);
 
-    // Button should be disabled while submitting
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Posting/i })).toBeDisabled();
     });
 
-    // Resolve the submission
     await act(async () => {
       resolveSubmit!({
         ok: true,
@@ -395,3 +446,4 @@ describe("Comments", () => {
     });
   });
 });
+

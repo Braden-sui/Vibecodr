@@ -329,7 +329,9 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     const trimmedDescription = description.trim();
 
     if (!trimmedTitle) {
-      setError("Please add a title for your vibe");
+      setError(
+        mode === "status" ? "Please write a status update" : "Please add a title for your vibe"
+      );
       return;
     }
 
@@ -708,13 +710,15 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
             {isExpanded && (
               <>
-                <Textarea
-                  placeholder="Add more details (optional)"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  disabled={isSubmitting || isImporting}
-                />
+                {mode !== "status" && (
+                  <Textarea
+                    placeholder="Add more details (optional)"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    disabled={isSubmitting || isImporting}
+                  />
+                )}
 
                 {/* Inline Code Section */}
                 {mode === "code" && (

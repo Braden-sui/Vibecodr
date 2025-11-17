@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS comments (
   body TEXT NOT NULL,
   at_ms INTEGER,
   bbox TEXT,
+   parent_comment_id TEXT REFERENCES comments(id),
   quarantined INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_comment_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
 
 -- Moderation tables

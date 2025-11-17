@@ -147,6 +147,10 @@ export const comments = sqliteTable("comments", {
   body: text("body").notNull(),
   atMs: integer("at_ms"), // Timestamp in video/demo for time-based comments
   bbox: text("bbox"), // JSON for spatial comments
+  parentCommentId: text("parent_comment_id").references(() => comments.id),
+  // Moderation flag (0/1)
+  // INVARIANT: quarantined = 1 implies comment is hidden from non-moderators.
+  quarantined: integer("quarantined").default(0),
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
@@ -301,6 +305,7 @@ const commentPayloadSchema = z.object({
     .max(500, "Bounding box payload too long")
     .nullable()
     .optional(),
+  parentCommentId: z.string().optional(),
 });
 
 export const createCommentSchema = commentPayloadSchema.extend({

@@ -17,6 +17,7 @@ interface Comment {
   atMs?: number;
   bbox?: string;
   createdAt: number;
+  parentCommentId?: string | null;
   user: {
     id: string;
     handle: string;
@@ -42,6 +43,8 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [newComment, setNewComment] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [replyTo, setReplyTo] = useState<Comment | null>(null);
+
   const { user, isSignedIn } = useUser();
   const viewerId = currentUserId ?? (user?.id ?? undefined);
   const metadata: PublicMetadata =
@@ -56,10 +59,15 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       const response = await commentsApi.fetch(postId, { limit: 100 });
       if (!response.ok) throw new Error("Failed to fetch comments");
       const data = await response.json();
-      setComments(data.comments || []);
+      const next: Comment[] = Array.isArray(data.comments) ? (data.comments as Comment[]) : [];
+      setComments(next);
     } catch (error) {
       console.error("Failed to fetch comments:", error);
-      toast({ title: "Failed to load comments", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
+      toast({
+        title: "Failed to load comments",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -85,10 +93,14 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       : undefined;
     const optimisticHandle =
       user?.username || emailHandle || (user?.id ? user.id.slice(0, 8) : undefined) || "you";
+
+    const parentCommentId = replyTo?.id ?? null;
+
     const optimisticComment: Comment = {
       id: optimisticId,
       body: trimmed,
       createdAt: Math.floor(Date.now() / 1000),
+      parentCommentId,
       user: {
         id: viewerId ?? "temp-user",
         handle: optimisticHandle,
@@ -97,11 +109,16 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       },
       optimistic: true,
     };
+
     setComments((prev) => [...prev, optimisticComment]);
     setNewComment("");
 
     try {
-      const response = await commentsApi.create(postId, trimmed);
+      const response = await commentsApi.create(
+        postId,
+        trimmed,
+        parentCommentId ? { parentCommentId } : undefined
+      );
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -109,19 +126,25 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       if (!response.ok) {
-        const msg = (await response.json().catch(() => null))?.error || "Failed to create comment";
+        const msg =
+          (await response.json().catch(() => null))?.error || "Failed to create comment";
         throw new Error(msg);
       }
 
       const data = await response.json();
       setComments((prev) =>
-        prev.map((comment) => (comment.id === optimisticId ? data.comment : comment))
+        prev.map((comment) => (comment.id === optimisticId ? (data.comment as Comment) : comment))
       );
+      setReplyTo(null);
     } catch (error) {
       console.error("Failed to create comment:", error);
       setComments((prev) => prev.filter((comment) => comment.id !== optimisticId));
       setNewComment(trimmed);
-      toast({ title: "Failed to comment", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
+      toast({
+        title: "Failed to comment",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -146,7 +169,8 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       if (!response.ok) {
-        const msg = (await response.json().catch(() => null))?.error || "Failed to delete comment";
+        const msg =
+          (await response.json().catch(() => null))?.error || "Failed to delete comment";
         throw new Error(msg);
       }
 
@@ -154,7 +178,11 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       toast({ title: "Deleted", description: "Comment removed.", variant: "success" });
     } catch (error) {
       console.error("Failed to delete comment:", error);
-      toast({ title: "Failed", description: error instanceof Error ? error.message : "Unknown error", variant: "error" });
+      toast({
+        title: "Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
     }
   };
 
@@ -169,54 +197,114 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
     return new Date(timestamp * 1000).toLocaleDateString();
   };
 
+  const commentsById = new Map<string, Comment>();
+  for (const c of comments) {
+    commentsById.set(c.id, c);
+  }
+
+  const commentsByParent = new Map<string | null, Comment[]>();
+  for (const comment of comments) {
+    const key = comment.parentCommentId ?? null;
+    const bucket = commentsByParent.get(key) ?? [];
+    bucket.push(comment);
+    commentsByParent.set(key, bucket);
+  }
+
+  for (const bucket of commentsByParent.values()) {
+    bucket.sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  const rootComments: Comment[] = comments
+    .filter((comment) => {
+      const parentId = comment.parentCommentId ?? null;
+      if (!parentId) return true;
+      if (!commentsById.has(parentId)) return true;
+      if (parentId === comment.id) return true;
+      return false;
+    })
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  const renderComment = (comment: Comment, depth: number): JSX.Element => {
+    const children = commentsByParent.get(comment.id) ?? [];
+    const isReply = depth > 0;
+
+    return (
+      <div
+        key={comment.id}
+        className={cn(
+          "group space-y-1",
+          isReply && "border-l border-muted pl-4 ml-3"
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 flex-shrink-0 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">@{comment.user.handle}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatRelativeTime(comment.createdAt)}
+                </span>
+              </div>
+            </div>
+          </div>
+          {(((viewerId && viewerId === comment.user.id) || isModeratorOrAdmin) &&
+            !comment.optimistic) && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Delete comment"
+              className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+              onClick={() => handleDelete(comment.id)}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+        <p className="pl-10 text-sm">{comment.body}</p>
+        {comment.optimistic && (
+          <p className="pl-10 text-xs italic text-muted-foreground">Sending...</p>
+        )}
+        {comment.atMs !== undefined && (
+          <p className="pl-10 text-xs text-muted-foreground">
+            at {Math.floor(comment.atMs / 1000)}s
+          </p>
+        )}
+        <div className="pl-10 pt-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="px-2 text-xs text-muted-foreground hover:text-primary"
+            onClick={() => setReplyTo(comment)}
+          >
+            Reply
+          </Button>
+        </div>
+        {children.length > 0 && (
+          <div className="mt-2 space-y-3">
+            {children.map((child) => renderComment(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={cn("flex h-full flex-col", className)}>
       {/* Comments List */}
       <ScrollArea className="flex-1 px-4">
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Loading comments...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            Loading comments...
+          </div>
         ) : comments.length === 0 ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
             No comments yet. Be the first!
           </div>
         ) : (
           <div className="space-y-4 pb-4">
-            {comments.map((comment) => (
-              <div key={comment.id} className="group space-y-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 flex-shrink-0 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">@{comment.user.handle}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(comment.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {(((viewerId && viewerId === comment.user.id) || isModeratorOrAdmin) && !comment.optimistic) && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={() => handleDelete(comment.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-                <p className="pl-10 text-sm">{comment.body}</p>
-                {comment.optimistic && (
-                  <p className="pl-10 text-xs italic text-muted-foreground">Sending…</p>
-                )}
-                {comment.atMs !== undefined && (
-                  <p className="pl-10 text-xs text-muted-foreground">
-                    at {Math.floor(comment.atMs / 1000)}s
-                  </p>
-                )}
-              </div>
-            ))}
+            {rootComments.map((comment) => renderComment(comment, 0))}
           </div>
         )}
       </ScrollArea>
@@ -224,6 +312,23 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       {/* New Comment Form */}
       <div className="border-t p-4">
         <form onSubmit={handleSubmit} className="space-y-2">
+          {replyTo && (
+            <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2 text-xs">
+              <span>
+                Replying to{" "}
+                <span className="font-semibold">@{replyTo.user.handle}</span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="h-6 px-2 text-xs"
+                onClick={() => setReplyTo(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
           <Textarea
             placeholder="Add a comment..."
             value={newComment}

@@ -692,7 +692,7 @@ export function FeedCard({ post }: FeedCardProps) {
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="gap-1">
             {isApp ? <Cpu className="h-3 w-3" /> : <span>📝</span>}
-            {isApp ? post.capsule?.runner || "client-static" : "Report"}
+            {isApp ? post.capsule?.runner || "client-static" : "Status"}
           </Badge>
 
           {isApp && post.capsule?.params && post.capsule.params.length > 0 && (

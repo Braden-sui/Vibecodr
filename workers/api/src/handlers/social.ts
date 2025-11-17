@@ -9,6 +9,8 @@ import { createCommentBodySchema } from "../schema";
 type Params = Record<string, string>;
 
 const COMMENT_VALIDATION_ERROR = "E-VIBECODR-0400";
+const COMMENT_PARENT_NOT_FOUND_ERROR = "E-VIBECODR-0401";
+const COMMENT_PARENT_MISMATCH_ERROR = "E-VIBECODR-0402";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -334,7 +336,7 @@ export const getUserFollowing: Handler = async (req: Request, env: Env, ctx: Exe
 /**
  * POST /posts/:postId/comments
  * Create a comment on a post
- * Body: { body: string, atMs?: number, bbox?: string }
+ * Body: { body: string, atMs?: number, bbox?: string, parentCommentId?: string }
  */
 export const createComment: Handler = requireUser(async (req, env, ctx, params, userId) => {
   const postId = params.p1;
@@ -351,7 +353,7 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
       }, 400);
     }
 
-    const { body: commentBody, atMs, bbox } = validation.data;
+    const { body: commentBody, atMs, bbox, parentCommentId } = validation.data;
 
     // Check if post exists and get author
     const post = await env.DB.prepare(
@@ -362,19 +364,54 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
       return json({ error: "Post not found" }, 404);
     }
 
+    // If replying to a comment, ensure the parent exists and belongs to the same post.
+    let normalizedParentId: string | null = null;
+    if (typeof parentCommentId === "string" && parentCommentId.trim().length > 0) {
+      const parent = await env.DB.prepare(
+        "SELECT post_id FROM comments WHERE id = ?"
+      )
+        .bind(parentCommentId)
+        .first();
+
+      if (!parent) {
+        return json(
+          {
+            error: "Parent comment not found",
+            code: COMMENT_PARENT_NOT_FOUND_ERROR,
+          },
+          400
+        );
+      }
+
+      if ((parent as any).post_id !== postId) {
+        return json(
+          {
+            error: "Parent comment belongs to a different post",
+            code: COMMENT_PARENT_MISMATCH_ERROR,
+          },
+          400
+        );
+      }
+
+      normalizedParentId = parentCommentId;
+    }
+
     // Create comment
     const commentId = generateId();
     await env.DB.prepare(`
-      INSERT INTO comments (id, post_id, user_id, body, at_ms, bbox)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(
-      commentId,
-      postId,
-      userId,
-      commentBody,
-      typeof atMs === "number" ? atMs : null,
-      bbox ?? null
-    ).run();
+      INSERT INTO comments (id, post_id, user_id, body, at_ms, bbox, parent_comment_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+      .bind(
+        commentId,
+        postId,
+        userId,
+        commentBody,
+        typeof atMs === "number" ? atMs : null,
+        bbox ?? null,
+        normalizedParentId
+      )
+      .run();
 
     // Best-effort: update post comment stats and ignore failures
     incrementPostStats(env, postId, { commentsDelta: 1 }).catch((err: unknown) => {
@@ -445,7 +482,7 @@ export const getPostComments: Handler = async (req: Request, env: Env, ctx: Exec
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
 
     const base = `
-      SELECT c.id, c.body, c.at_ms, c.bbox, c.created_at,
+      SELECT c.id, c.body, c.at_ms, c.bbox, c.parent_comment_id, c.created_at,
              u.id as user_id, u.handle, u.name, u.avatar_url
       FROM comments c
       INNER JOIN users u ON c.user_id = u.id
@@ -467,6 +504,7 @@ export const getPostComments: Handler = async (req: Request, env: Env, ctx: Exec
       body: row.body,
       atMs: row.at_ms,
       bbox: row.bbox,
+      parentCommentId: row.parent_comment_id || null,
       createdAt: row.created_at,
       user: {
         id: row.user_id,

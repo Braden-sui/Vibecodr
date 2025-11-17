@@ -56,13 +56,17 @@ export const commentsApi = {
 
     return fetch(url);
   },
-  create(postId: string, body: string) {
+  create(postId: string, body: string, options?: { parentCommentId?: string }) {
+    const payload: Record<string, unknown> = { body };
+    if (options?.parentCommentId) {
+      payload.parentCommentId = options.parentCommentId;
+    }
     return fetch(`/api/posts/${postId}/comments`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ body }),
+      body: JSON.stringify(payload),
     });
   },
   delete(commentId: string) {
