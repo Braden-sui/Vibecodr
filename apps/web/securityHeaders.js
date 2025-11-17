@@ -2,7 +2,11 @@ const DEFAULTS = {
   runtimeCdnOrigin: "https://runtime.vibecodr.com",
   playerOrigin: "https://vibecodr.space",
   workerApiBase: "https://vibecodr-api.braden-yig.workers.dev",
-  posthogHost: "https://app.posthog.com",
+  posthogHost: "https://us.i.posthog.com",
+  posthogAssetOrigin: "https://us-assets.i.posthog.com",
+  clerkScriptOrigin: "https://clerk.vibecodr.space",
+  fontCdnOrigin: "https://r2cdn.perplexity.ai",
+  cloudflareBeaconOrigin: "https://static.cloudflareinsights.com",
 };
 
 const CLERK_FRONTEND_HOSTS = [
@@ -91,15 +95,48 @@ function uniqueSources(values) {
   );
 }
 
+function resolveClerkScriptOrigin() {
+  const raw = firstDefined([
+    process.env.NEXT_PUBLIC_CLERK_JS_SCRIPT_URL,
+    process.env.CLERK_JS_SCRIPT_URL,
+  ]);
+  const origin = normalizeOrigin(raw);
+  return origin || DEFAULTS.clerkScriptOrigin;
+}
+
+function resolveFontOrigin() {
+  const raw = firstDefined([
+    process.env.NEXT_PUBLIC_FONT_CDN_ORIGIN,
+    process.env.FONT_CDN_ORIGIN,
+  ]);
+  const origin = normalizeOrigin(raw);
+  return origin || DEFAULTS.fontCdnOrigin;
+}
+
+function resolvePosthogAssetOrigin() {
+  const raw = firstDefined([
+    process.env.NEXT_PUBLIC_POSTHOG_ASSET_ORIGIN,
+    process.env.POSTHOG_ASSET_ORIGIN,
+  ]);
+  return normalizeOrigin(raw) || DEFAULTS.posthogAssetOrigin;
+}
+
 function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
   const runtimeCdnSource = resolveRuntimeCdnSource();
   const playerOrigin = resolvePlayerOrigin();
   const workerApiOrigin = resolveWorkerApiOrigin();
   const posthogOrigin = resolvePosthogOrigin();
+  const posthogAssetOrigin = resolvePosthogAssetOrigin();
+  const clerkScriptOrigin = resolveClerkScriptOrigin();
+  const fontOrigin = resolveFontOrigin();
+  const cloudflareBeaconOrigin = DEFAULTS.cloudflareBeaconOrigin;
 
   const scriptSrc = uniqueSources([
     "'self'",
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
+    clerkScriptOrigin,
+    posthogAssetOrigin,
+    cloudflareBeaconOrigin,
   ]);
 
   const connectSrc = uniqueSources([
@@ -107,13 +144,20 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     workerApiOrigin,
     posthogOrigin,
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
+    clerkScriptOrigin,
     ...CLERK_FRONTEND_HOSTS,
+  ]);
+
+  const fontSrc = uniqueSources([
+    "'self'",
+    "data:",
+    fontOrigin,
   ]);
 
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
-    `font-src 'self' data:`,
+    `font-src ${fontSrc.join(" ")}`,
     `form-action 'self'`,
     `frame-src ${playerOrigin}`,
     `frame-ancestors ${allowEmbedding ? "*" : "'none'"}`,
