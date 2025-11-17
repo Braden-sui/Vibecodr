@@ -7,22 +7,15 @@
 import * as esbuild from "esbuild-wasm";
 import JSZip from "jszip";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
-import type { Env } from "../index";
-
-type Handler = (
-  req: Request,
-  env: Env,
-  ctx: ExecutionContext,
-  params: Record<string, string>
-) => Promise<Response>;
-
-interface ImportResult {
-  success: boolean;
-  capsuleId?: string;
-  manifest?: Manifest;
-  warnings?: string[];
-  errors?: string[];
-}
+import type { Env, Handler } from "../index";
+import { requireAuth, type AuthenticatedUser } from "../auth";
+import {
+  persistCapsuleBundle,
+  sanitizeHtmlEntryIfNeeded,
+  type PublishWarning,
+  PublishCapsuleError,
+} from "./capsules";
+import type { CapsuleFile } from "../storage/r2";
 
 interface AnalysisResult {
   entryPoint: string;
@@ -37,7 +30,7 @@ interface AnalysisResult {
  * POST /import/github
  * Import from GitHub repository via archive download
  */
-export const importGithub: Handler = async (req, env, ctx) => {
+export const importGithub: Handler = requireAuth(async (req, env, ctx, params, user) => {
   try {
     const body = await req.json();
     const { url, branch = "main" } = body as { url: string; branch?: string };
@@ -110,14 +103,53 @@ export const importGithub: Handler = async (req, env, ctx) => {
       );
     }
 
-    // Upload to R2 and create capsule record
-    const capsuleId = await uploadCapsule(env, bundled, manifest);
+    const manifestText = JSON.stringify(manifest, null, 2);
+    const files = convertBundledMapToCapsuleFiles(bundled);
+    const manifestBytes = new TextEncoder().encode(manifestText);
+    files.push({
+      path: "manifest.json",
+      content: manifestBytes.buffer as ArrayBuffer,
+      contentType: "application/json",
+      size: manifestBytes.byteLength,
+    });
+
+    const validationWarnings = validation.warnings ?? [];
+    const analysisWarnings =
+      analysis.warnings?.map<PublishWarning>((message, index) => ({
+        path: `analysis.${index}`,
+        message,
+      })) ?? [];
+    const combinedWarnings =
+      validationWarnings.length === 0 && analysisWarnings.length === 0
+        ? undefined
+        : [...analysisWarnings, ...validationWarnings];
+
+    let publishResult;
+    try {
+      const sanitized = sanitizeHtmlEntryIfNeeded(files, manifest);
+      publishResult = await persistCapsuleBundle({
+        env,
+        user,
+        manifest,
+        manifestText,
+        files: sanitized.files,
+        totalSize: sanitized.totalSize,
+        warnings: combinedWarnings,
+      });
+    } catch (err) {
+      if (err instanceof PublishCapsuleError) {
+        return json(err.body, err.status);
+      }
+      throw err;
+    }
 
     return json({
       success: true,
-      capsuleId,
+      capsuleId: publishResult.capsule.id,
+      capsule: publishResult.capsule,
+      artifact: publishResult.artifact,
+      warnings: publishResult.warnings,
       manifest,
-      warnings: [...analysis.warnings, ...(validation.warnings || [])],
     });
   } catch (error) {
     console.error("GitHub import error:", error);
@@ -129,13 +161,13 @@ export const importGithub: Handler = async (req, env, ctx) => {
       500
     );
   }
-};
+});
 
 /**
  * POST /import/zip
  * Import from uploaded ZIP file
  */
-export const importZip: Handler = async (req, env, ctx) => {
+export const importZip: Handler = requireAuth(async (req, env, ctx, params, user) => {
   try {
     // Get ZIP file from multipart form data
     const contentType = req.headers.get("content-type") || "";
@@ -213,14 +245,53 @@ export const importZip: Handler = async (req, env, ctx) => {
       );
     }
 
-    // Upload to R2 and create capsule record
-    const capsuleId = await uploadCapsule(env, bundled, manifest);
+    const manifestText = JSON.stringify(manifest, null, 2);
+    const files = convertBundledMapToCapsuleFiles(bundled);
+    const manifestBytes = new TextEncoder().encode(manifestText);
+    files.push({
+      path: "manifest.json",
+      content: manifestBytes.buffer as ArrayBuffer,
+      contentType: "application/json",
+      size: manifestBytes.byteLength,
+    });
+
+    const validationWarnings = validation.warnings ?? [];
+    const analysisWarnings =
+      analysis.warnings?.map<PublishWarning>((message, index) => ({
+        path: `analysis.${index}`,
+        message,
+      })) ?? [];
+    const combinedWarnings =
+      validationWarnings.length === 0 && analysisWarnings.length === 0
+        ? undefined
+        : [...analysisWarnings, ...validationWarnings];
+
+    let publishResult;
+    try {
+      const sanitized = sanitizeHtmlEntryIfNeeded(files, manifest);
+      publishResult = await persistCapsuleBundle({
+        env,
+        user,
+        manifest,
+        manifestText,
+        files: sanitized.files,
+        totalSize: sanitized.totalSize,
+        warnings: combinedWarnings,
+      });
+    } catch (err) {
+      if (err instanceof PublishCapsuleError) {
+        return json(err.body, err.status);
+      }
+      throw err;
+    }
 
     return json({
       success: true,
-      capsuleId,
+      capsuleId: publishResult.capsule.id,
+      capsule: publishResult.capsule,
+      artifact: publishResult.artifact,
+      warnings: publishResult.warnings,
       manifest,
-      warnings: [...analysis.warnings, ...(validation.warnings || [])],
     });
   } catch (error) {
     console.error("ZIP import error:", error);
@@ -232,7 +303,7 @@ export const importZip: Handler = async (req, env, ctx) => {
       500
     );
   }
-};
+});
 
 /**
  * Analyze archive contents and detect entry point
@@ -456,67 +527,21 @@ async function generateManifest(
   };
 }
 
-/**
- * Upload capsule bundle and manifest to R2 and create D1 record
- */
-async function uploadCapsule(
-  env: Env,
-  files: Map<string, Uint8Array>,
-  manifest: Manifest
-): Promise<string> {
-  // Generate capsule ID (content-based hash)
-  const capsuleId = await generateCapsuleId(files, manifest);
-
-  // Upload manifest to R2
-  const manifestKey = `capsules/${capsuleId}/manifest.json`;
-  await env.R2.put(
-    manifestKey,
-    JSON.stringify(manifest, null, 2),
-    {
-      httpMetadata: {
-        contentType: "application/json",
-      },
-    }
-  );
-
-  // Upload all bundled files to R2
-  for (const [path, content] of files.entries()) {
-    const fileKey = `capsules/${capsuleId}/${path}`;
-    await env.R2.put(fileKey, content, {
-      httpMetadata: {
-        contentType: getContentType(path),
-      },
+function convertBundledMapToCapsuleFiles(map: Map<string, Uint8Array>): CapsuleFile[] {
+  const files: CapsuleFile[] = [];
+  for (const [path, content] of map.entries()) {
+    const buffer = content.buffer.slice(
+      content.byteOffset,
+      content.byteOffset + content.byteLength
+    ) as ArrayBuffer;
+    files.push({
+      path,
+      content: buffer,
+      contentType: getContentType(path),
+      size: buffer.byteLength,
     });
   }
-
-  // Create capsule record in D1
-  await env.DB.prepare(
-    `INSERT INTO capsules (id, manifest_json, hash, created_at)
-     VALUES (?, ?, ?, datetime('now'))`
-  )
-    .bind(capsuleId, JSON.stringify(manifest), capsuleId)
-    .run();
-
-  return capsuleId;
-}
-
-/**
- * Generate unique capsule ID from content hash
- */
-async function generateCapsuleId(
-  files: Map<string, Uint8Array>,
-  manifest: Manifest
-): Promise<string> {
-  // Simple hash based on manifest and file list
-  // In production, use proper content-addressable hash
-  const content = JSON.stringify(manifest) + Array.from(files.keys()).join(",");
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(content)
-  );
-  const hashArray = Array.from(new Uint8Array(hash));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hashHex.slice(0, 16);
+  return files;
 }
 
 function getContentType(filename: string): string {

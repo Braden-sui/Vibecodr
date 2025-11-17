@@ -120,6 +120,44 @@ export const getModerationAudit: Handler = requireAdmin(async (req: Request, env
 
   return json({ entries, limit, offset });
 });
+
+export const getPostModerationStatus: Handler = requireModerator(async (req: Request, env: Env, _ctx, params, _user) => {
+  const postId = params.p1;
+
+  if (!postId) {
+    return json({ error: "postId required" }, 400);
+  }
+
+  try {
+    const postRow = await env.DB.prepare(
+      "SELECT quarantined FROM posts WHERE id = ?"
+    ).bind(postId).first();
+
+    if (!postRow) {
+      return json({ error: "Post not found" }, 404);
+    }
+
+    const pendingRow = await env.DB.prepare(
+      "SELECT COUNT(*) as pending_flags FROM moderation_reports WHERE target_type = 'post' AND target_id = ? AND status = 'pending'"
+    ).bind(postId).first();
+
+    const pendingFlags = Number((pendingRow as any)?.pending_flags ?? 0);
+
+    return json({
+      postId,
+      quarantined: ((postRow as any).quarantined ?? 0) === 1,
+      pendingFlags,
+    });
+  } catch (error) {
+    return json(
+      {
+        error: "Failed to fetch moderation status",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+});
  
 function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -434,6 +472,16 @@ export const moderatePostAction: Handler = requireModerator(async (req, env, ctx
       await env.DB.prepare("DELETE FROM posts WHERE id = ?")
         .bind(postId).run();
     }
+
+    await env.DB.prepare(`
+      UPDATE moderation_reports
+      SET status = 'resolved',
+          resolved_by = ?,
+          resolved_at = ?,
+          resolution_action = ?,
+          resolution_notes = COALESCE(resolution_notes, ?)
+      WHERE target_type = 'post' AND target_id = ? AND status = 'pending'
+    `).bind(user.userId, Math.floor(Date.now() / 1000), action, notes || null, postId).run();
 
     const auditId = generateId();
     await env.DB.prepare(`

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { FeedCard } from "../FeedCard";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
@@ -124,7 +124,9 @@ describe("FeedCard", () => {
     );
 
     // Enter warm zone for all three cards; implementation should not issue manifest prewarm fetches.
-    viewObservers.forEach((obs) => obs.trigger(1.0, true));
+    await act(async () => {
+      viewObservers.forEach((obs) => obs.trigger(1.0, true));
+    });
 
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -141,7 +143,9 @@ describe("FeedCard", () => {
     )!;
 
     // Enter warm zone to trigger prewarm and reveal Run Preview
-    viewObserver.trigger(1.0, true);
+    await act(async () => {
+      viewObserver.trigger(1.0, true);
+    });
 
     await waitFor(() => expect(screen.getByText("Run Preview")).toBeInTheDocument());
 
@@ -155,11 +159,15 @@ describe("FeedCard", () => {
     const prObserver = prCandidates[prCandidates.length - 1] as MockIntersectionObserver;
 
     // Drop below 30% -> pause
-    prObserver.trigger(0.2, false);
+    await act(async () => {
+      prObserver.trigger(0.2, false);
+    });
     expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
 
     // Back to >=30% -> resume
-    prObserver.trigger(0.3, true);
+    await act(async () => {
+      prObserver.trigger(0.3, true);
+    });
     expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
   });
 
@@ -173,17 +181,23 @@ describe("FeedCard", () => {
       (o) => Array.isArray(o.options?.threshold) && (o.options?.threshold as number[]).includes(0.35)
     )!;
 
-    viewObserver.trigger(1.0, true);
+    await act(async () => {
+      viewObserver.trigger(1.0, true);
+    });
     await waitFor(() => expect(screen.getByText("Run Preview")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Run Preview"));
 
     const hiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
     Object.defineProperty(document, "hidden", { configurable: true, value: true });
-    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
 
     Object.defineProperty(document, "hidden", { configurable: true, value: false });
-    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
 
     // restore

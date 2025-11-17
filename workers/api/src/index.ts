@@ -58,6 +58,7 @@ import { syncUser } from "./handlers/users";
 import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
 import { ApiFeedResponseSchema, ApiFeedPostSchema, type ApiFeedPost } from "./contracts";
 import { buildCapsuleSummary } from "./capsule-manifest";
+import { buildLatestArtifactMap, type CapsuleArtifactRow } from "./feed-artifacts";
 import { createPostSchema } from "./schema";
 import { incrementUserCounters } from "./handlers/counters";
 
@@ -70,6 +71,7 @@ import {
   moderateCommentAction,
   getFlaggedPosts,
   getModerationAudit,
+  getPostModerationStatus,
 } from "./handlers/moderation";
 
 import { netProxy } from "./handlers/proxy";
@@ -229,6 +231,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const commentsByPost = new Map<string, number>();
     const runsByCapsule = new Map<string, number>();
     const remixesByCapsule = new Map<string, number>();
+    const artifactIdsByCapsule = new Map<string, string>();
     const viewerLikedPosts = new Set<string>();
     const viewerFollowedAuthors = new Set<string>();
 
@@ -285,9 +288,20 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         GROUP BY parent_capsule_id
       `;
 
-      const [runsResult, remixesResult] = await Promise.all([
+      const artifactsQuery = `
+        SELECT capsule_id, id, created_at
+        FROM artifacts
+        WHERE capsule_id IN (${placeholders})
+          AND status = 'active'
+          AND policy_status = 'active'
+          AND visibility IN ('public','unlisted')
+        ORDER BY created_at DESC
+      `;
+
+      const [runsResult, remixesResult, artifactsResult] = await Promise.all([
         env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
         env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
+        env.DB.prepare(artifactsQuery).bind(...capsuleIds).all(),
       ]);
 
       for (const row of runsResult.results || []) {
@@ -295,6 +309,11 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       }
       for (const row of remixesResult.results || []) {
         remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
+      }
+
+      const latestArtifacts = buildLatestArtifactMap((artifactsResult.results || []) as CapsuleArtifactRow[]);
+      for (const [capsuleId, artifactId] of latestArtifacts.entries()) {
+        artifactIdsByCapsule.set(capsuleId, artifactId);
       }
     }
 
@@ -341,6 +360,18 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
       const commentCount = commentsByPost.get(row.id) ?? 0;
       const likeCount = likesByPost.get(row.id) ?? 0;
 
+      const capsuleSummary = buildCapsuleSummary(row.capsule_id, row.manifest_json, {
+        source: "feed",
+        postId: row.id,
+      });
+
+      if (capsuleSummary && row.capsule_id) {
+        const artifactId = artifactIdsByCapsule.get(row.capsule_id);
+        if (artifactId) {
+          (capsuleSummary as any).artifactId = artifactId;
+        }
+      }
+
       const post = {
         id: row.id,
         type: row.type,
@@ -358,10 +389,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
           isFeatured: row.author_is_featured === 1,
           plan: row.author_plan || "free",
         },
-        capsule: buildCapsuleSummary(row.capsule_id, row.manifest_json, {
-          source: "feed",
-          postId: row.id,
-        }),
+        capsule: capsuleSummary,
         coverKey: row.cover_key ?? null,
         createdAt: row.created_at,
         stats: {
@@ -559,6 +587,8 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
   }
 }
 
+export { getPostById };
+
 const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) => {
   let body: unknown;
   try {
@@ -675,7 +705,7 @@ async function getDiscoverPosts(req: Request, env: Env): Promise<Response> {
   return getPosts(proxyReq, env);
 }
 
-const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
+export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   // Manifest & Import
   { method: "POST", pattern: /^\/manifest\/validate$/, handler: validateManifestHandler },
   // Allow both /import/github and /capsules/import/github for compatibility
@@ -735,7 +765,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "GET", pattern: /^\/notifications\/unread-count$/, handler: getUnreadCount },
 
   // Runs & Logs
-  { method: "POST", pattern: /^\/runs\/(\w+)\/logs$/, handler: appendRunLogs },
+  { method: "POST", pattern: /^\/runs\/([^\/]+)\/logs$/, handler: appendRunLogs },
   { method: "POST", pattern: /^\/runs\/complete$/, handler: completeRun },
 
   // Durable Object status
@@ -745,6 +775,7 @@ const routes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
   { method: "POST", pattern: /^\/moderation\/report$/, handler: reportContent },
   { method: "POST", pattern: /^\/moderation\/posts\/([^\/]+)\/action$/, handler: moderatePostAction },
   { method: "POST", pattern: /^\/moderation\/comments\/([^\/]+)\/action$/, handler: moderateCommentAction },
+  { method: "GET", pattern: /^\/moderation\/posts\/([^\/]+)\/status$/, handler: getPostModerationStatus },
   { method: "GET", pattern: /^\/moderation\/reports$/, handler: getModerationReports },
   { method: "POST", pattern: /^\/moderation\/reports\/([^\/]+)\/resolve$/, handler: resolveModerationReport },
   { method: "GET", pattern: /^\/moderation\/flagged-posts$/, handler: getFlaggedPosts },

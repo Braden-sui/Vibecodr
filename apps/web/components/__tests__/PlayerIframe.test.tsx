@@ -60,4 +60,20 @@ describe("PlayerIframe", () => {
     });
     expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
   });
+
+  it("notifies parent when runtime posts an error message", () => {
+    const onError = vi.fn();
+
+    render(<PlayerIframe capsuleId="capsule1" onError={onError} />);
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "error", payload: { message: "runtime exploded" } },
+        })
+      );
+    });
+
+    expect(onError).toHaveBeenCalledWith("runtime exploded");
+  });
 });

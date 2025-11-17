@@ -3,9 +3,12 @@
 
 import type { Handler, Env } from "../index";
 import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
-import { incrementPostStats, incrementUserCounters } from "./counters";
+import { incrementPostStats } from "./counters";
+import { createCommentBodySchema } from "../schema";
 
 type Params = Record<string, string>;
+
+const COMMENT_VALIDATION_ERROR = "E-VIBECODR-0400";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -176,42 +179,29 @@ export const followUser: Handler = requireUser(async (req, env, ctx, params, fol
       return json({ error: "User not found" }, 404);
     }
 
-    // Insert follow
-    try {
-      await env.DB.prepare(
-        "INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)"
-      ).bind(followerId, followeeId).run();
-
-      // Best-effort: update counters (idempotent if UNIQUE prevented dupes)
-      incrementUserCounters(env, followeeId, { followersDelta: 1 }).catch((err: unknown) => {
-        console.error("E-API-0004 followUser followee counter failed", {
-          followeeId,
-          followerId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      incrementUserCounters(env, followerId, { followingDelta: 1 }).catch((err: unknown) => {
-        console.error("E-API-0005 followUser follower counter failed", {
-          followeeId,
-          followerId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-
-      // Create notification
-      const notifId = generateId();
-      await env.DB.prepare(
+    const notifId = generateId();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)").bind(followerId, followeeId),
+      env.DB.prepare(`
+        UPDATE users
+        SET followers_count = MAX(followers_count + ?, 0)
+        WHERE id = ?
+      `).bind(1, followeeId),
+      env.DB.prepare(`
+        UPDATE users
+        SET following_count = MAX(following_count + ?, 0)
+        WHERE id = ?
+      `).bind(1, followerId),
+      env.DB.prepare(
         "INSERT INTO notifications (id, user_id, type, actor_id) VALUES (?, ?, 'follow', ?)"
-      ).bind(notifId, followeeId, followerId).run();
+      ).bind(notifId, followeeId, followerId),
+    ]);
 
-      return json({ ok: true, following: true });
-    } catch (e: any) {
-      if (e.message?.includes("UNIQUE constraint")) {
-        return json({ ok: true, following: true, message: "Already following" });
-      }
-      throw e;
-    }
+    return json({ ok: true, following: true });
   } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return json({ ok: true, following: true, message: "Already following" });
+    }
     return json({
       error: "Failed to follow user",
       details: error instanceof Error ? error.message : "Unknown error"
@@ -227,27 +217,25 @@ export const unfollowUser: Handler = requireUser(async (req, env, ctx, params, f
   const followeeId = params.p1;
 
   try {
-    const res = await env.DB.prepare(
-      "DELETE FROM follows WHERE follower_id = ? AND followee_id = ?"
-    ).bind(followerId, followeeId).run();
-
-    // Best-effort: decrement counters only when a row likely existed
-    try {
-      incrementUserCounters(env, followeeId, { followersDelta: -1 }).catch((err: unknown) => {
-        console.error("E-API-0006 unfollowUser followee counter failed", {
-          followeeId,
-          followerId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      incrementUserCounters(env, followerId, { followingDelta: -1 }).catch((err: unknown) => {
-        console.error("E-API-0007 unfollowUser follower counter failed", {
-          followeeId,
-          followerId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    } catch {}
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE users
+        SET followers_count = MAX(followers_count + ?, 0)
+        WHERE id = ?
+          AND EXISTS (
+            SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?
+          )
+      `).bind(-1, followeeId, followerId, followeeId),
+      env.DB.prepare(`
+        UPDATE users
+        SET following_count = MAX(following_count + ?, 0)
+        WHERE id = ?
+          AND EXISTS (
+            SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?
+          )
+      `).bind(-1, followerId, followerId, followeeId),
+      env.DB.prepare("DELETE FROM follows WHERE follower_id = ? AND followee_id = ?").bind(followerId, followeeId),
+    ]);
 
     return json({ ok: true, following: false });
   } catch (error) {
@@ -257,6 +245,13 @@ export const unfollowUser: Handler = requireUser(async (req, env, ctx, params, f
     }, 500);
   }
 });
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /UNIQUE constraint/i.test(error.message || "");
+}
 
 /**
  * GET /users/:userId/followers?limit=20&offset=0
@@ -345,16 +340,18 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
   const postId = params.p1;
 
   try {
-    const body = (await req.json()) as { body?: string; atMs?: number; bbox?: string | null };
-    const { body: commentBody, atMs, bbox } = body;
+    const payload = await req.json();
+    const validation = createCommentBodySchema.safeParse(payload);
 
-    if (!commentBody || typeof commentBody !== "string" || commentBody.trim().length === 0) {
-      return json({ error: "Comment body is required" }, 400);
+    if (!validation.success) {
+      return json({
+        error: "Invalid comment data",
+        code: COMMENT_VALIDATION_ERROR,
+        details: validation.error.flatten(),
+      }, 400);
     }
 
-    if (commentBody.length > 2000) {
-      return json({ error: "Comment body too long (max 2000 characters)" }, 400);
-    }
+    const { body: commentBody, atMs, bbox } = validation.data;
 
     // Check if post exists and get author
     const post = await env.DB.prepare(
@@ -370,7 +367,14 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
     await env.DB.prepare(`
       INSERT INTO comments (id, post_id, user_id, body, at_ms, bbox)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(commentId, postId, userId, commentBody.trim(), atMs || null, bbox || null).run();
+    `).bind(
+      commentId,
+      postId,
+      userId,
+      commentBody,
+      typeof atMs === "number" ? atMs : null,
+      bbox ?? null
+    ).run();
 
     // Best-effort: update post comment stats and ignore failures
     incrementPostStats(env, postId, { commentsDelta: 1 }).catch((err: unknown) => {

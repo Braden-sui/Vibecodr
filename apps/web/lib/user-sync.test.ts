@@ -1,20 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ensureUserSynced, __resetUserSyncForTests } from "./user-sync";
 
-declare global {
-  // eslint-disable-next-line no-var
-  var window: Record<string, unknown> | undefined;
-}
-
 describe("ensureUserSynced", () => {
   beforeEach(() => {
     __resetUserSyncForTests();
-    global.window = {};
+    vi.stubGlobal("window", {} as Window & typeof globalThis);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete global.window;
   });
 
   it("posts to sync endpoint once per session", async () => {
@@ -54,16 +48,12 @@ describe("ensureUserSynced", () => {
   });
 
   it("shares the same inflight request across concurrent callers", async () => {
-    let resolveSync: (() => void) | null = null;
+    type MockResponse = { ok: boolean; status: number; text: () => Promise<string> };
+    let pendingResolve!: (value: MockResponse) => void;
     const fetchMock = vi.fn().mockImplementation(
       () =>
-        new Promise((resolve) => {
-          resolveSync = () =>
-            resolve({
-              ok: true,
-              status: 200,
-              text: async () => "",
-            });
+        new Promise<MockResponse>((resolve) => {
+          pendingResolve = resolve;
         })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -72,7 +62,11 @@ describe("ensureUserSynced", () => {
     const call2 = ensureUserSynced();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    resolveSync?.();
+    pendingResolve({
+      ok: true,
+      status: 200,
+      text: async () => "",
+    });
     await Promise.all([call1, call2]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

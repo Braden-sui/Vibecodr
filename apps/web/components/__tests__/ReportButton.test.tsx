@@ -101,7 +101,8 @@ describe("ReportButton", () => {
     await user.click(screen.getByRole("button"));
 
     const textarea = await screen.findByPlaceholderText(/Provide any additional context/i);
-    await user.type(textarea, "a".repeat(500));
+    fireEvent.change(textarea, { target: { value: "a".repeat(600) } });
+    expect(textarea).toHaveValue("a".repeat(500));
     expect(screen.getByText("500/500")).toBeInTheDocument();
   });
 

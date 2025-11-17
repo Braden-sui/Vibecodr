@@ -141,7 +141,7 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
                   id="details"
                   placeholder="Provide any additional context that might help our review..."
                   value={details}
-                  onChange={(e) => setDetails(e.target.value)}
+                  onChange={(e) => setDetails(e.target.value.slice(0, 500))}
                   maxLength={500}
                   rows={4}
                 />

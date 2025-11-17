@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, FormEvent, ChangeEvent } from "react";
+import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1021,10 +1022,13 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                     {imagePreview && (
                       <div className="space-y-2">
                         <div className="relative aspect-video w-full overflow-hidden rounded-md">
-                          <img
+                          <Image
                             src={imagePreview}
                             alt="Preview"
-                            className="h-full w-full object-cover"
+                            fill
+                            sizes="(max-width: 768px) 100vw, 640px"
+                            className="object-cover"
+                            unoptimized
                           />
                           <Button
                             type="button"

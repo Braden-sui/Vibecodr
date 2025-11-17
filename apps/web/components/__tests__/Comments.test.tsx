@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Comments } from "../Comments";
 
@@ -163,16 +163,18 @@ describe("Comments", () => {
       );
     });
 
-    resolveCreate?.({
-      ok: true,
-      json: async () => ({
-        comment: {
-          id: "comment3",
-          body: "New comment",
-          createdAt: Math.floor(Date.now() / 1000),
-          user: { id: "user3", handle: "charlie" },
-        },
-      }),
+    await act(async () => {
+      resolveCreate?.({
+        ok: true,
+        json: async () => ({
+          comment: {
+            id: "comment3",
+            body: "New comment",
+            createdAt: Math.floor(Date.now() / 1000),
+            user: { id: "user3", handle: "charlie" },
+          },
+        }),
+      });
     });
 
     await waitFor(() => {
@@ -378,16 +380,18 @@ describe("Comments", () => {
     });
 
     // Resolve the submission
-    resolveSubmit!({
-      ok: true,
-      json: async () => ({
-        comment: {
-          id: "comment1",
-          body: "Test",
-          createdAt: Math.floor(Date.now() / 1000),
-          user: { id: "user1", handle: "test" },
-        },
-      }),
+    await act(async () => {
+      resolveSubmit!({
+        ok: true,
+        json: async () => ({
+          comment: {
+            id: "comment1",
+            body: "Test",
+            createdAt: Math.floor(Date.now() / 1000),
+            user: { id: "user1", handle: "test" },
+          },
+        }),
+      });
     });
   });
 });

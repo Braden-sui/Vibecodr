@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   bio TEXT,
   plan TEXT DEFAULT 'free' CHECK (plan IN ('free', 'creator', 'pro', 'team')),
+  storage_usage_bytes INTEGER NOT NULL DEFAULT 0,
+  storage_version INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 

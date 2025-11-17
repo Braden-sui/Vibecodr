@@ -112,7 +112,19 @@ export default function FlaggedPostsPage() {
                       onClick={async () => {
                         try {
                           const res = await moderationApi.moderatePost(it.id, "quarantine");
-                          if (!res.ok) throw new Error((await res.json()).error || "Failed to quarantine");
+                          if (!res.ok) {
+                            let message = "Failed to quarantine";
+                            try {
+                              const body = (await res.json()) as { error?: unknown };
+                              if (body && typeof body.error === "string") {
+                                message = body.error;
+                              }
+                            } catch {
+                              // Ignore JSON parse failures; fall back to the default message.
+                            }
+                            throw new Error(message);
+                          }
+                          setItems((prev) => prev.filter((x) => x.id !== it.id));
                           toast({ title: "Quarantined", description: "Post has been quarantined.", variant: "success" });
                         } catch (err) {
                           toast({ title: "Action failed", description: err instanceof Error ? err.message : "Unknown error", variant: "error" });

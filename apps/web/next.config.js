@@ -3,9 +3,12 @@
  * TODO: Add next-on-pages adapter when wiring CI/CD.
  */
 
-const path = require('path');
+const path = require("path");
+const securityHeaders = require("./securityHeaders");
 
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
+
+const baseSecurityHeaders = securityHeaders.getSecurityHeaderSet();
 
 const nextConfig = {
   reactStrictMode: true,
@@ -13,6 +16,14 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   outputFileTracingRoot: path.resolve(__dirname, '../..'),
+  async headers() {
+    return [
+      {
+        source: "/_next/:path*",
+        headers: baseSecurityHeaders,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

@@ -50,6 +50,46 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Unable to attach session. Please refresh and try again.",
     logMessage: "Clerk token injection failed in edge proxy",
   },
+  "E-VIBECODR-0004": {
+    code: "E-VIBECODR-0004",
+    category: "auth",
+    httpStatus: 401,
+    severity: "error",
+    userMessage: "Authentication failed. Please sign in again.",
+    logMessage: "Worker token is missing required claims",
+  },
+  "E-VIBECODR-0005": {
+    code: "E-VIBECODR-0005",
+    category: "auth",
+    httpStatus: 401,
+    severity: "error",
+    userMessage: "Authentication failed. Please sign in again.",
+    logMessage: "Worker token audience/azp mismatch",
+  },
+  "E-VIBECODR-0006": {
+    code: "E-VIBECODR-0006",
+    category: "auth",
+    httpStatus: 401,
+    severity: "error",
+    userMessage: "Authentication failed. Please sign in again.",
+    logMessage: "Worker token signature verification failed",
+  },
+  "E-VIBECODR-0007": {
+    code: "E-VIBECODR-0007",
+    category: "auth",
+    httpStatus: 502,
+    severity: "error",
+    userMessage: "Authentication service is temporarily unavailable. Please retry.",
+    logMessage: "Clerk JWKS download failed",
+  },
+  "E-VIBECODR-0008": {
+    code: "E-VIBECODR-0008",
+    category: "auth",
+    httpStatus: 502,
+    severity: "error",
+    userMessage: "Authentication service is temporarily unavailable. Please retry.",
+    logMessage: "Clerk JWKS response malformed",
+  },
 
   // 01xx: social and moderation helpers
   "E-VIBECODR-0101": {
@@ -232,6 +272,12 @@ const definitions: Record<string, ErrorDefinition> = {
 
 export type ErrorCode = keyof typeof definitions;
 
+export const ERROR_AUTH_VERIFICATION_FAILED: ErrorCode = "E-VIBECODR-0001";
+export const ERROR_AUTH_CLAIMS_INVALID: ErrorCode = "E-VIBECODR-0004";
+export const ERROR_AUTH_AUDIENCE_MISMATCH: ErrorCode = "E-VIBECODR-0005";
+export const ERROR_AUTH_SIGNATURE_INVALID: ErrorCode = "E-VIBECODR-0006";
+export const ERROR_AUTH_JWKS_FETCH_FAILED: ErrorCode = "E-VIBECODR-0007";
+export const ERROR_AUTH_JWKS_PARSE_FAILED: ErrorCode = "E-VIBECODR-0008";
 export const ERROR_MANIFEST_INVALID: ErrorCode = "E-VIBECODR-1100";
 export const ERROR_MANIFEST_TOO_LARGE: ErrorCode = "E-VIBECODR-1110";
 export const ERROR_ARTIFACT_COMPILER_STATE_WRITE_FAILED: ErrorCode = "E-VIBECODR-1104";

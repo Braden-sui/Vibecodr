@@ -5,6 +5,7 @@ import type { Handler, Env } from "../index";
 import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
 import { ApiUserProfileResponseSchema, ApiUserPostsResponseSchema } from "../contracts";
 import { buildCapsuleSummary } from "../capsule-manifest";
+import { buildLatestArtifactMap, type CapsuleArtifactRow } from "../feed-artifacts";
 
 type Params = Record<string, string>;
 
@@ -142,6 +143,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
     const commentsByPost = new Map<string, number>();
     const runsByCapsule = new Map<string, number>();
     const remixesByCapsule = new Map<string, number>();
+    const artifactIdsByCapsule = new Map<string, string>();
     const viewerLikedPosts = new Set<string>();
     let viewerFollowsAuthor = false;
 
@@ -198,9 +200,20 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         GROUP BY parent_capsule_id
       `;
 
-      const [runsResult, remixesResult] = await Promise.all([
+      const artifactsQuery = `
+        SELECT capsule_id, id, created_at
+        FROM artifacts
+        WHERE capsule_id IN (${placeholders})
+          AND status = 'active'
+          AND policy_status = 'active'
+          AND visibility IN ('public','unlisted')
+        ORDER BY created_at DESC
+      `;
+
+      const [runsResult, remixesResult, artifactsResult] = await Promise.all([
         env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
         env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
+        env.DB.prepare(artifactsQuery).bind(...capsuleIds).all(),
       ]);
 
       for (const row of runsResult.results || []) {
@@ -208,6 +221,11 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       }
       for (const row of remixesResult.results || []) {
         remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
+      }
+
+      const latestArtifacts = buildLatestArtifactMap((artifactsResult.results || []) as CapsuleArtifactRow[]);
+      for (const [capsuleId, artifactId] of latestArtifacts.entries()) {
+        artifactIdsByCapsule.set(capsuleId, artifactId);
       }
     }
 
@@ -243,16 +261,25 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
           }
         : undefined;
 
+      const capsuleSummary = buildCapsuleSummary(row.capsule_id, row.manifest_json, {
+        source: "profilePosts",
+        postId: row.id,
+      });
+
+      if (capsuleSummary && row.capsule_id) {
+        const artifactId = artifactIdsByCapsule.get(row.capsule_id);
+        if (artifactId) {
+          (capsuleSummary as any).artifactId = artifactId;
+        }
+      }
+
       return {
         id: row.id,
         type: row.type,
         title: row.title,
         description: row.description,
         tags: row.tags ? JSON.parse(row.tags) : [],
-        capsule: buildCapsuleSummary(row.capsule_id, row.manifest_json, {
-          source: "profilePosts",
-          postId: row.id,
-        }),
+        capsule: capsuleSummary,
         coverKey: row.cover_key ?? null,
         createdAt: row.created_at,
         stats: {

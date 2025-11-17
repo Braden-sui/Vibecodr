@@ -20,6 +20,7 @@ export interface PlayerIframeProps {
   onLog?: (log: { level: string; message: string; timestamp?: number }) => void;
   onStats?: (stats: { fps: number; memory: number }) => void;
   onBoot?: (metrics: { bootTimeMs: number }) => void;
+  onError?: (message: string) => void;
   artifactId?: string;
 }
 
@@ -29,9 +30,37 @@ export interface PlayerIframeHandle {
   kill: () => boolean;
 }
 
+type RuntimeLogPayload = { level: string; message: string; timestamp?: number };
+type RuntimeStatsPayload = { fps: number; memory: number };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getBootTime(payload: unknown): number | undefined {
+  if (!isRecord(payload)) return undefined;
+  const value = payload.bootTime;
+  return typeof value === "number" ? value : undefined;
+}
+
+function isRuntimeLogPayload(payload: unknown): payload is RuntimeLogPayload {
+  if (!isRecord(payload)) return false;
+  return typeof payload.level === "string" && typeof payload.message === "string";
+}
+
+function isRuntimeStatsPayload(payload: unknown): payload is RuntimeStatsPayload {
+  if (!isRecord(payload)) return false;
+  return typeof payload.fps === "number" && typeof payload.memory === "number";
+}
+
+function getErrorMessage(payload: unknown): string | undefined {
+  if (!isRecord(payload)) return undefined;
+  return typeof payload.message === "string" ? payload.message : undefined;
+}
+
 export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
   function PlayerIframe(
-    { capsuleId, params = {}, onReady, onLog, onStats, onBoot, artifactId },
+    { capsuleId, params = {}, onReady, onLog, onStats, onBoot, onError, artifactId },
     ref
   ) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -101,13 +130,20 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         // TODO: Verify origin matches our R2 domain
         // if (!event.origin.startsWith('https://capsules.vibecodr.space')) return;
 
-        const { type, payload } = event.data as { type?: string; payload?: any };
+        const message = event.data;
+        if (!isRecord(message)) {
+          return;
+        }
+        const type = typeof message.type === "string" ? message.type : undefined;
+        if (!type) {
+          return;
+        }
+        const payload = message.payload;
 
         switch (type) {
           case "ready": {
             setStatus("ready");
-            const bootTime =
-              payload && typeof payload.bootTime === "number" ? payload.bootTime : undefined;
+            const bootTime = getBootTime(payload);
             if (bootTime != null) {
               onBoot?.({ bootTimeMs: bootTime });
             }
@@ -116,17 +152,24 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           }
 
           case "log":
-            onLog?.(payload);
+            if (isRuntimeLogPayload(payload)) {
+              onLog?.(payload);
+            }
             break;
 
           case "stats":
-            onStats?.(payload);
+            if (isRuntimeStatsPayload(payload)) {
+              onStats?.(payload);
+            }
             break;
 
-          case "error":
+          case "error": {
+            const message = getErrorMessage(payload) ?? "An error occurred";
             setStatus("error");
-            setErrorMessage(payload.message || "An error occurred");
+            setErrorMessage(message);
+            onError?.(message);
             break;
+          }
         }
       };
 
@@ -135,7 +178,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       return () => {
         window.removeEventListener("message", handleMessage);
       };
-    }, [onReady, onLog, onStats, onBoot]);
+    }, [onReady, onLog, onStats, onBoot, onError]);
 
     // Send params to iframe when they change
     useEffect(() => {

@@ -38,6 +38,24 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
     return draft.files.reduce((sum, file) => sum + file.size, 0);
   }, [draft?.files]);
 
+  const downloadStepStatus =
+    importStatus === "idle"
+      ? "pending"
+      : importStatus === "downloading"
+        ? "active"
+        : "complete";
+
+  const analyzeStepStatus =
+    importStatus === "analyzing"
+      ? "active"
+      : importStatus === "downloading"
+        ? "pending"
+        : importStatus === "idle"
+          ? "pending"
+          : "complete";
+
+  const readyStepStatus = importStatus === "success" ? "complete" : "pending";
+
   const handleGithubImport = async () => {
     if (!githubUrl) return;
 
@@ -193,32 +211,9 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
                 </Button>
 
                 <div className="space-y-3">
-                  <ImportStep
-                    name="Download"
-                    status={
-                      importStatus === "downloading"
-                        ? "active"
-                        : importStatus === "idle"
-                          ? "pending"
-                          : "complete"
-                    }
-                  />
-                  <ImportStep
-                    name="Analyze"
-                    status={
-                      importStatus === "analyzing"
-                        ? "active"
-                        : importStatus === "idle"
-                          ? "pending"
-                          : importStatus === "downloading"
-                            ? "pending"
-                            : "complete"
-                    }
-                  />
-                  <ImportStep
-                    name="Ready"
-                    status={importStatus === "success" ? "complete" : "pending"}
-                  />
+                  <ImportStep name="Download" status={downloadStepStatus} />
+                  <ImportStep name="Analyze" status={analyzeStepStatus} />
+                  <ImportStep name="Ready" status={readyStepStatus} />
 
                   {error && (
                     <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -284,32 +279,9 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
 
               {importStatus !== "idle" && (
                 <div className="space-y-3">
-                  <ImportStep
-                    name="Download"
-                    status={
-                      importStatus === "downloading"
-                        ? "active"
-                        : importStatus === "idle"
-                          ? "pending"
-                          : "complete"
-                    }
-                  />
-                  <ImportStep
-                    name="Analyze"
-                    status={
-                      importStatus === "analyzing"
-                        ? "active"
-                        : importStatus === "downloading"
-                          ? "pending"
-                          : importStatus === "idle"
-                            ? "pending"
-                            : "complete"
-                    }
-                  />
-                  <ImportStep
-                    name="Ready"
-                    status={importStatus === "success" ? "complete" : "pending"}
-                  />
+                  <ImportStep name="Download" status={downloadStepStatus} />
+                  <ImportStep name="Analyze" status={analyzeStepStatus} />
+                  <ImportStep name="Ready" status={readyStepStatus} />
 
                   {error && (
                     <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">

@@ -164,7 +164,7 @@ export const getCapsuleBundle: Handler = async (_req, env, _ctx, params) => {
         "X-Capsule-Runner": manifest.runner,
         // Strict CSP for safety
         "Content-Security-Policy":
-          "default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'",
+          "default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'",
       },
     });
   } catch (error) {

@@ -52,13 +52,22 @@ describe("cross-surface auth propagation", () => {
     __resetUserSyncForTests();
     originalFetch = global.fetch;
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const targetUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const inputIsRequest = isRequest(input);
+      const targetUrl =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : inputIsRequest
+              ? input.url
+              : "";
 
       if (targetUrl.startsWith(WORKER_BASE)) {
-        const headers = init?.headers ?? (typeof input === "string" ? undefined : input.headers);
+        const headers = init?.headers ?? (inputIsRequest ? input.headers : undefined);
+        const methodValue = init?.method ?? (inputIsRequest ? input.method : "GET");
         workerCalls.push({
           url: targetUrl,
-          method: String(init?.method || (typeof input === "string" ? "GET" : input.method)).toUpperCase(),
+          method: String(methodValue).toUpperCase(),
           headers: headersToRecord(headers),
         });
         return new Response(JSON.stringify({ ok: true }), {
@@ -142,4 +151,8 @@ async function dispatchCatchAll(url: string, init?: RequestInit) {
     default:
       throw new Error(`Unsupported method: ${method}`);
   }
+}
+
+function isRequest(input: RequestInfo | URL): input is Request {
+  return typeof input === "object" && input !== null && "method" in input && "headers" in input;
 }

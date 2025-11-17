@@ -22,11 +22,10 @@ vi.mock("../auth", () => {
 });
 
 vi.mock("./counters", () => ({
-  incrementUserCounters: vi.fn(async () => {}),
   incrementPostStats: vi.fn(async () => {}),
 }));
 
-import { incrementUserCounters, incrementPostStats } from "./counters";
+import { incrementPostStats } from "./counters";
 import { followUser, unfollowUser, likePost, unlikePost, createComment, deleteComment } from "./social";
 
 const createEnv = (): Env => ({
@@ -36,6 +35,7 @@ const createEnv = (): Env => ({
     first: vi.fn(),
     all: vi.fn(),
     run: vi.fn(),
+    batch: vi.fn(async (statements: any[]) => statements.map(() => ({ success: true, meta: { changes: 1 } }))),
   } as any,
   R2: {} as any,
   ALLOWLIST_HOSTS: "[]",
@@ -59,29 +59,57 @@ describe("Counters wiring", () => {
     vi.clearAllMocks();
   });
 
-  it("increments counters on follow", async () => {
+  it("batches follow insert, counter updates, and notification", async () => {
     // user exists
     (env.DB as any).first.mockResolvedValueOnce({ id: "u2" });
-    // insert follows
-    ;(env.DB as any).run.mockResolvedValueOnce({});
-    ;(env.DB as any).run.mockResolvedValueOnce({}); // notification
+    const batchSpy = (env.DB as any).batch;
 
     const res = await followUser(req("POST", "/users/u2/follow"), env as any, {} as any, { p1: "u2" } as any);
     expect(res.status).toBe(200);
-
-    expect(incrementUserCounters).toHaveBeenCalledWith(env, "u2", { followersDelta: 1 });
-    expect(incrementUserCounters).toHaveBeenCalledWith(env, "u1", { followingDelta: 1 });
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    const statements = batchSpy.mock.calls[0]?.[0];
+    expect(Array.isArray(statements)).toBe(true);
+    expect(statements).toHaveLength(4);
   });
 
-  it("decrements counters on unfollow", async () => {
-    // delete follows
-    ;(env.DB as any).run.mockResolvedValueOnce({});
+  it("returns already following when the follow insert hits a unique constraint", async () => {
+    (env.DB as any).first.mockResolvedValueOnce({ id: "u2" });
+    (env.DB as any).batch.mockRejectedValueOnce(new Error("UNIQUE constraint failed: follows.followee_id"));
+
+    const res = await followUser(req("POST", "/users/u2/follow"), env as any, {} as any, { p1: "u2" } as any);
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as { message?: string };
+    expect(payload.message).toContain("Already following");
+  });
+
+  it(" surfaces follow failures when batch throws", async () => {
+    (env.DB as any).first.mockResolvedValueOnce({ id: "u2" });
+    (env.DB as any).batch.mockRejectedValueOnce(new Error("boom"));
+
+    const res = await followUser(req("POST", "/users/u2/follow"), env as any, {} as any, { p1: "u2" } as any);
+    expect(res.status).toBe(500);
+    const payload = (await res.json()) as { error?: string };
+    expect(payload.error).toBe("Failed to follow user");
+  });
+
+  it("batches counter updates before unfollow delete", async () => {
+    const batchSpy = (env.DB as any).batch;
 
     const res = await unfollowUser(req("DELETE", "/users/u2/follow"), env as any, {} as any, { p1: "u2" } as any);
     expect(res.status).toBe(200);
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    const statements = batchSpy.mock.calls[0]?.[0];
+    expect(Array.isArray(statements)).toBe(true);
+    expect(statements).toHaveLength(3);
+  });
 
-    expect(incrementUserCounters).toHaveBeenCalledWith(env, "u2", { followersDelta: -1 });
-    expect(incrementUserCounters).toHaveBeenCalledWith(env, "u1", { followingDelta: -1 });
+  it(" surfaces unfollow failures when batch throws", async () => {
+    (env.DB as any).batch.mockRejectedValueOnce(new Error("delete failed"));
+
+    const res = await unfollowUser(req("DELETE", "/users/u2/follow"), env as any, {} as any, { p1: "u2" } as any);
+    expect(res.status).toBe(500);
+    const payload = (await res.json()) as { error?: string };
+    expect(payload.error).toBe("Failed to unfollow user");
   });
 
   it("updates post stats on like/unlike", async () => {
@@ -126,6 +154,22 @@ describe("Counters wiring", () => {
 
     expect(res.status).toBe(201);
     expect(incrementPostStats).toHaveBeenCalledWith(env, "p1", { commentsDelta: 1 });
+  });
+
+  it("rejects invalid comment payload before touching storage", async () => {
+    const res = await createComment(
+      req("POST", "/posts/p1/comments", "u1", { body: "" }),
+      env as any,
+      {} as any,
+      { p1: "p1" } as any
+    );
+
+    expect(res.status).toBe(400);
+    const payload = (await res.json()) as { error?: string; code?: string };
+    expect(payload.error).toBe("Invalid comment data");
+    expect(payload.code).toBe("E-VIBECODR-0400");
+    expect((env.DB as any).prepare).not.toHaveBeenCalled();
+    expect(incrementPostStats).not.toHaveBeenCalled();
   });
 
   it("updates post stats on comment delete", async () => {

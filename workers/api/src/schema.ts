@@ -11,6 +11,9 @@ export const users = sqliteTable("users", {
   bio: text("bio"),
   // Subscription plan
   plan: text("plan", { enum: ["free", "creator", "pro", "team"] }).default("free"),
+  // Storage accounting (optimistic locking)
+  storageUsageBytes: integer("storage_usage_bytes").notNull().default(0),
+  storageVersion: integer("storage_version").notNull().default(0),
   // Denormalized counters
   followersCount: integer("followers_count").default(0),
   followingCount: integer("following_count").default(0),
@@ -280,13 +283,32 @@ export const createPostSchema = z.object({
 });
 
 // Comment schema
-export const createCommentSchema = z.object({
+const commentPayloadSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(1, "Comment cannot be empty")
+    .max(2000, "Comment too long"),
+  atMs: z
+    .number({
+      invalid_type_error: "Timestamp must be a number",
+    })
+    .int("Timestamp must be an integer")
+    .min(0, "Timestamp must be positive")
+    .optional(),
+  bbox: z
+    .string()
+    .max(500, "Bounding box payload too long")
+    .nullable()
+    .optional(),
+});
+
+export const createCommentSchema = commentPayloadSchema.extend({
   postId: z.string(),
   userId: z.string(),
-  body: z.string().min(1).max(2000),
-  atMs: z.number().optional(),
-  bbox: z.string().optional(),
 });
+
+export const createCommentBodySchema = commentPayloadSchema;
 
 // Report schema
 export const createReportSchema = z.object({

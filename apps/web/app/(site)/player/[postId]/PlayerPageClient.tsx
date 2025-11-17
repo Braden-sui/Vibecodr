@@ -43,6 +43,11 @@ type PendingAnalyticsLog = {
   sampleRate: number;
 };
 
+type PublicMetadata = {
+  role?: string;
+  isModerator?: boolean;
+} | null;
+
 export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState({ fps: 0, memory: 0, bootTime: 0 });
@@ -53,13 +58,20 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [consoleEntries, setConsoleEntries] = useState<PlayerConsoleEntry[]>([]);
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(true);
+  const [moderationStatus, setModerationStatus] = useState<{ quarantined: boolean; pendingFlags: number } | null>(null);
   const iframeHandleRef = useRef<PlayerIframeHandle | null>(null);
   const currentRunRef = useRef<RunSession | null>(null);
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
-  const flushLogsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushLogsTimeoutRef = useRef<number | null>(null);
   const handoffPrefillAppliedRef = useRef(false);
-  const { user: _user } = useUser();
+  const { user, isSignedIn } = useUser();
   const searchParams = useSearchParams();
+  const metadata: PublicMetadata =
+    typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
+  const role = metadata?.role;
+  const isModeratorFlag = metadata?.isModerator === true;
+  const isModeratorOrAdmin =
+    !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
   const tabParam = searchParams.get("tab");
   const initialTab: "notes" | "remix" | "chat" =
     tabParam === "chat" || tabParam === "comments"
@@ -275,6 +287,15 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     [post]
   );
 
+  const handleRuntimeError = useCallback(
+    (message?: string) => {
+      finalizeRunSession("failed", message);
+      setIsRunning(false);
+      setStats({ fps: 0, memory: 0, bootTime: 0 });
+    },
+    [finalizeRunSession]
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -320,6 +341,46 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       cancelled = true;
     };
   }, [postId]);
+
+  useEffect(() => {
+    if (!isModeratorOrAdmin) {
+      setModerationStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadStatus = async () => {
+      try {
+        const res = await fetch(`/api/moderation/posts/${postId}/status`);
+        if (!res.ok) {
+          return;
+        }
+        const data = (await res.json().catch(() => null)) as
+          | { quarantined?: boolean; pendingFlags?: number }
+          | null;
+        if (!cancelled && data) {
+          const quarantined = data.quarantined === true;
+          const pendingFlagsRaw = data.pendingFlags;
+          const pendingFlags =
+            typeof pendingFlagsRaw === "number"
+              ? pendingFlagsRaw
+              : Number(pendingFlagsRaw ?? 0) || 0;
+          setModerationStatus({ quarantined, pendingFlags });
+        }
+      } catch {
+        if (!cancelled) {
+          setModerationStatus((prev) => prev);
+        }
+      }
+    };
+
+    loadStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isModeratorOrAdmin, postId]);
 
   useEffect(() => {
     if (manifestParams.length === 0) {
@@ -492,6 +553,15 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             )}
           </div>
         </div>
+        {isModeratorOrAdmin && moderationStatus?.quarantined && (
+          <div className="mt-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+            <p className="font-medium">This post is quarantined.</p>
+            <p className="mt-1">
+              It is hidden from non-moderators in feeds, profiles, and the player. Resolve or update reports from the
+              moderation tools if this was applied in error.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Main Player Area */}
@@ -506,6 +576,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
                 artifactId={post.capsule.artifactId ?? undefined}
                 params={capsuleParams}
                 onReady={handleRunnerReady}
+                onError={handleRuntimeError}
                 onLog={handleConsoleLog}
                 onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
                 onBoot={handleBootMetrics}

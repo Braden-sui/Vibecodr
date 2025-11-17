@@ -59,6 +59,12 @@ export interface QuotaCheckResult {
   percentUsed?: number;
 }
 
+export interface UserStorageState {
+  plan: Plan;
+  storageUsageBytes: number;
+  storageVersion: number;
+}
+
 /**
  * Check if bundle size is within plan limits
  */
@@ -160,22 +166,51 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * Get user's current plan (stub - implement with user lookup)
+ * Get plan, storage usage, and optimistic version in a single read
  */
-export async function getUserPlan(userId: string, env: { DB: D1Database }): Promise<Plan> {
-  // TODO: Query user table for plan
-  // For now, return FREE as default
+export async function getUserStorageState(
+  userId: string,
+  env: { DB: D1Database }
+): Promise<UserStorageState> {
   const { results } = await env.DB.prepare(
-    "SELECT plan FROM users WHERE id = ? LIMIT 1"
+    "SELECT plan, storage_usage_bytes, storage_version FROM users WHERE id = ? LIMIT 1"
   )
     .bind(userId)
     .all();
 
-  if (results && results.length > 0 && results[0].plan) {
-    return results[0].plan as Plan;
-  }
+  const row = results?.[0] as
+    | {
+        plan?: string;
+        storage_usage_bytes?: number;
+        storage_version?: number;
+      }
+    | undefined;
 
-  return Plan.FREE;
+  const planValue = row?.plan;
+  const plan =
+    typeof planValue === "string" && Object.values(Plan).includes(planValue as Plan)
+      ? (planValue as Plan)
+      : Plan.FREE;
+
+  return {
+    plan,
+    storageUsageBytes:
+      typeof row?.storage_usage_bytes === "number" && !Number.isNaN(row.storage_usage_bytes)
+        ? row.storage_usage_bytes
+        : 0,
+    storageVersion:
+      typeof row?.storage_version === "number" && !Number.isNaN(row.storage_version)
+        ? row.storage_version
+        : 0,
+  };
+}
+
+/**
+ * Get user's current plan (stub - implement with user lookup)
+ */
+export async function getUserPlan(userId: string, env: { DB: D1Database }): Promise<Plan> {
+  const snapshot = await getUserStorageState(userId, env);
+  return snapshot.plan;
 }
 
 /**
@@ -185,18 +220,8 @@ export async function getUserStorageUsage(
   userId: string,
   env: { DB: D1Database }
 ): Promise<number> {
-  // Sum up all capsule sizes for user
-  const { results } = await env.DB.prepare(`
-    SELECT SUM(size) as total
-    FROM assets
-    WHERE capsule_id IN (
-      SELECT id FROM capsules WHERE owner_id = ?
-    )
-  `)
-    .bind(userId)
-    .all();
-
-  return (results?.[0]?.total as number) || 0;
+  const snapshot = await getUserStorageState(userId, env);
+  return snapshot.storageUsageBytes;
 }
 
 /**

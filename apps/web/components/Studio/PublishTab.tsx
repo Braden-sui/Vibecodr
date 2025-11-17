@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { capsulesApi, postsApi } from "@/lib/api";
 import { redirectToSignIn } from "@/lib/client-auth";
-import type { CapsuleDraft } from "./StudioShell";
+import type { CapsuleDraft, DraftArtifact } from "./StudioShell";
 
 interface PublishTabProps {
   draft?: CapsuleDraft;
@@ -148,13 +148,15 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
 
     const trimmedTitle = title.trim() || draft.manifest.title || "Untitled Vibe";
     const trimmedDescription = description.trim();
+    const manifestCapabilities = draft.manifest.capabilities ?? { storage: false, workers: false };
     const manifestToPublish = {
       ...draft.manifest,
       title: trimmedTitle,
       description: trimmedDescription || draft.manifest.description,
       capabilities: {
-        ...(draft.manifest.capabilities ?? {}),
+        ...manifestCapabilities,
         storage: enableStorage,
+        workers: manifestCapabilities.workers ?? false,
       },
     };
 
@@ -214,7 +216,7 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
       }
 
       const capsuleId = publishJson.capsule.id;
-      const artifactInfo = publishJson.artifact
+      const artifactInfo: DraftArtifact | null = publishJson.artifact
         ? {
             id: publishJson.artifact.id ?? undefined,
             runtimeVersion: publishJson.artifact.runtimeVersion ?? null,

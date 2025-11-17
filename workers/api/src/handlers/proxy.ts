@@ -1,21 +1,44 @@
 // Network proxy with allowlist enforcement and rate limiting
 // References: research-sandbox-and-runner.md (Capability Model)
 
-import type { Handler } from "../index";
-import { requireUser } from "../auth";
+import type { Env, Handler } from "../index";
 import { requireCapsuleManifest } from "../capsule-manifest";
+import { requireUser } from "../auth";
 
 interface RateLimitState {
   count: number;
   resetAt: number;
 }
 
-// In-memory rate limit store (in production, use Durable Objects or KV)
-const rateLimits = new Map<string, RateLimitState>();
-
-// Rate limit: 100 requests per minute per capsule/host combination
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 100;
+const RATE_LIMIT_KEY_PREFIX = "proxy:rate:";
+const FALLBACK_RATE_LIMIT_STORE = new Map<string, RateLimitState>();
+let rateLimitFallbackWarned = false;
+
+const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
+const DEFAULT_ALLOWED_PORTS = new Set([80, 443]);
+const LOCALHOST_NAMES = new Set(["localhost", "localhost."]);
+
+const IPV4_REGEX = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+const BLOCKED_IPV4_RANGES = [
+  { start: ipToNumber([10, 0, 0, 0]), end: ipToNumber([10, 255, 255, 255]), reason: "RFC1918 10/8" },
+  { start: ipToNumber([172, 16, 0, 0]), end: ipToNumber([172, 31, 255, 255]), reason: "RFC1918 172.16/12" },
+  { start: ipToNumber([192, 168, 0, 0]), end: ipToNumber([192, 168, 255, 255]), reason: "RFC1918 192.168/16" },
+  { start: ipToNumber([127, 0, 0, 0]), end: ipToNumber([127, 255, 255, 255]), reason: "Loopback 127/8" },
+  { start: ipToNumber([169, 254, 0, 0]), end: ipToNumber([169, 254, 255, 255]), reason: "Link-local 169.254/16" },
+  { start: ipToNumber([100, 64, 0, 0]), end: ipToNumber([100, 127, 255, 255]), reason: "CGNAT 100.64/10" },
+];
+
+interface AllowlistRule {
+  hostname: string;
+  port?: number;
+  wildcard: boolean;
+}
+
+const ERROR_PROXY_ALLOWLIST_PARSE = "E-VIBECODR-0301";
+const ERROR_PROXY_HOST_BLOCKED = "E-VIBECODR-0302";
+const ERROR_PROXY_RATE_LIMIT_STORAGE = "E-VIBECODR-0303";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -28,54 +51,103 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
 /**
  * Check if a URL is allowed by the allowlist
  */
-function isHostAllowed(url: string, allowlist: string[]): boolean {
-  try {
-    const urlObj = new URL(url);
-    const host = urlObj.hostname;
-
-    // Check exact match or wildcard subdomain match
-    return allowlist.some((allowed) => {
-      // Exact match
-      if (allowed === host) return true;
-
-      // Wildcard subdomain (e.g., "*.example.com" matches "api.example.com")
-      if (allowed.startsWith("*.")) {
-        const baseDomain = allowed.slice(2);
-        return host === baseDomain || host.endsWith(`.${baseDomain}`);
-      }
-
-      return false;
-    });
-  } catch {
+export function isHostAllowed(targetUrl: URL, allowlist: string[]): boolean {
+  const hostname = normalizeHostname(targetUrl.hostname);
+  if (!hostname) {
     return false;
   }
+
+  const port = getEffectivePort(targetUrl);
+
+  return allowlist.some((raw) => {
+    const rule = parseAllowlistRule(raw);
+    if (!rule) {
+      return false;
+    }
+
+    const matchesHost = rule.wildcard
+      ? hostname === rule.hostname || hostname.endsWith(`.${rule.hostname}`)
+      : hostname === rule.hostname;
+
+    if (!matchesHost) {
+      return false;
+    }
+
+    if (rule.port === undefined) {
+      return DEFAULT_ALLOWED_PORTS.has(port);
+    }
+
+    return rule.port === port;
+  });
+}
+
+export function isAllowedProtocol(protocol: string): boolean {
+  return ALLOWED_PROTOCOLS.has(protocol);
+}
+
+export function getBlockedAddressReason(hostnameInput: string): { message: string; code: string } | null {
+  const hostname = normalizeHostname(hostnameInput);
+  if (!hostname) {
+    return { message: "Invalid host", code: ERROR_PROXY_HOST_BLOCKED };
+  }
+
+  if (LOCALHOST_NAMES.has(hostname)) {
+    return { message: "Localhost targets are not allowed", code: ERROR_PROXY_HOST_BLOCKED };
+  }
+
+  const ipv4Segments = parseIpv4Segments(hostname);
+  if (ipv4Segments) {
+    const asNumber = ipToNumber(ipv4Segments);
+    const range = BLOCKED_IPV4_RANGES.find((item) => asNumber >= item.start && asNumber <= item.end);
+    if (range) {
+      return { message: `${range.reason} addresses are blocked`, code: ERROR_PROXY_HOST_BLOCKED };
+    }
+
+    return { message: "Direct IP addresses are blocked", code: ERROR_PROXY_HOST_BLOCKED };
+  }
+
+  if (hostname.includes(":")) {
+    return { message: "IPv6 literals are blocked", code: ERROR_PROXY_HOST_BLOCKED };
+  }
+
+  return null;
 }
 
 /**
- * Check rate limit for capsule/host combination
+ * Check rate limit for capsule/host combination using KV storage (fallback to in-memory for dev)
  */
-function checkRateLimit(capsuleId: string, host: string): { allowed: boolean; resetAt?: number; remaining?: number } {
-  const key = `${capsuleId}:${host}`;
+async function checkRateLimit(env: Env, capsuleId: string, host: string): Promise<{ allowed: boolean; resetAt?: number; remaining?: number }> {
+  const key = `${RATE_LIMIT_KEY_PREFIX}${capsuleId}:${host}`;
   const now = Date.now();
 
-  const state = rateLimits.get(key);
+  const state = await readRateLimitState(env, key);
 
-  // No previous requests or window expired
   if (!state || now >= state.resetAt) {
-    rateLimits.set(key, {
+    const nextState: RateLimitState = {
       count: 1,
       resetAt: now + RATE_LIMIT_WINDOW_MS,
-    });
-    return { allowed: true, remaining: RATE_LIMIT_MAX_REQUESTS - 1, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    };
+    await writeRateLimitState(env, key, nextState);
+    return {
+      allowed: true,
+      remaining: RATE_LIMIT_MAX_REQUESTS - 1,
+      resetAt: nextState.resetAt,
+    };
   }
 
-  // Within rate limit
   if (state.count < RATE_LIMIT_MAX_REQUESTS) {
-    state.count++;
-    return { allowed: true, remaining: RATE_LIMIT_MAX_REQUESTS - state.count, resetAt: state.resetAt };
+    const nextState: RateLimitState = {
+      count: state.count + 1,
+      resetAt: state.resetAt,
+    };
+    await writeRateLimitState(env, key, nextState);
+    return {
+      allowed: true,
+      remaining: Math.max(0, RATE_LIMIT_MAX_REQUESTS - nextState.count),
+      resetAt: nextState.resetAt,
+    };
   }
 
-  // Rate limit exceeded
   return { allowed: false, resetAt: state.resetAt };
 }
 
@@ -84,13 +156,15 @@ function checkRateLimit(capsuleId: string, host: string): { allowed: boolean; re
  * Proxy network requests with allowlist enforcement and rate limiting
  *
  * Security features:
+ * - Requires authenticated user (via requireUser)
  * - Validates URL against capsule's manifest allowlist
+ * - Ensures the requested capsule belongs to the caller
  * - Rate limits per capsule/host (100 req/min)
  * - Blocks cross-origin cookies
  * - Strips sensitive headers
  * - Adds CORS headers
  */
-export const netProxy: Handler = async (req, env) => {
+export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, userId) => {
   const url = new URL(req.url);
   const targetUrl = url.searchParams.get("url");
   const capsuleId = url.searchParams.get("capsuleId");
@@ -112,29 +186,44 @@ export const netProxy: Handler = async (req, env) => {
       return json({ error: "Invalid URL format" }, 400);
     }
 
-    // Only allow HTTP/HTTPS
-    if (!["http:", "https:"].includes(targetUrlObj.protocol)) {
+    if (!isAllowedProtocol(targetUrlObj.protocol)) {
       return json({ error: "Only HTTP and HTTPS protocols are allowed" }, 400);
     }
 
-    // Fetch capsule manifest to get allowlist
+    const normalizedHost = normalizeHostname(targetUrlObj.hostname);
+    if (!normalizedHost) {
+      return json({ error: "Invalid host" }, 400);
+    }
+
+    const blockedReason = getBlockedAddressReason(targetUrlObj.hostname);
+    if (blockedReason) {
+      return json({ error: blockedReason.message, host: targetUrlObj.hostname, errorCode: blockedReason.code }, 403);
+    }
+
+    // Fetch capsule manifest to get allowlist and enforce ownership
     const capsule = await env.DB.prepare(
-      "SELECT manifest_json FROM capsules WHERE id = ?"
+      "SELECT owner_id, manifest_json FROM capsules WHERE id = ?"
     ).bind(capsuleId).first();
 
     if (!capsule) {
       return json({ error: "Capsule not found" }, 404);
     }
 
+    if (capsule.owner_id !== userId) {
+      return json({ error: "Forbidden" }, 403);
+    }
+
     const manifest = requireCapsuleManifest(capsule.manifest_json, {
       source: "proxyAllowlist",
       capsuleId,
     });
-    // Network access is currently disabled until premium VM tiers launch
-    const allowlist: string[] = [];
+    const allowlist = buildAllowlist(manifest.capabilities?.net, env.ALLOWLIST_HOSTS);
 
-    // Check if host is allowed
-    if (!isHostAllowed(targetUrl, allowlist)) {
+    if (allowlist.length === 0) {
+      return json({ error: "No hosts are allowed for this capsule" }, 403);
+    }
+
+    if (!isHostAllowed(targetUrlObj, allowlist)) {
       return json({
         error: "Host not in allowlist",
         host: targetUrlObj.hostname,
@@ -143,7 +232,7 @@ export const netProxy: Handler = async (req, env) => {
     }
 
     // Check rate limit
-    const rateLimitResult = checkRateLimit(capsuleId, targetUrlObj.hostname);
+    const rateLimitResult = await checkRateLimit(env, capsuleId, normalizedHost);
     if (!rateLimitResult.allowed) {
       const retryAfter = Math.ceil((rateLimitResult.resetAt! - Date.now()) / 1000);
       return json(
@@ -223,4 +312,170 @@ export const netProxy: Handler = async (req, env) => {
       details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
-};
+});
+
+function buildAllowlist(manifestHosts: string[] | undefined, envAllowlistJson: string): string[] {
+  const merged = new Set<string>();
+  for (const host of manifestHosts ?? []) {
+    if (typeof host === "string" && host.trim().length > 0) {
+      merged.add(host.trim());
+    }
+  }
+
+  for (const host of parseEnvAllowlist(envAllowlistJson)) {
+    merged.add(host);
+  }
+
+  return Array.from(merged);
+}
+
+function parseEnvAllowlist(rawAllowlist: string): string[] {
+  if (!rawAllowlist) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawAllowlist);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim());
+    }
+
+    return [];
+  } catch (error) {
+    console.error(`${ERROR_PROXY_ALLOWLIST_PARSE} global allowlist parse failed`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+function parseAllowlistRule(entry: string): AllowlistRule | null {
+  if (typeof entry !== "string") {
+    return null;
+  }
+
+  let normalized = entry.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+    try {
+      normalized = new URL(normalized).host.toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+
+  if (normalized.includes("/")) {
+    normalized = normalized.split("/")[0];
+  }
+
+  let wildcard = false;
+  if (normalized.startsWith("*.")) {
+    wildcard = true;
+    normalized = normalized.slice(2);
+  }
+
+  let hostname = normalized;
+  let port: number | undefined;
+
+  const lastColon = hostname.lastIndexOf(":");
+  if (lastColon > -1 && /^\d+$/.test(hostname.slice(lastColon + 1))) {
+    port = Number(hostname.slice(lastColon + 1));
+    hostname = hostname.slice(0, lastColon);
+  }
+
+  hostname = hostname.replace(/\.+$/, "");
+  if (!hostname) {
+    return null;
+  }
+
+  return { hostname, port, wildcard };
+}
+
+function normalizeHostname(value: string): string {
+  return value.trim().toLowerCase().replace(/\.+$/, "");
+}
+
+function getEffectivePort(targetUrl: URL): number {
+  if (targetUrl.port) {
+    const parsed = Number(targetUrl.port);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return targetUrl.protocol === "https:" ? 443 : 80;
+}
+
+function parseIpv4Segments(hostname: string): number[] | null {
+  if (!IPV4_REGEX.test(hostname)) {
+    return null;
+  }
+
+  const segments = hostname.split(".").map((part) => Number(part));
+  if (segments.length !== 4 || segments.some((segment) => Number.isNaN(segment) || segment < 0 || segment > 255)) {
+    return null;
+  }
+
+  return segments;
+}
+
+function ipToNumber(parts: number[]): number {
+  return (
+    (((parts[0] << 24) >>> 0) + ((parts[1] & 255) << 16) + ((parts[2] & 255) << 8) + (parts[3] & 255)) >>> 0
+  );
+}
+
+async function readRateLimitState(env: Env, key: string): Promise<RateLimitState | null> {
+  if (env.RUNTIME_MANIFEST_KV) {
+    try {
+      const raw = await env.RUNTIME_MANIFEST_KV.get(key);
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.count === "number" && typeof parsed?.resetAt === "number") {
+        return parsed as RateLimitState;
+      }
+    } catch (error) {
+      console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit read failed`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return null;
+  }
+
+  warnRateLimitFallback();
+  return FALLBACK_RATE_LIMIT_STORE.get(key) ?? null;
+}
+
+async function writeRateLimitState(env: Env, key: string, state: RateLimitState): Promise<void> {
+  if (env.RUNTIME_MANIFEST_KV) {
+    try {
+      const ttlSeconds = Math.max(1, Math.ceil((state.resetAt - Date.now()) / 1000));
+      await env.RUNTIME_MANIFEST_KV.put(key, JSON.stringify(state), { expirationTtl: ttlSeconds });
+      return;
+    } catch (error) {
+      console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit write failed`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  } else {
+    warnRateLimitFallback();
+  }
+
+  FALLBACK_RATE_LIMIT_STORE.set(key, state);
+}
+
+function warnRateLimitFallback() {
+  if (!rateLimitFallbackWarned) {
+    console.warn("E-VIBECODR-0304 proxy rate limit KV unavailable; using in-memory state");
+    rateLimitFallbackWarned = true;
+  }
+}
