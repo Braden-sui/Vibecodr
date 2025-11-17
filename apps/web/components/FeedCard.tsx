@@ -68,6 +68,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const isModeratorOrAdmin =
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
   const isApp = post.type === "app";
+  const detailHref = isApp ? `/player/${post.id}` : `/post/${post.id}`;
   const [_isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [previewError, setPreviewError] = useState(false);
@@ -477,7 +478,11 @@ export function FeedCard({ post }: FeedCardProps) {
     e.preventDefault();
     e.stopPropagation();
     persistPreviewHandoff("comments");
-    router.push(`/player/${post.id}?tab=comments`);
+    if (isApp) {
+      router.push(`/player/${post.id}?tab=comments`);
+    } else {
+      router.push(`/post/${post.id}`);
+    }
   };
 
   const handleRemix = (e: React.MouseEvent) => {
@@ -492,7 +497,8 @@ export function FeedCard({ post }: FeedCardProps) {
     e.preventDefault();
     e.stopPropagation();
 
-    const url = `${window.location.origin}/player/${post.id}`;
+    const path = isApp ? `/player/${post.id}` : `/post/${post.id}`;
+    const url = `${window.location.origin}${path}`;
 
     if (navigator.share) {
       try {
@@ -518,7 +524,7 @@ export function FeedCard({ post }: FeedCardProps) {
         onMouseLeave={handleMouseLeave}
         className="relative"
       >
-        <Link href={`/player/${post.id}`} onClick={() => persistPreviewHandoff("cover")}>
+        <Link href={detailHref} onClick={() => persistPreviewHandoff("cover")}>
           <div
             className={cn(
               "relative aspect-video w-full overflow-hidden bg-gradient-to-br",
@@ -613,7 +619,7 @@ export function FeedCard({ post }: FeedCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 space-y-1">
-            <Link href={`/player/${post.id}`} onClick={() => persistPreviewHandoff("title")}>
+            <Link href={detailHref} onClick={() => persistPreviewHandoff("title")}>
               <h3 className="line-clamp-2 font-semibold leading-tight hover:text-primary">
                 {post.title}
               </h3>
