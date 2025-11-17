@@ -1,1 +1,16 @@
-{"projectId":"_","orgId":"_","settings":{"framework":"nextjs","rootDirectory":"apps/web"}}
+{
+  "projectId": "prj_hsw0FhGKhRx1mbRNv5bOS110NDzl",
+  "orgId": "team_vFQB7fzmTGVSTo07fO9AZoqu",
+  "projectName": "vibecodr",
+  "settings": {
+    "createdAt": 1763359233753,
+    "framework": null,
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "22.x"
+  }
+}
