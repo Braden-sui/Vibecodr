@@ -312,7 +312,7 @@ export default function FeedPage() {
       <p className="text-lg font-semibold">No vibes match that query yet.</p>
       <p className="mt-2 text-sm text-muted-foreground">
         Try a different tag or{" "}
-        <Link href="/studio" className="text-primary underline-offset-4 hover:underline">
+        <Link prefetch={false} href="/studio" className="text-primary underline-offset-4 hover:underline">
           publish one now
         </Link>
         .

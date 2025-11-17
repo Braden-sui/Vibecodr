@@ -23,7 +23,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
         <header className="border-b">
           <nav className="container mx-auto flex items-center gap-6 py-4">
             <VibecodrWordmark />
-            <Link href="/studio" className="hover:text-primary">
+            <Link prefetch={false} href="/studio" className="hover:text-primary">
               Studio
             </Link>
             <Link href="/post/new" className="hover:text-primary">

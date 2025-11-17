@@ -341,10 +341,10 @@ export default function ShareVibePage() {
 
               <div className="flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
-                  <Link href="/studio">Open Studio</Link>
+                  <Link prefetch={false} href="/studio">Open Studio</Link>
                 </Button>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/studio/import">Import a new vibe</Link>
+                  <Link prefetch={false} href="/studio/import">Import a new vibe</Link>
                 </Button>
               </div>
             </CardContent>
