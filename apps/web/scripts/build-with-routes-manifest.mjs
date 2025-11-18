@@ -14,7 +14,7 @@ const { normalizeAppPath } = require("next/dist/shared/lib/router/utils/app-path
 const { isDynamicRoute } = require("next/dist/shared/lib/router/utils/is-dynamic");
 const sortPages = require("next/dist/shared/lib/router/utils/sorted-routes").default;
 const { getNamedRouteRegex } = require("next/dist/shared/lib/router/utils/route-regex");
-const { normalizeRouteRegex } = require("next/dist/shared/lib/router/utils/normalize-route-regex");
+const { normalizeRouteRegex } = require("next/dist/lib/load-custom-routes");
 const appRouterHeaders = require("next/dist/client/components/app-router-headers");
 const {
   RSC_PREFETCH_SUFFIX,
