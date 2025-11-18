@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "build:web": "turbo run build --filter=vibecodr-web",
+    "build:web": "turbo run build --filter=vibecodr-web && cd apps/web && pnpm dlx @opennextjs/cloudflare build",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "typecheck": "turbo run typecheck",

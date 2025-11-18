@@ -1,6 +1,6 @@
 /**
- * Next.js config for the MVP skeleton. We'll target Cloudflare Pages.
- * Configured for Cloudflare Pages deployment.
+ * Next.js config for the MVP skeleton. We'll target Cloudflare Workers via OpenNext.
+ * Configured for Cloudflare deployment using @opennextjs/cloudflare.
  */
 
 const path = require("path");
@@ -25,14 +25,5 @@ const nextConfig = {
     ];
   },
 };
-
-// Setup dev platform for Cloudflare Pages local development
-if (process.env.NODE_ENV === 'development') {
-  const { setupDevPlatform } = require('@cloudflare/next-on-pages/next-dev');
-  setupDevPlatform().catch((err) => {
-    // Silently fail if @cloudflare/next-on-pages is not installed
-    // This allows the app to run without the Cloudflare adapter in local dev
-  });
-}
 
 module.exports = nextConfig;

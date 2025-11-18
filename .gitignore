@@ -12,6 +12,7 @@ out/
 build
 dist/
 apps/web/next-dist/
+.open-next/
 
 # Misc
 .DS_Store
