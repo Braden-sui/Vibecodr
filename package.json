@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "build:web": "turbo run build --filter=vibecodr-web",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "typecheck": "turbo run typecheck",
@@ -15,7 +16,6 @@
     "test:e2e:ui": "playwright test --ui",
     "test:performance": "playwright test e2e/performance.spec.ts",
     "test:coverage": "turbo run test:coverage",
-    "cf:build": "cd apps/web && pnpm dlx @opennextjs/cloudflare build",
     "check:runtime-assets": "turbo run runtime-assets:check"
   },
   "devDependencies": {

@@ -60,3 +60,4 @@ pnpm-debug.log*
 .eslintcache
 
 .vercel
+.claude/settings.local.json
