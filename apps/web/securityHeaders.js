@@ -38,13 +38,25 @@ function normalizeOrigin(value) {
   try {
     const url = new URL(value);
     return url.origin;
-  } catch {
+  } catch (error) {
     if (value.startsWith("//")) {
       try {
         return new URL(`https:${value}`).origin;
-      } catch {
+      } catch (nestedError) {
+        if (typeof console !== "undefined" && typeof console.error === "function") {
+          console.error("E-VIBECODR-0514 security header origin parse failed", {
+            value,
+            error: nestedError instanceof Error ? nestedError.message : String(nestedError),
+          });
+        }
         return null;
       }
+    }
+    if (typeof console !== "undefined" && typeof console.error === "function") {
+      console.error("E-VIBECODR-0514 security header origin parse failed", {
+        value,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     return null;
   }

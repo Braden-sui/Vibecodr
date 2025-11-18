@@ -119,8 +119,14 @@ export default function FlaggedPostsPage() {
                               if (body && typeof body.error === "string") {
                                 message = body.error;
                               }
-                            } catch {
-                              // Ignore JSON parse failures; fall back to the default message.
+                            } catch (error) {
+                              if (typeof console !== "undefined" && typeof console.error === "function") {
+                                console.error("E-VIBECODR-0513 flagged quarantine error JSON parse failed", {
+                                  postId: it.id,
+                                  status: res.status,
+                                  error: error instanceof Error ? error.message : String(error),
+                                });
+                              }
                             }
                             throw new Error(message);
                           }

@@ -97,16 +97,14 @@ export const unlikePost: Handler = requireUser(async (req, env, ctx, params, use
     ).bind(userId, postId).run();
 
     // Only decrement if a row was deleted (idempotent)
-    try {
-      // D1 run() doesn't always return changes; attempt best-effort decrement
-      incrementPostStats(env, postId, { likesDelta: -1 }).catch((err: unknown) => {
-        console.error("E-API-0003 unlikePost counter update failed", {
-          postId,
-          userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+    // D1 run() doesn't always return changes; attempt best-effort decrement
+    incrementPostStats(env, postId, { likesDelta: -1 }).catch((err: unknown) => {
+      console.error("E-API-0003 unlikePost counter update failed", {
+        postId,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
       });
-    } catch {}
+    });
 
     return json({ ok: true, liked: false });
   } catch (error) {
@@ -549,16 +547,14 @@ export const deleteComment: Handler = requireUser(async (req, env, ctx, params, 
 
     await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
 
-    try {
-      incrementPostStats(env, row.post_id, { commentsDelta: -1 }).catch((err: unknown) => {
-        console.error("E-API-0014 deleteComment counter update failed", {
-          commentId,
-          postId: row.post_id,
-          userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+    incrementPostStats(env, row.post_id, { commentsDelta: -1 }).catch((err: unknown) => {
+      console.error("E-API-0014 deleteComment counter update failed", {
+        commentId,
+        postId: row.post_id,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
       });
-    } catch {}
+    });
 
     return json({ ok: true });
   } catch (error) {

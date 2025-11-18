@@ -149,7 +149,7 @@ export default function ProfileSettingsPage() {
         if (cancelled) return;
 
         const rawBlocks: LayoutBlock[] = Array.isArray(json.blocks)
-          ? (json.blocks as any[]).map((block, index) => {
+          ? ((json.blocks as any[]).map((block, index) => {
               const config = (block.config ?? {}) as Partial<ProfileBlock>;
               const position =
                 typeof block.position === "number" && Number.isFinite(block.position)
@@ -160,8 +160,10 @@ export default function ProfileSettingsPage() {
                   ? block.visibility
                   : "public";
 
+              const id: string = String(config.id ?? block.id ?? `${block.type}-${index}`);
+
               const baseConfig: ProfileBlock = {
-                id: String(config.id ?? block.id ?? `${block.type}-${index}`),
+                id,
                 version: 1,
                 type: config.type ?? block.type,
                 visibility: config.visibility ?? visibility,
@@ -170,13 +172,13 @@ export default function ProfileSettingsPage() {
               };
 
               return {
-                id: baseConfig.id,
+                id,
                 type: baseConfig.type,
                 position,
                 visibility: baseConfig.visibility,
                 config: baseConfig,
-              };
-            })
+              } satisfies LayoutBlock;
+            }) as LayoutBlock[])
           : [];
 
         const normalizedBlocks =

@@ -41,7 +41,11 @@ export async function POST() {
   let json: unknown = null;
   try {
     json = await res.json();
-  } catch {
+  } catch (error) {
+    console.error("E-VIBECODR-0405 user sync proxy JSON parse failed", {
+      status: res.status,
+      error: error instanceof Error ? error.message : String(error),
+    });
     json = null;
   }
   return NextResponse.json(json, { status: res.status });

@@ -265,7 +265,12 @@ const completeArtifactHandler: AuthedHandler = async (req, env, _ctx, params, us
       let bodyText: string | undefined;
       try {
         bodyText = await doRes.text();
-      } catch {
+      } catch (error) {
+        console.error("E-VIBECODR-1106 artifact compile error body read failed", {
+          artifactId,
+          status: doRes.status,
+          error: error instanceof Error ? error.message : String(error),
+        });
         bodyText = undefined;
       }
 

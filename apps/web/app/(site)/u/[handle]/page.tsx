@@ -3,8 +3,8 @@ import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileBlocks } from "@/components/profile/ProfileBlocks";
 import { themeToInlineStyle } from "@/lib/profile/theme";
 
-type PageProps = {
-  params: { handle: string };
+type ProfilePageParams = {
+  handle: string;
 };
 
 async function fetchProfile(handle: string) {
@@ -21,9 +21,14 @@ async function fetchProfile(handle: string) {
   return (await res.json()) as any;
 }
 
-export default async function ProfilePage({ params }: PageProps) {
-  const handle = decodeURIComponent(params.handle);
-  const profile = await fetchProfile(handle);
+export default async function ProfilePage({
+  params,
+}: {
+  params: Promise<ProfilePageParams>;
+}) {
+  const { handle } = await params;
+  const decodedHandle = decodeURIComponent(handle);
+  const profile = await fetchProfile(decodedHandle);
 
   if (!profile) {
     notFound();

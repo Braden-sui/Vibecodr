@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { Env } from "../index";
-import { importGithub, importZip } from "./import";
+import type { Env } from "./index";
+import { importGithub, importZip } from "./handlers/import";
 
 vi.mock("../auth", () => {
   return {

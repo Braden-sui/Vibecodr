@@ -157,7 +157,16 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             sampleRate: item.sampleRate,
           })),
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0515 player appendLogs failed", {
+              runId,
+              capsuleId,
+              postId: post?.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        });
     },
     [post?.capsule?.id, post?.id]
   );
@@ -265,7 +274,17 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           status,
           errorMessage,
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0516 player complete run failed", {
+              runId: session.id,
+              capsuleId: post?.capsule?.id,
+              postId: post?.id,
+              status,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        });
     },
     [flushLogBatch, post?.capsule, post?.id]
   );
@@ -373,9 +392,18 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         if (!res.ok) {
           return;
         }
-        const data = (await res.json().catch(() => null)) as
-          | { quarantined?: boolean; pendingFlags?: number }
-          | null;
+        let data: { quarantined?: boolean; pendingFlags?: number } | null = null;
+        try {
+          data = (await res.json()) as { quarantined?: boolean; pendingFlags?: number } | null;
+        } catch (error) {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0509 player moderation status JSON parse failed", {
+              postId,
+              status: res.status,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         if (!cancelled && data) {
           const quarantined = data.quarantined === true;
           const pendingFlagsRaw = data.pendingFlags;
@@ -385,8 +413,14 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
               : Number(pendingFlagsRaw ?? 0) || 0;
           setModerationStatus({ quarantined, pendingFlags });
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0510 player moderation status fetch failed", {
+              postId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
           setModerationStatus((prev) => prev);
         }
       }
@@ -499,25 +533,31 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   };
 
   const handleShare = () => {
-    try {
-      const url = `${window.location.origin}/player/${postId}`;
-      if (navigator.share) {
-        navigator
-          .share({
-            title: post?.title ?? "Vibecodr vibe",
-            text: post?.description,
-            url,
-          })
-          .catch(() => {
-            // user cancelled; ignore
-          });
-      } else {
-        navigator.clipboard.writeText(url).catch(() => {
-          // ignore clipboard errors
+    const url = `${window.location.origin}/player/${postId}`;
+    if (navigator.share) {
+      navigator
+        .share({
+          title: post?.title ?? "Vibecodr vibe",
+          text: post?.description,
+          url,
+        })
+        .catch((error) => {
+          if (typeof console !== "undefined" && typeof console.debug === "function") {
+            console.debug("E-VIBECODR-0511 player share failed or was cancelled", {
+              postId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         });
-      }
-    } catch {
-      // no-op
+    } else {
+      navigator.clipboard.writeText(url).catch((error) => {
+        if (typeof console !== "undefined" && typeof console.error === "function") {
+          console.error("E-VIBECODR-0512 player clipboard write failed", {
+            postId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
     }
   };
 

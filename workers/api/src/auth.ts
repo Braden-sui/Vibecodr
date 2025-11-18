@@ -294,7 +294,11 @@ function parseConfiguredAudiences(audienceEnv?: string): string[] {
     if (typeof parsed === "string" && parsed.trim()) {
       return [parsed.trim()];
     }
-  } catch {
+  } catch (error) {
+    console.error("E-VIBECODR-0009 auth audience env JSON parse failed", {
+      audienceEnv,
+      error: error instanceof Error ? error.message : String(error),
+    });
     // fall through to comma-delimited parsing
   }
 

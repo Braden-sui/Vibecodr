@@ -8,7 +8,7 @@ export type ProfilePageData = {
     handle: string;
     name?: string | null;
     avatarUrl?: string | null;
-    plan?: string;
+    plan?: string | null;
   };
   header: {
     tagline?: string | null;
@@ -24,7 +24,7 @@ export type ProfilePageData = {
     title: string;
     description?: string | null;
     coverKey?: string | null;
-    tags?: string[];
+    tags?: string[] | null;
   }>;
   badges: Array<{
     id: string;

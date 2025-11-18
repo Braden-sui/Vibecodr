@@ -101,7 +101,11 @@ async function doStatus(_req: Request, env: Env): Promise<Response> {
         blobs: ["do_status"],
         doubles: [1],
       });
-    } catch {}
+    } catch (error) {
+      console.error("E-VIBECODR-0206 doStatus analytics write failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return new Response(res.body, { status: res.status, headers: res.headers });
   } catch (e: any) {
     return json({ error: "do status failed", details: e?.message || "unknown" }, 500);

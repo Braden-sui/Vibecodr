@@ -260,7 +260,6 @@ export default function FeedPage() {
     // Add new post to the top of the feed optimistically
     setPosts((prev) => [newPost, ...prev]);
     setFeedError(null);
-    setIsFallbackData(false);
     trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
   };
 
