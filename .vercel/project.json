@@ -4,12 +4,12 @@
   "projectName": "vibecodr",
   "settings": {
     "createdAt": 1763359233753,
-    "framework": null,
-    "devCommand": null,
-    "installCommand": null,
-    "buildCommand": null,
-    "outputDirectory": null,
-    "rootDirectory": null,
+    "framework": "nextjs",
+    "devCommand": "pnpm dev",
+    "installCommand": "pnpm install",
+    "buildCommand": "pnpm run build",
+    "outputDirectory": ".vercel/output",
+    "rootDirectory": "apps/web",
     "directoryListing": false,
     "nodeVersion": "22.x"
   }

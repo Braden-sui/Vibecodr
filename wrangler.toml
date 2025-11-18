@@ -2,7 +2,9 @@ name = "vibecodr-web"
 compatibility_date = "2024-10-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
-pages_build_command = "pnpm run cf:build"
+
+[build]
+command = "pnpm run cf:build"
 
 [vars]
 NEXT_PUBLIC_BASE_URL = "https://vibecodr.space"
