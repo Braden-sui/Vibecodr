@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "cf:build": "pnpm --dir apps/web dlx vercel@47.0.4 build && rm -rf .vercel/output/functions/_not-found.func && ln -sfn apps/web/.next .next && pnpm dlx @cloudflare/next-on-pages@1 --skip-build",
+    "cf:build": "pnpm --dir apps/web dlx vercel@48.10.3 build && rm -rf .vercel/output/functions/_not-found.func && ln -sfn apps/web/.next .next && pnpm dlx @cloudflare/next-on-pages@1 --skip-build",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "typecheck": "turbo run typecheck",
