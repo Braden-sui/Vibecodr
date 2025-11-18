@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "build:web": "turbo run build --filter=vibecodr-web && cd apps/web && pnpm dlx @opennextjs/cloudflare build",
-    "cf:build": "node ./scripts/cf-build.mjs",
+    "cf:build": "pnpm --dir apps/web dlx vercel@47.0.4 build && rm -rf .vercel/output/functions/_not-found.func && ln -sfn apps/web/.next .next && pnpm dlx @cloudflare/next-on-pages@1 --skip-build",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "typecheck": "turbo run typecheck",
