@@ -65,8 +65,24 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
       }
 
       if (!response.ok) {
-        const error = await response.json().catch(() => null);
-        throw new Error(error?.error || "Failed to submit report");
+        let errorBody: any = null;
+        try {
+          errorBody = await response.json();
+        } catch (error) {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0506 submit report error JSON parse failed", {
+              targetType,
+              targetId,
+              status: response.status,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        const description =
+          errorBody && typeof errorBody.error === "string"
+            ? errorBody.error
+            : "Failed to submit report";
+        throw new Error(description);
       }
 
       setSubmitted(true);

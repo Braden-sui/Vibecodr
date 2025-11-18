@@ -175,7 +175,18 @@ export default function FeedPage() {
         );
 
         if (!response.ok) {
-          const payload = await response.json().catch(() => null);
+          let payload: any = null;
+          try {
+            payload = await response.json();
+          } catch (error) {
+            if (typeof console !== "undefined" && typeof console.error === "function") {
+              console.error("E-VIBECODR-0507 feed error JSON parse failed", {
+                status: response.status,
+                mode,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
           if (cancelled) return;
           setPosts([]);
           setLastUpdated(null);

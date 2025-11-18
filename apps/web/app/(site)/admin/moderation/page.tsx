@@ -133,9 +133,19 @@ export default function ModerationQueue() {
         return;
       }
 
-      const data = (await res.json().catch(() => null)) as
-        | { error?: unknown; message?: unknown }
-        | null;
+      let data: { error?: unknown; message?: unknown } | null = null;
+      try {
+        data = (await res.json()) as { error?: unknown; message?: unknown } | null;
+      } catch (error) {
+        if (typeof console !== "undefined" && typeof console.error === "function") {
+          console.error("E-VIBECODR-0508 moderation resolve error JSON parse failed", {
+            reportId,
+            action,
+            status: res.status,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       if (!res.ok) {
         const message =
           (data &&

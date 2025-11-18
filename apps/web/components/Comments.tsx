@@ -126,8 +126,20 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       if (!response.ok) {
+        let errorBody: any = null;
+        try {
+          errorBody = await response.json();
+        } catch (error) {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0504 comment create error JSON parse failed", {
+              postId,
+              status: response.status,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         const msg =
-          (await response.json().catch(() => null))?.error || "Failed to create comment";
+          (errorBody && typeof errorBody.error === "string") || "Failed to create comment";
         throw new Error(msg);
       }
 
@@ -169,8 +181,20 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       if (!response.ok) {
+        let errorBody: any = null;
+        try {
+          errorBody = await response.json();
+        } catch (error) {
+          if (typeof console !== "undefined" && typeof console.error === "function") {
+            console.error("E-VIBECODR-0505 comment delete error JSON parse failed", {
+              postId,
+              status: response.status,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         const msg =
-          (await response.json().catch(() => null))?.error || "Failed to delete comment";
+          (errorBody && typeof errorBody.error === "string") || "Failed to delete comment";
         throw new Error(msg);
       }
 
