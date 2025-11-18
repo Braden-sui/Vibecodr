@@ -47,15 +47,12 @@ async function main() {
   const vercelOutputDir = path.join(webDir, ".vercel", "output");
   const notFoundFunctionDir = path.join(vercelOutputDir, "functions", "_not-found.func");
 
-  console.log("[1/3] Building Next.js output via `vercel build`...");
-  await run("pnpm", ["exec", "vercel", "build"], { cwd: webDir });
+  console.log("[1/2] Building Next.js output for Cloudflare via `@cloudflare/next-on-pages`...");
+  await run("pnpm", ["dlx", "@cloudflare/next-on-pages", "build"], { cwd: webDir });
 
-  console.log("[2/3] Cleaning Node-oriented _not-found serverless function...");
+  console.log("[2/2] Cleaning Node-oriented _not-found serverless function and verifying output...");
   await ensureDirectoryExists(vercelOutputDir);
   await removeNotFoundFunction(notFoundFunctionDir);
-
-  console.log("[3/3] Packaging for Cloudflare Pages via next-on-pages (skip build)...");
-  await run("pnpm", ["dlx", "@cloudflare/next-on-pages", "build", "--skip-build"], { cwd: webDir });
 
   console.log("Cloudflare build complete. Worker bundle located in apps/web/.vercel/output/static/_worker.js");
 }
