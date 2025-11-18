@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { moderationApi } from "@/lib/api";
@@ -30,6 +30,7 @@ type PublicMetadata = {
 
 export default function FlaggedPostsPage() {
   const { user, isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -40,6 +41,17 @@ export default function FlaggedPostsPage() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<FlaggedItem[]>([]);
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   useEffect(() => {
     if (!isModeratorOrAdmin) {
       return;
@@ -49,7 +61,8 @@ export default function FlaggedPostsPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch("/api/moderation/flagged-posts?status=pending&limit=50");
+        const init = await buildAuthInit();
+        const res = await moderationApi.listFlaggedPosts({ status: "pending", limit: 50 }, init);
         if (res.status === 401) {
           toast({ title: "Sign in required", description: "Please sign in to view moderation", variant: "warning" });
           return;
@@ -60,7 +73,7 @@ export default function FlaggedPostsPage() {
         }
         if (!res.ok) throw new Error(`Failed to fetch flagged posts (${res.status})`);
         const data = await res.json();
-        if (!cancelled) setItems(data.items || []);
+        if (!cancelled) setItems((data.items as FlaggedItem[]) || []);
       } catch (err) {
         if (!cancelled) {
           toast({ title: "Failed to load", description: err instanceof Error ? err.message : "Unknown error", variant: "error" });
@@ -69,7 +82,7 @@ export default function FlaggedPostsPage() {
         if (!cancelled) setLoading(false);
       }
     }
-    load();
+    void load();
     return () => {
       cancelled = true;
     };
@@ -112,7 +125,8 @@ export default function FlaggedPostsPage() {
                       variant="secondary"
                       onClick={async () => {
                         try {
-                          const res = await moderationApi.moderatePost(it.id, "quarantine");
+                          const init = await buildAuthInit();
+                          const res = await moderationApi.moderatePost(it.id, "quarantine", init);
                           if (!res.ok) {
                             let message = "Failed to quarantine";
                             try {
@@ -154,7 +168,8 @@ export default function FlaggedPostsPage() {
                         const ok = window.confirm("Remove this post? This cannot be undone.");
                         if (!ok) return;
                         try {
-                          const res = await moderationApi.moderatePost(it.id, "remove");
+                          const init = await buildAuthInit();
+                          const res = await moderationApi.moderatePost(it.id, "remove", init);
                           if (!res.ok) throw new Error((await res.json()).error || "Failed to remove");
                           setItems((prev) => prev.filter((x) => x.id !== it.id));
                           toast({ title: "Removed", description: "Post has been removed.", variant: "success" });

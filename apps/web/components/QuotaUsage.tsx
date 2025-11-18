@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -24,16 +25,25 @@ interface QuotaData {
 }
 
 export function QuotaUsage() {
+  const { getToken } = useAuth();
   const [quota, setQuota] = useState<QuotaData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchQuota();
-  }, []);
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
 
   const fetchQuota = async () => {
     try {
-      const response = await quotaApi.getUserQuota();
+      const init = await buildAuthInit();
+      const response = await quotaApi.getUserQuota(init);
 
       if (!response.ok) throw new Error("Failed to fetch quota");
 
@@ -45,6 +55,10 @@ export function QuotaUsage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchQuota();
+  }, []);
 
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return "0 B";

@@ -8,12 +8,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { trackClientError } from "@/lib/analytics";
+import { moderationApi } from "@/lib/api";
 
 type ModerationReport = {
   id: string;
@@ -37,6 +38,7 @@ type ResolveAction = "dismiss" | "quarantine";
 
 export default function ModerationQueue() {
   const { user, isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -46,6 +48,17 @@ export default function ModerationQueue() {
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   useEffect(() => {
     if (!isAdmin) return;
 
@@ -54,7 +67,8 @@ export default function ModerationQueue() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch("/api/moderation/reports?status=pending&limit=50");
+        const init = await buildAuthInit();
+        const res = await moderationApi.listReports({ status: "pending", limit: 50 }, init);
 
         if (res.status === 401) {
           toast({
@@ -108,13 +122,8 @@ export default function ModerationQueue() {
   async function resolveReport(reportId: string, action: ResolveAction) {
     setSubmittingId(reportId);
     try {
-      const res = await fetch(`/api/moderation/reports/${reportId}/resolve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action }),
-      });
+      const init = await buildAuthInit();
+      const res = await moderationApi.resolveReport(reportId, action, init);
 
       if (res.status === 401) {
         toast({

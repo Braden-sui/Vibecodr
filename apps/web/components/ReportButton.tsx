@@ -25,6 +25,7 @@ import { toast } from "@/lib/toast";
 import { Flag, AlertTriangle } from "lucide-react";
 import { moderationApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
+import { useAuth } from "@clerk/clerk-react";
 
 interface ReportButtonProps {
   targetType: "post" | "comment";
@@ -47,18 +48,34 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
   const [details, setDetails] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const { getToken } = useAuth();
+
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
 
   const handleSubmit = async () => {
     if (!reason) return;
 
     setIsSubmitting(true);
     try {
-      const response = await moderationApi.report({
-        targetType,
-        targetId,
-        reason,
-        details: details.trim() || undefined,
-      });
+      const init = await buildAuthInit();
+      const response = await moderationApi.report(
+        {
+          targetType,
+          targetId,
+          reason,
+          details: details.trim() || undefined,
+        },
+        init,
+      );
 
       if (response.status === 401) {
         redirectToSignIn();

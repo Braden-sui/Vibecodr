@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ type CheckStatus = "pass" | "warning" | "fail";
  */
 export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [title, setTitle] = useState("My Awesome Vibe");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -116,6 +118,17 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
 
   const manifestWarnings = draft?.validationWarnings ?? [];
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   const addTag = () => {
     if (!tagInput.trim()) return;
     if (tags.includes(tagInput.trim())) return;
@@ -172,6 +185,7 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
     );
 
     try {
+      const init = await buildAuthInit();
       const manifestFile = new File(
         [JSON.stringify(manifestToPublish, null, 2)],
         "manifest.json",
@@ -188,7 +202,7 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
           formData.append(entry.path, entry.file, entry.path);
         });
 
-      const publishResponse = await capsulesApi.publish(formData);
+      const publishResponse = await capsulesApi.publish(formData, init);
       if (publishResponse.status === 401) {
         redirectToSignIn();
         return;
@@ -248,7 +262,7 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
         capsuleId,
         tags: tags.length ? tags : undefined,
         coverKey: undefined,
-      });
+      }, init);
 
       if (postResponse.status === 401) {
         redirectToSignIn();

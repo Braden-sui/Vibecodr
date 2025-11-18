@@ -10,7 +10,7 @@ import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { commentsApi, moderationApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 
 interface Comment {
   id: string;
@@ -47,6 +47,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
 
   const { user, isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const viewerId = currentUserId ?? (user?.id ?? undefined);
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
@@ -55,9 +56,21 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const isModeratorOrAdmin =
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   const fetchComments = useCallback(async () => {
     try {
-      const response = await commentsApi.fetch(postId, { limit: 100 });
+      const init = await buildAuthInit();
+      const response = await commentsApi.fetch(postId, { limit: 100 }, init);
       if (!response.ok) throw new Error("Failed to fetch comments");
       const data = await response.json();
       const next: Comment[] = Array.isArray(data.comments) ? (data.comments as Comment[]) : [];
@@ -115,10 +128,12 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
     setNewComment("");
 
     try {
+      const init = await buildAuthInit();
       const response = await commentsApi.create(
         postId,
         trimmed,
-        parentCommentId ? { parentCommentId } : undefined
+        parentCommentId ? { parentCommentId } : undefined,
+        init,
       );
 
       if (response.status === 401) {
@@ -179,9 +194,10 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
     }
 
     try {
+      const init = await buildAuthInit();
       const response = isModeratorOrAdmin
-        ? await moderationApi.moderateComment(commentId, "remove")
-        : await commentsApi.delete(commentId);
+        ? await moderationApi.moderateComment(commentId, "remove", init)
+        : await commentsApi.delete(commentId, init);
 
       if (response.status === 401) {
         redirectToSignIn();

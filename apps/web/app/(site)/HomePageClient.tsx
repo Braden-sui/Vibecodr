@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { Link, useSearchParams, useLocation } from "react-router-dom";
+import { useAuth } from "@clerk/clerk-react";
 import { FeedCard } from "@/components/FeedCard";
 import { VibesComposer } from "@/components/VibesComposer";
 import { Button } from "@/components/ui/button";
@@ -148,11 +148,31 @@ export default function FeedPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
-  const searchParams = useSearchParams();
+  const location = useLocation();
+  const { getToken } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Keep searchTerm synced with URL `q`
   useEffect(() => {
     setSearchTerm(searchParams.get("q") ?? "");
+
+    const modeParam = searchParams.get("mode");
+    if (modeParam === "latest" || modeParam === "following" || modeParam === "foryou") {
+      setMode(modeParam);
+    } else {
+      setMode("latest");
+    }
+
+    const tagsParam = searchParams.get("tags");
+    if (tagsParam && tagsParam.trim()) {
+      const parts = tagsParam
+        .split(",")
+        .map((tag: string) => tag.trim())
+        .filter(Boolean);
+      setSelectedTags(parts);
+    } else {
+      setSelectedTags([]);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -165,6 +185,19 @@ export default function FeedPage() {
     const load = async () => {
       try {
         const t0 = performance.now();
+        let init: RequestInit = { signal: controller.signal };
+        if (typeof getToken === "function") {
+          const token = await getToken({ template: "workers" });
+          if (token) {
+            init = {
+              ...init,
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            };
+          }
+        }
+
         const response = await postsApi.list(
           {
             mode,
@@ -172,7 +205,7 @@ export default function FeedPage() {
             q: searchTerm,
             tags: selectedTags,
           },
-          { signal: controller.signal }
+          init,
         );
 
         if (!response.ok) {
@@ -266,7 +299,7 @@ export default function FeedPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [mode, searchTerm, selectedTags]);
+  }, [mode, searchTerm, selectedTags, getToken]);
 
   useEffect(() => {
     if (!searchTerm) return;
@@ -316,17 +349,33 @@ export default function FeedPage() {
 
   const handleModeChange = (value: string) => {
     const nextMode = value as FeedMode;
-    setMode(nextMode);
+    const current = (searchParams.get("mode") as FeedMode | null) ?? "latest";
+    if (current === nextMode) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextMode === "latest") {
+      nextParams.delete("mode");
+    } else {
+      nextParams.set("mode", nextMode);
+    }
+    setSearchParams(nextParams, { replace: true });
     trackEvent("feed_mode_changed", { mode: nextMode });
   };
 
   const toggleTag = (tag: string) => {
-    setSelectedTags((prev) => {
-      const exists = prev.includes(tag);
-      const next = exists ? prev.filter((t) => t !== tag) : [...prev, tag];
-      trackEvent("feed_tag_toggle", { tag, active: !exists, mode });
-      return next;
-    });
+    const exists = selectedTags.includes(tag);
+    const nextTags = exists ? selectedTags.filter((t) => t !== tag) : [...selectedTags, tag];
+    trackEvent("feed_tag_toggle", { tag, active: !exists, mode });
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTags.length > 0) {
+      nextParams.set("tags", nextTags.join(","));
+    } else {
+      nextParams.delete("tags");
+    }
+    setSearchParams(nextParams, { replace: true });
   };
 
   const emptyState = (
@@ -334,7 +383,7 @@ export default function FeedPage() {
       <p className="text-lg font-semibold">No vibes match that query yet.</p>
       <p className="mt-2 text-sm text-muted-foreground">
         Try a different tag or{" "}
-        <Link prefetch={false} href="/studio" className="text-primary underline-offset-4 hover:underline">
+        <Link to="/studio" className="text-primary underline-offset-4 hover:underline">
           publish one now
         </Link>
         .
@@ -355,7 +404,7 @@ export default function FeedPage() {
         </div>
         <div className="flex justify-center">
           <Button asChild variant="outline">
-            <Link href="/post/new">Share a vibe</Link>
+            <Link to="/post/new">Share a vibe</Link>
           </Button>
         </div>
       </div>

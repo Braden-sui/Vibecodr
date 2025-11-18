@@ -5,6 +5,7 @@ describe("ensureUserSynced", () => {
   beforeEach(() => {
     __resetUserSyncForTests();
     vi.stubGlobal("window", {} as Window & typeof globalThis);
+    process.env.WORKER_API_BASE = "https://worker.test";
   });
 
   afterEach(() => {
@@ -19,11 +20,24 @@ describe("ensureUserSynced", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await ensureUserSynced();
-    await ensureUserSynced();
+    const input = {
+      user: {
+        id: "user_123",
+        handle: "signedin",
+        name: "Signed In",
+        avatarUrl: "https://avatar.cdn/test.png",
+        bio: null,
+        plan: undefined,
+      },
+      token: "test-worker-token",
+    } as const;
+
+    await ensureUserSynced(input);
+    await ensureUserSynced(input);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith("/api/users/sync", { method: "POST" });
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://worker.test/users/sync");
   });
 
   it("retries after a failed sync", async () => {
@@ -41,8 +55,20 @@ describe("ensureUserSynced", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(ensureUserSynced()).rejects.toThrow();
-    await ensureUserSynced();
+    const input = {
+      user: {
+        id: "user_123",
+        handle: "signedin",
+        name: "Signed In",
+        avatarUrl: "https://avatar.cdn/test.png",
+        bio: null,
+        plan: undefined,
+      },
+      token: "test-worker-token",
+    } as const;
+
+    await expect(ensureUserSynced(input)).rejects.toThrow();
+    await ensureUserSynced(input);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -58,8 +84,20 @@ describe("ensureUserSynced", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const call1 = ensureUserSynced();
-    const call2 = ensureUserSynced();
+    const input = {
+      user: {
+        id: "user_123",
+        handle: "signedin",
+        name: "Signed In",
+        avatarUrl: "https://avatar.cdn/test.png",
+        bio: null,
+        plan: undefined,
+      },
+      token: "test-worker-token",
+    } as const;
+
+    const call1 = ensureUserSynced(input);
+    const call2 = ensureUserSynced(input);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     pendingResolve({

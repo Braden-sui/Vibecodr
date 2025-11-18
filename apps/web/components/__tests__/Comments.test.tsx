@@ -15,7 +15,7 @@ const mockUseUser = vi.fn(() => ({
   isSignedIn: true,
 }));
 
-vi.mock("@clerk/nextjs", () => ({
+vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
 }));
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,7 @@ function buildInitialBlocks(): LayoutBlock[] {
 
 export default function ProfileSettingsPage() {
   const { user, isSignedIn, isLoaded } = useUser();
+  const { getToken } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -118,6 +119,17 @@ export default function ProfileSettingsPage() {
 
   const [theme, setTheme] = useState<ProfileTheme | null>(null);
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
+
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -137,7 +149,8 @@ export default function ProfileSettingsPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await profileApi.get(baseHandle);
+        const init = await buildAuthInit();
+        const res = await profileApi.get(baseHandle, init);
         if (res.status === 401) {
           redirectToSignIn("/settings/profile");
           return;
@@ -333,7 +346,8 @@ export default function ProfileSettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await profileApi.update(payload);
+      const init = await buildAuthInit();
+      const res = await profileApi.update(payload, init);
       if (res.status === 401) {
         redirectToSignIn("/settings/profile");
         return;

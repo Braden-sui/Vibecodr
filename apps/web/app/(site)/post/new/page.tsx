@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useAuth } from "@clerk/clerk-react";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/zipBundle";
 
 export default function ShareVibePage() {
+  const { getToken } = useAuth();
   const [title, setTitle] = useState("");
   const [caption, setCaption] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
@@ -35,6 +37,17 @@ export default function ShareVibePage() {
   const [zipWarnings, setZipWarnings] = useState<ZipManifestIssue[]>([]);
   const [zipPublishWarnings, setZipPublishWarnings] = useState<string[]>([]);
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   const isImporting = importStatus === "importing";
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,7 +64,8 @@ export default function ShareVibePage() {
     setImportStatus("importing");
 
     try {
-      const response = await capsulesApi.importGithub({ url: trimmedUrl });
+      const init = await buildAuthInit();
+      const response = await capsulesApi.importGithub({ url: trimmedUrl }, init);
 
       if (response.status === 401) {
         redirectToSignIn("/post/new");
@@ -116,7 +130,8 @@ export default function ShareVibePage() {
       setZipWarnings(analysis.warnings ?? []);
 
       const formData = buildCapsuleFormData(analysis.manifest, analysis.files);
-      const response = await capsulesApi.publish(formData);
+      const init = await buildAuthInit();
+      const response = await capsulesApi.publish(formData, init);
 
       if (response.status === 401) {
         redirectToSignIn("/post/new");
@@ -175,12 +190,13 @@ export default function ShareVibePage() {
 
     try {
       const type: "app" | "report" = capsuleId ? "app" : "report";
+      const init = await buildAuthInit();
       const response = await postsApi.create({
         title: trimmedTitle,
         description: trimmedCaption || undefined,
         type,
         capsuleId: capsuleId ?? undefined,
-      });
+      }, init);
 
       if (response.status === 401) {
         redirectToSignIn("/post/new");
@@ -341,10 +357,10 @@ export default function ShareVibePage() {
 
               <div className="flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
-                  <Link prefetch={false} href="/studio">Open Studio</Link>
+                  <Link to="/studio">Open Studio</Link>
                 </Button>
                 <Button asChild variant="ghost" size="sm">
-                  <Link prefetch={false} href="/studio/import">Import a new vibe</Link>
+                  <Link to="/studio/import">Import a new vibe</Link>
                 </Button>
               </div>
             </CardContent>
@@ -462,7 +478,7 @@ export default function ShareVibePage() {
                   up. {sharedPostId && (
                     <>
                       {" "}
-                      <Link href={`/player/${sharedPostId}`} className="underline">
+                      <Link to={`/player/${sharedPostId}`} className="underline">
                         View it in the player.
                       </Link>
                     </>

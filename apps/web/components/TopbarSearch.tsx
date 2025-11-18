@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "react-router-dom";
+
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export function TopbarSearch() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const initial = searchParams.get("q") ?? "";
   const [open, setOpen] = useState<boolean>(false);
@@ -27,12 +26,21 @@ export function TopbarSearch() {
   }, [value]);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (debounced.trim()) params.set("q", debounced.trim());
-    else params.delete("q");
-    router.replace(`${pathname}?${params.toString()}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced]);
+    const trimmed = debounced.trim();
+    const currentQ = searchParams.get("q") ?? "";
+    if (trimmed === currentQ) {
+      return;
+    }
+
+    const next = new URLSearchParams(searchParams);
+    if (trimmed) {
+      next.set("q", trimmed);
+    } else {
+      next.delete("q");
+    }
+
+    setSearchParams(next, { replace: true });
+  }, [debounced, searchParams, setSearchParams]);
 
   return (
     <div className="flex items-center gap-2 flex-row-reverse">

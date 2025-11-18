@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Loader2, Upload } from "lucide-react";
 import { capsulesApi, postsApi } from "@/lib/api";
@@ -49,6 +50,7 @@ const parseTags = (raw: string) =>
 
 export default function StudioPublish() {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tagsInput, setTagsInput] = useState("");
@@ -60,6 +62,17 @@ export default function StudioPublish() {
   const [error, setError] = useState<string | null>(null);
   const [quotaError, setQuotaError] = useState<QuotaError>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
 
   const directoryInputRef = useCallback((node: HTMLInputElement | null) => {
     if (node) {
@@ -133,7 +146,8 @@ export default function StudioPublish() {
 
     try {
       setStep("publishing");
-      const publishResponse = await capsulesApi.publish(formData);
+      const init = await buildAuthInit();
+      const publishResponse = await capsulesApi.publish(formData, init);
 
       if (publishResponse.status === 401) {
         redirectToSignIn("/studio/publish");
@@ -191,7 +205,7 @@ export default function StudioPublish() {
         type: "app",
         capsuleId: publishJson.capsuleId,
         tags: parseTags(tagsInput),
-      });
+      }, init);
 
       if (postResponse.status === 401) {
         redirectToSignIn("/studio/publish");

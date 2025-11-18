@@ -5,7 +5,7 @@ import { FeedCard } from "../FeedCard";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
 
-vi.mock("@clerk/nextjs", () => ({
+vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
 }));
 

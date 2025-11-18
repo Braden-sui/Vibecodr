@@ -10,7 +10,7 @@ Clerk issues the primary session cookies that live on the Pages runtime. Protect
 ## Request Path: Feed → Studio → Worker
 
 1. **Feed** `postsApi.list` calls `/api/posts?...` on the Pages runtime. The catch-all proxy in `apps/web/app/api/[...path]/route.ts` strips hop-by-hop headers, calls `auth().getToken({ template: "workers" })`, and forwards the request to `${WORKER_API_BASE}/posts?...` with `Authorization: Bearer <worker-token>`.
-2. **Studio entry** calls `ensureUserSynced()` which POSTs `/api/users/sync`. That route now pulls the same worker token, injects it in the `Authorization` header, and sends the Clerk-normalized profile to the Worker.
+2. **Studio entry** mounts `EnsureUserSynced`, which uses Clerk client hooks to call `ensureUserSynced({ user, token })`. That helper POSTs directly to `${WORKER_API_BASE}/users/sync` with `Authorization: Bearer <worker-token>` and the Clerk-normalized profile.
 3. **Worker API** handlers such as `syncUser` and `capsules/publish` use `requireUser` to verify the JWT via Clerk JWKS, enforce that the `sub` matches the body payload, and reject mismatches with `E-VIBECODR-0404`.
 4. **Publish / heavy actions** like `capsulesApi.publish` go through the catch-all proxy, so the Worker receives the same signed bearer token and can audit/authorize the action against plan + quota state.
 
@@ -29,10 +29,9 @@ sequenceDiagram
   WorkerAPI->>Clerk: Verify JWT via JWKS
   WorkerAPI-->>PagesProxy: Feed JSON
   PagesProxy-->>Browser: Feed response
-  Browser->>PagesProxy: POST /api/users/sync
-  PagesProxy->>Clerk: getToken("workers")
-  PagesProxy->>WorkerAPI: POST /users/sync (Bearer token, user payload)
-  WorkerAPI-->>PagesProxy: Sync OK / errors
+  Browser->>WorkerAPI: POST /users/sync (Clerk cookies, via token from useAuth.getToken("workers"))
+  WorkerAPI->>Clerk: Verify JWT via JWKS
+  WorkerAPI-->>Browser: Sync OK / errors
   Browser->>PagesProxy: POST /api/capsules/publish (FormData)
   PagesProxy->>WorkerAPI: POST /capsules/publish (Bearer token + blob)
   WorkerAPI-->>Browser: Publish response

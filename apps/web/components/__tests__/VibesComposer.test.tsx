@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { VibesComposer } from "../VibesComposer";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/clerk-react";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { postsApi, capsulesApi, coversApi } from "@/lib/api";
 
-vi.mock("@clerk/nextjs", () => ({
+vi.mock("@clerk/clerk-react", () => ({
   useUser: vi.fn(),
 }));
 

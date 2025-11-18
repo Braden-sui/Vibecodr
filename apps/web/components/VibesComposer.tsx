@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useRef, FormEvent, ChangeEvent } from "react";
-import Image from "next/image";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,12 +47,24 @@ export interface VibesComposerProps {
  */
 export function VibesComposer({ onPostCreated, className }: VibesComposerProps) {
   const { user, isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const [mode, setMode] = useState<ComposerMode>("status");
   const [isExpanded, setIsExpanded] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
 
   // GitHub import state
   const [githubUrl, setGithubUrl] = useState("");
@@ -143,7 +154,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     try {
       setIsUploadingCover(true);
-      const response = await coversApi.upload(file);
+      const init = await buildAuthInit();
+      const response = await coversApi.upload(file, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -201,7 +213,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     setImportStatus("importing");
 
     try {
-      const response = await capsulesApi.importGithub({ url: trimmedUrl });
+      const init = await buildAuthInit();
+      const response = await capsulesApi.importGithub({ url: trimmedUrl }, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -268,7 +281,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       setZipManifestWarnings(analysis.warnings ?? []);
 
       const formData = buildCapsuleFormData(analysis.manifest, analysis.files);
-      const response = await capsulesApi.publish(formData);
+      const init = await buildAuthInit();
+      const response = await capsulesApi.publish(formData, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -405,7 +419,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
         const htmlFile = new File([html], "index.html", { type: "text/html" });
         formData.append("index.html", htmlFile);
 
-        const publishResponse = await capsulesApi.publish(formData);
+        const init = await buildAuthInit();
+        const publishResponse = await capsulesApi.publish(formData, init);
 
         if (publishResponse.status === 401) {
           redirectToSignIn();
@@ -437,13 +452,14 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       const type: "app" | "report" = effectiveCapsuleId ? "app" : "report";
 
       // Create the post
+      const init = await buildAuthInit();
       const response = await postsApi.create({
         title: trimmedTitle,
         description: trimmedDescription || undefined,
         type,
         capsuleId: effectiveCapsuleId ?? undefined,
         coverKey: type === "app" ? coverKey ?? undefined : undefined,
-      });
+      }, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -1026,13 +1042,10 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                     {imagePreview && (
                       <div className="space-y-2">
                         <div className="relative aspect-video w-full overflow-hidden rounded-md">
-                          <Image
-                            src={imagePreview}
+                          <img
+                            src={imagePreview ?? ""}
                             alt="Preview"
-                            fill
-                            sizes="(max-width: 768px) 100vw, 640px"
-                            className="object-cover"
-                            unoptimized
+                            className="h-full w-full object-cover"
                           />
                           <Button
                             type="button"

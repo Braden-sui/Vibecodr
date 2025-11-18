@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,7 @@ import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { capsulesApi, moderationApi, postsApi, usersApi } from "@/lib/api";
 import { ReportButton } from "@/components/ReportButton";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,8 +59,9 @@ const MAX_MANIFEST_PREFETCH = 3;
 const PREVIEW_LOG_LIMIT = 40;
 
 export function FeedCard({ post }: FeedCardProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -97,6 +97,17 @@ export function FeedCard({ post }: FeedCardProps) {
     setIsFollowingAuthor(post.viewer?.followingAuthor ?? false);
   }, [post.id, post.stats.likes, post.viewer?.liked, post.viewer?.followingAuthor]);
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   const pushPreviewLog = useCallback(
     (entry: { level: PreviewLogEntry["level"]; message: string; timestamp?: number }) => {
       const normalized: PreviewLogEntry = {
@@ -114,7 +125,8 @@ export function FeedCard({ post }: FeedCardProps) {
 
     setIsModerating(true);
     try {
-      const response = await moderationApi.moderatePost(post.id, action);
+      const init = await buildAuthInit();
+      const response = await moderationApi.moderatePost(post.id, action, init);
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -446,7 +458,10 @@ export function FeedCard({ post }: FeedCardProps) {
     setIsLiking(true);
 
     try {
-      const response = wasLiked ? await postsApi.unlike(post.id) : await postsApi.like(post.id);
+      const init = await buildAuthInit();
+      const response = wasLiked
+        ? await postsApi.unlike(post.id, init)
+        : await postsApi.like(post.id, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -486,7 +501,10 @@ export function FeedCard({ post }: FeedCardProps) {
     setIsFollowingAuthor(nextState);
 
     try {
-      const response = nextState ? await usersApi.follow(post.author.id) : await usersApi.unfollow(post.author.id);
+      const init = await buildAuthInit();
+      const response = nextState
+        ? await usersApi.follow(post.author.id, init)
+        : await usersApi.unfollow(post.author.id, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -514,9 +532,9 @@ export function FeedCard({ post }: FeedCardProps) {
     e.stopPropagation();
     persistPreviewHandoff("comments");
     if (isApp) {
-      router.push(`/player/${post.id}?tab=comments`);
+      navigate(`/player/${post.id}?tab=comments`);
     } else {
-      router.push(`/post/${post.id}`);
+      navigate(`/post/${post.id}`);
     }
   };
 
@@ -524,7 +542,7 @@ export function FeedCard({ post }: FeedCardProps) {
     e.preventDefault();
     e.stopPropagation();
     if (isApp && capsuleId) {
-      router.push(`/studio?remixFrom=${capsuleId}`);
+      navigate(`/studio?remixFrom=${capsuleId}`);
     }
   };
 
@@ -594,7 +612,7 @@ export function FeedCard({ post }: FeedCardProps) {
         onMouseLeave={handleMouseLeave}
         className="relative"
       >
-        <Link href={detailHref} onClick={() => persistPreviewHandoff("cover")}>
+        <Link to={detailHref} onClick={() => persistPreviewHandoff("cover")}>
           <div
             className={cn(
               "relative aspect-video w-full overflow-hidden bg-gradient-to-br",
@@ -689,7 +707,7 @@ export function FeedCard({ post }: FeedCardProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 space-y-1">
-            <Link href={detailHref} onClick={() => persistPreviewHandoff("title")}>
+            <Link to={detailHref} onClick={() => persistPreviewHandoff("title")}>
               <h3 className="line-clamp-2 font-semibold leading-tight hover:text-primary">
                 {post.title}
               </h3>
@@ -736,7 +754,7 @@ export function FeedCard({ post }: FeedCardProps) {
         {/* Author */}
         <div className="flex items-center justify-between gap-2">
           <Link
-            href={`/u/${post.author.handle}`}
+            to={`/u/${post.author.handle}`}
             className="flex items-center gap-2 text-sm hover:underline"
           >
             <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />

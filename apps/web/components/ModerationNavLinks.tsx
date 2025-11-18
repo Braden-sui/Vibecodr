@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { Link } from "react-router-dom";
+import { useUser } from "@clerk/clerk-react";
 
 type PublicMetadata = {
   role?: string;
@@ -22,11 +22,11 @@ export function ModerationNavLinks() {
 
   return (
     <>
-      <Link href="/moderation/flagged" className="hover:text-primary">
+      <Link to="/moderation/flagged" className="hover:text-primary">
         Moderation
       </Link>
       {isAdmin && (
-        <Link href="/moderation/audit" className="hover:text-primary">
+        <Link to="/moderation/audit" className="hover:text-primary">
           Audit log
         </Link>
       )}

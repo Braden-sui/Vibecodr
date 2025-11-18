@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
+import { moderationApi } from "@/lib/api";
 
 type AuditEntry = {
   id: string;
@@ -22,6 +23,7 @@ type PublicMetadata = {
 
 export default function ModerationAuditPage() {
   const { user, isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -29,6 +31,17 @@ export default function ModerationAuditPage() {
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
+
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -38,7 +51,8 @@ export default function ModerationAuditPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch("/api/moderation/audit?limit=100");
+        const init = await buildAuthInit();
+        const res = await moderationApi.getAuditLog({ limit: 100 }, init);
         if (res.status === 401) {
           toast({
             title: "Sign in required",

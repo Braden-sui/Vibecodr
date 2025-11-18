@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { Link, useSearchParams } from "react-router-dom";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import {
   PlayerIframe,
   type PlayerIframeHandle,
@@ -66,7 +65,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const flushLogsTimeoutRef = useRef<number | null>(null);
   const handoffPrefillAppliedRef = useRef(false);
   const { user, isSignedIn } = useUser();
-  const searchParams = useSearchParams();
+  const { getToken } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -95,6 +95,36 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     []
   );
 
+  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
+  const handleDrawerTabChange = useCallback(
+    (next: "notes" | "remix" | "chat") => {
+      const current = searchParams.get("tab") ?? "notes";
+      const canonical = next === "chat" ? "chat" : next === "remix" ? "remix" : "notes";
+      if (current === canonical) {
+        return;
+      }
+
+      const nextParams = new URLSearchParams(searchParams);
+      if (canonical === "notes") {
+        nextParams.delete("tab");
+      } else {
+        nextParams.set("tab", canonical);
+      }
+      setSearchParams(nextParams, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
   useEffect(() => {
     handoffPrefillAppliedRef.current = false;
   }, [postId]);
@@ -113,7 +143,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
     setIsUnquarantining(true);
     try {
-      const response = await moderationApi.moderatePost(post.id, "unquarantine");
+      const init = await buildAuthInit();
+      const response = await moderationApi.moderatePost(post.id, "unquarantine", init);
       if (!response.ok) {
         // Soft-fail: leave current banner; moderators can retry or use other tools.
         return;
@@ -356,7 +387,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await postsApi.get(postId);
+        const init = await buildAuthInit();
+        const response = await postsApi.get(postId, init);
         if (!response.ok) {
           if (response.status === 404) {
             setError("not_found");
@@ -405,7 +437,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
     const loadStatus = async () => {
       try {
-        const res = await fetch(`/api/moderation/posts/${postId}/status`);
+        const init = await buildAuthInit();
+        const res = await moderationApi.getPostStatus(postId, init);
         if (!res.ok) {
           return;
         }
@@ -724,6 +757,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             notes={post?.description}
             remixInfo={{ changes: 0 }}
             initialTab={initialTab}
+            onTabChange={handleDrawerTabChange}
           />
         </div>
       </div>

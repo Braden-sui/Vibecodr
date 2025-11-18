@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useAuth } from "@clerk/clerk-react";
+import { Link, useLocation } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,8 +39,9 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const pathname = usePathname();
+  const location = useLocation();
   const hasFetchedInitialCountRef = useRef(false);
+  const { getToken } = useAuth();
 
   useEffect(() => {
     let isMounted = true;
@@ -67,7 +68,7 @@ export function NotificationBell() {
       return;
     }
     fetchUnreadCount();
-  }, [pathname]);
+  }, [location.pathname]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     setIsOpen(nextOpen);
@@ -78,7 +79,19 @@ export function NotificationBell() {
 
   const fetchUnreadCount = async () => {
     try {
-      const response = await notificationsApi.getUnreadCount();
+      let init: RequestInit | undefined;
+      if (typeof getToken === "function") {
+        const token = await getToken({ template: "workers" });
+        if (token) {
+          init = {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          };
+        }
+      }
+
+      const response = await notificationsApi.getUnreadCount(init);
       if (!response.ok) return;
       const data = await response.json();
       setUnreadCount(data.count || 0);
@@ -89,7 +102,19 @@ export function NotificationBell() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await notificationsApi.summary({ limit: 20 });
+      let init: RequestInit | undefined;
+      if (typeof getToken === "function") {
+        const token = await getToken({ template: "workers" });
+        if (token) {
+          init = {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          };
+        }
+      }
+
+      const response = await notificationsApi.summary({ limit: 20 }, init);
       if (!response.ok) return;
       const data = await response.json();
       setNotifications(data.notifications || []);
@@ -103,7 +128,19 @@ export function NotificationBell() {
 
   const markAsRead = async (notificationIds?: string[]) => {
     try {
-      const response = await notificationsApi.markRead(notificationIds);
+      let init: RequestInit | undefined;
+      if (typeof getToken === "function") {
+        const token = await getToken({ template: "workers" });
+        if (token) {
+          init = {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          };
+        }
+      }
+
+      const response = await notificationsApi.markRead(notificationIds, init);
 
       if (response.ok) {
         if (notificationIds) {
@@ -195,7 +232,7 @@ export function NotificationBell() {
               {notifications.map((notification) => (
                 <Link
                   key={notification.id}
-                  href={
+                  to={
                     notification.type === "follow"
                       ? `/u/${notification.actor.handle}`
                       : `/player/${notification.post?.id}`

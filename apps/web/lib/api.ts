@@ -1,38 +1,52 @@
-import { ensureUserSynced } from "./user-sync";
 import type { ApiFeedPost } from "@vibecodr/shared";
 import type { UpdateProfilePayload } from "@/lib/profile/schema";
+import { getWorkerApiBase } from "@/lib/worker-api";
 
-// Tiny API client for the Worker API. Consider centralizing auth headers here later.
+// Tiny API client for the Worker API.
+
+function workerUrl(path: string): string {
+  const base = getWorkerApiBase();
+  if (!path) return base;
+  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 type ModerationPostAction = "quarantine" | "unquarantine" | "remove";
 
 type ModerationCommentAction = "remove";
 
 export const moderationApi = {
-  moderatePost(postId: string, action: ModerationPostAction) {
-    return fetch(`/api/moderation/posts/${postId}/action`, {
+  moderatePost(postId: string, action: ModerationPostAction, init?: RequestInit) {
+    return fetch(workerUrl(`/moderation/posts/${postId}/action`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify({ action }),
+      ...init,
     });
   },
-  moderateComment(commentId: string, action: ModerationCommentAction) {
-    return fetch(`/api/moderation/comments/${commentId}/action`, {
+  moderateComment(commentId: string, action: ModerationCommentAction, init?: RequestInit) {
+    return fetch(workerUrl(`/moderation/comments/${commentId}/action`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify({ action }),
+      ...init,
     });
   },
-  report(input: { targetType: "post" | "comment"; targetId: string; reason: string; details?: string }) {
+  report(
+    input: { targetType: "post" | "comment"; targetId: string; reason: string; details?: string },
+    init?: RequestInit,
+  ) {
     const { targetType, targetId, reason, details } = input;
-    return fetch("/api/moderation/report", {
+    return fetch(workerUrl("/moderation/report"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify({
         targetType,
@@ -40,39 +54,109 @@ export const moderationApi = {
         reason,
         details,
       }),
+      ...init,
+    });
+  },
+  listFlaggedPosts(
+    options?: { status?: string; limit?: number; offset?: number },
+    init?: RequestInit,
+  ) {
+    const params = new URLSearchParams();
+    if (options?.status) {
+      params.set("status", options.status);
+    }
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.offset != null) {
+      params.set("offset", String(options.offset));
+    }
+    const query = params.toString();
+    const url = query
+      ? workerUrl(`/moderation/flagged-posts?${query}`)
+      : workerUrl("/moderation/flagged-posts");
+    return fetch(url, init);
+  },
+  getPostStatus(postId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/moderation/posts/${postId}/status`), init);
+  },
+  getAuditLog(options?: { limit?: number; offset?: number }, init?: RequestInit) {
+    const params = new URLSearchParams();
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.offset != null) {
+      params.set("offset", String(options.offset));
+    }
+    const query = params.toString();
+    const url = query ? workerUrl(`/moderation/audit?${query}`) : workerUrl("/moderation/audit");
+    return fetch(url, init);
+  },
+  listReports(
+    options?: { status?: string; limit?: number; offset?: number },
+    init?: RequestInit,
+  ) {
+    const params = new URLSearchParams();
+    if (options?.status) {
+      params.set("status", options.status);
+    }
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.offset != null) {
+      params.set("offset", String(options.offset));
+    }
+    const query = params.toString();
+    const url = query
+      ? workerUrl(`/moderation/reports?${query}`)
+      : workerUrl("/moderation/reports");
+    return fetch(url, init);
+  },
+  resolveReport(reportId: string, action: "dismiss" | "quarantine", init?: RequestInit) {
+    return fetch(workerUrl(`/moderation/reports/${reportId}/resolve`), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify({ action }),
+      ...init,
     });
   },
 } as const;
 
 export const commentsApi = {
-  fetch(postId: string, options?: { limit?: number }) {
+  fetch(postId: string, options?: { limit?: number }, init?: RequestInit) {
     const params = new URLSearchParams();
     if (options?.limit != null) {
       params.set("limit", String(options.limit));
     }
     const query = params.toString();
     const url = query
-      ? `/api/posts/${postId}/comments?${query}`
-      : `/api/posts/${postId}/comments`;
+      ? workerUrl(`/posts/${postId}/comments?${query}`)
+      : workerUrl(`/posts/${postId}/comments`);
 
-    return fetch(url);
+    return fetch(url, init);
   },
-  create(postId: string, body: string, options?: { parentCommentId?: string }) {
+  create(postId: string, body: string, options?: { parentCommentId?: string }, init?: RequestInit) {
     const payload: Record<string, unknown> = { body };
     if (options?.parentCommentId) {
       payload.parentCommentId = options.parentCommentId;
     }
-    return fetch(`/api/posts/${postId}/comments`, {
+    return fetch(workerUrl(`/posts/${postId}/comments`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify(payload),
+      ...init,
     });
   },
-  delete(commentId: string) {
-    return fetch(`/api/comments/${commentId}`, {
+  delete(commentId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/comments/${commentId}`), {
       method: "DELETE",
+      ...init,
     });
   },
 } as const;
@@ -180,20 +264,23 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
 }
 
 export const postsApi = {
-  create: async (input: {
-    title: string;
-    description?: string;
-    type?: "app" | "report";
-    capsuleId?: string | null;
-    tags?: string[];
-    coverKey?: string | null;
-  }) => {
-    await ensureUserSynced();
+  create: async (
+    input: {
+      title: string;
+      description?: string;
+      type?: "app" | "report";
+      capsuleId?: string | null;
+      tags?: string[];
+      coverKey?: string | null;
+    },
+    init?: RequestInit,
+  ) => {
     const { title, description, type = "report", capsuleId, tags, coverKey } = input;
-    return fetch("/api/posts", {
+    return fetch(workerUrl("/posts"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify({
         title,
@@ -203,10 +290,11 @@ export const postsApi = {
         tags,
         coverKey: coverKey ?? undefined,
       }),
+      ...init,
     });
   },
-  get(postId: string) {
-    return fetch(`/api/posts/${postId}`);
+  get(postId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/posts/${postId}`), init);
   },
   list(
     params: {
@@ -215,7 +303,7 @@ export const postsApi = {
       q?: string;
       tags?: string[];
     },
-    init?: RequestInit
+    init?: RequestInit,
   ) {
     const search = new URLSearchParams();
     search.set("mode", params.mode);
@@ -229,68 +317,74 @@ export const postsApi = {
       search.set("tags", params.tags.join(","));
     }
 
-    return fetch(`/api/posts?${search.toString()}`, init);
+    return fetch(workerUrl(`/posts?${search.toString()}`), init);
   },
-  like(postId: string) {
-    return fetch(`/api/posts/${postId}/like`, {
+  like(postId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/posts/${postId}/like`), {
       method: "POST",
+      ...init,
     });
   },
-  unlike(postId: string) {
-    return fetch(`/api/posts/${postId}/like`, {
+  unlike(postId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/posts/${postId}/like`), {
       method: "DELETE",
+      ...init,
     });
   },
 } as const;
 
 export const coversApi = {
-  upload(file: File) {
+  upload(file: File, init?: RequestInit) {
     const contentType = file.type || "application/octet-stream";
-    return fetch("/api/covers", {
+    return fetch(workerUrl("/covers"), {
       method: "POST",
       headers: {
         "Content-Type": contentType,
+        ...(init?.headers || {}),
       },
       body: file,
+      ...init,
     });
   },
 } as const;
 
 export const usersApi = {
-  getProfile(handle: string) {
-    return fetch(`/api/users/${handle}`);
+  getProfile(handle: string, init?: RequestInit) {
+    return fetch(workerUrl(`/users/${handle}`), init);
   },
-  getPosts(handle: string, options?: { limit?: number }) {
+  getPosts(handle: string, options?: { limit?: number }, init?: RequestInit) {
     const params = new URLSearchParams();
     if (options?.limit != null) {
       params.set("limit", String(options.limit));
     }
     const query = params.toString();
     const url = query
-      ? `/api/users/${handle}/posts?${query}`
-      : `/api/users/${handle}/posts`;
-    return fetch(url);
+      ? workerUrl(`/users/${handle}/posts?${query}`)
+      : workerUrl(`/users/${handle}/posts`);
+    return fetch(url, init);
   },
-  checkFollowing(userId: string, targetId: string) {
-    return fetch(`/api/users/${userId}/check-following?targetId=${targetId}`);
+  checkFollowing(userId: string, targetId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/users/${userId}/check-following?targetId=${targetId}`), init);
   },
-  follow(userId: string) {
-    return fetch(`/api/users/${userId}/follow`, {
+  follow(userId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/users/${userId}/follow`), {
       method: "POST",
+      ...init,
     });
   },
-  unfollow(userId: string) {
-    return fetch(`/api/users/${userId}/follow`, {
+  unfollow(userId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/users/${userId}/follow`), {
       method: "DELETE",
+      ...init,
     });
   },
 } as const;
 
 export const notificationsApi = {
-  getUnreadCount() {
-    return fetch("/api/notifications/unread-count");
+  getUnreadCount(init?: RequestInit) {
+    return fetch(workerUrl("/notifications/unread-count"), init);
   },
-  summary(options?: { limit?: number; offset?: number }) {
+  summary(options?: { limit?: number; offset?: number }, init?: RequestInit) {
     const params = new URLSearchParams();
     if (options?.limit != null) {
       params.set("limit", String(options.limit));
@@ -299,75 +393,85 @@ export const notificationsApi = {
       params.set("offset", String(options.offset));
     }
     const query = params.toString();
-    const url = query ? `/api/notifications/summary?${query}` : "/api/notifications/summary";
-    return fetch(url);
+    const url = query ? workerUrl(`/notifications/summary?${query}`) : workerUrl("/notifications/summary");
+    return fetch(url, init);
   },
-  list(options?: { limit?: number }) {
+  list(options?: { limit?: number }, init?: RequestInit) {
     const params = new URLSearchParams();
     if (options?.limit != null) {
       params.set("limit", String(options.limit));
     }
     const query = params.toString();
-    const url = query ? `/api/notifications?${query}` : "/api/notifications";
-    return fetch(url);
+    const url = query ? workerUrl(`/notifications?${query}`) : workerUrl("/notifications");
+    return fetch(url, init);
   },
-  markRead(notificationIds?: string[]) {
-    return fetch("/api/notifications/mark-read", {
+  markRead(notificationIds?: string[], init?: RequestInit) {
+    return fetch(workerUrl("/notifications/mark-read"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify({ notificationIds }),
+      ...init,
     });
   },
 } as const;
 
 export const quotaApi = {
-  getUserQuota() {
-    return fetch("/api/user/quota");
+  getUserQuota(init?: RequestInit) {
+    return fetch(workerUrl("/user/quota"), init);
   },
 } as const;
 
 export const capsulesApi = {
-  manifest(capsuleId: string) {
-    return fetch(`/api/capsules/${capsuleId}/manifest`);
+  manifest(capsuleId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/capsules/${capsuleId}/manifest`), init);
   },
   bundleSrc(capsuleId: string) {
-    return `/api/capsules/${capsuleId}/bundle`;
+    return workerUrl(`/capsules/${capsuleId}/bundle`);
   },
-  publish(formData: FormData) {
-    return fetch("/api/capsules/publish", {
+  publish(formData: FormData, init?: RequestInit) {
+    return fetch(workerUrl("/capsules/publish"), {
       method: "POST",
       body: formData,
+      ...init,
     });
   },
-  importGithub(input: { url: string; branch?: string }) {
-    return fetch("/api/import/github", {
+  importGithub(input: { url: string; branch?: string }, init?: RequestInit) {
+    return fetch(workerUrl("/import/github"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify(input),
+      ...init,
     });
   },
 } as const;
 
 export const runsApi = {
-  complete(input: {
-    capsuleId: string;
-    postId?: string | null;
-    runId?: string;
-    durationMs?: number;
-    status?: "completed" | "failed";
-    errorMessage?: string | null;
-  }) {
-    return fetch("/api/runs/complete", {
+  complete(
+    input: {
+      capsuleId: string;
+      postId?: string | null;
+      runId?: string;
+      durationMs?: number;
+      status?: "completed" | "failed";
+      errorMessage?: string | null;
+    },
+    init?: RequestInit,
+  ) {
+    return fetch(workerUrl("/runs/complete"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify(input),
       keepalive: true,
+      ...init,
     });
   },
   appendLogs(
@@ -382,41 +486,45 @@ export const runsApi = {
         source: string;
         sampleRate: number;
       }>;
-    }
+    },
+    init?: RequestInit,
   ) {
-    return fetch(`/api/runs/${runId}/logs`, {
+    return fetch(workerUrl(`/runs/${runId}/logs`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify(payload),
       keepalive: true,
+      ...init,
     });
   },
 } as const;
 
 export const profileApi = {
-  get(handle: string) {
-    return fetch(`/api/profile/${encodeURIComponent(handle)}`);
+  get(handle: string, init?: RequestInit) {
+    return fetch(workerUrl(`/profile/${encodeURIComponent(handle)}`), init);
   },
-  search(query: string, options?: { limit?: number }) {
+  search(query: string, options?: { limit?: number }, init?: RequestInit) {
     const params = new URLSearchParams();
     params.set("q", query);
     if (options?.limit != null) {
       params.set("limit", String(options.limit));
     }
     const queryString = params.toString();
-    const url = queryString ? `/api/profile/search?${queryString}` : "/api/profile/search";
-    return fetch(url);
+    const url = queryString ? workerUrl(`/profile/search?${queryString}`) : workerUrl("/profile/search");
+    return fetch(url, init);
   },
-  update: async (payload: UpdateProfilePayload) => {
-    await ensureUserSynced();
-    return fetch("/api/profile", {
+  update: async (payload: UpdateProfilePayload, init?: RequestInit) => {
+    return fetch(workerUrl("/profile"), {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
       body: JSON.stringify(payload),
+      ...init,
     });
   },
 } as const;

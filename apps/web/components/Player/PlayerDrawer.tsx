@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ export interface PlayerDrawerProps {
     text: string;
     timestamp: number;
   }>;
+  initialTab?: "notes" | "remix" | "chat";
+  onTabChange?: (tab: "notes" | "remix" | "chat") => void;
 }
 
 export function PlayerDrawer({
@@ -28,11 +31,24 @@ export function PlayerDrawer({
   remixInfo,
   comments = [],
   initialTab,
-}: PlayerDrawerProps & { initialTab?: "notes" | "remix" | "chat" }) {
+  onTabChange,
+}: PlayerDrawerProps) {
+  const [tab, setTab] = useState<"notes" | "remix" | "chat">(initialTab ?? "notes");
+
+  useEffect(() => {
+    setTab(initialTab ?? "notes");
+  }, [initialTab]);
+
+  const handleTabChange = (value: string) => {
+    const next = value === "remix" || value === "chat" ? (value as "remix" | "chat") : "notes";
+    setTab(next);
+    onTabChange?.(next);
+  };
+
   const staticComments = !postId ? comments : [];
   return (
     <div className="flex h-full flex-col border-l bg-card">
-      <Tabs defaultValue={initialTab ?? "notes"} className="flex h-full flex-col">
+      <Tabs value={tab} onValueChange={handleTabChange} className="flex h-full flex-col">
         <TabsList className="w-full justify-start rounded-none border-b">
           <TabsTrigger value="notes" className="gap-2">
             <FileText className="h-4 w-4" />

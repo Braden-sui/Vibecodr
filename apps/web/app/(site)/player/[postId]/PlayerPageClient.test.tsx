@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, waitFor } from "@testing-library/react";
 import { act } from "react-dom/test-utils";
 import React from "react";
+import { MemoryRouter } from "react-router-dom";
 import PlayerPageClient from "./PlayerPageClient";
 
 const iframePropsRef: { current: any } = { current: null };
@@ -36,20 +37,8 @@ vi.mock("@/lib/perf", () => ({
   budgeted: (_label: string, fn: () => void) => fn(),
 }));
 
-vi.mock("@clerk/nextjs", () => ({
+vi.mock("@clerk/clerk-react", () => ({
   useUser: () => ({ user: { publicMetadata: {} }, isSignedIn: false }),
-}));
-
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => ({
-    get: () => null,
-  }),
-}));
-
-vi.mock("next/link", () => ({
-  __esModule: true,
-  default: ({ children, ...props }: { children: React.ReactNode }) =>
-    React.createElement("a", props, children),
 }));
 
 vi.mock("@/components/Player/PlayerControls", () => ({
@@ -139,7 +128,11 @@ describe("PlayerPageClient", () => {
   });
 
   it("finalizes the run as failed when the iframe reports a runtime error", async () => {
-    const { unmount } = render(<PlayerPageClient postId="post-123" />);
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/player/post-123"]}>
+        <PlayerPageClient postId="post-123" />
+      </MemoryRouter>
+    );
 
     await waitFor(() => expect(mockPostsGet).toHaveBeenCalledWith("post-123"));
     await waitFor(() => expect(iframePropsRef.current).not.toBeNull());

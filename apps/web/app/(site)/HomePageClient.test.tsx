@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import HomePageClient from "./HomePageClient";
 
 const mockList = vi.fn();
@@ -71,7 +72,11 @@ describe("HomePageClient feed data source", () => {
   });
 
   it("renders posts from the Worker-backed feed for Latest mode", async () => {
-    render(<HomePageClient />);
+    render(
+      <MemoryRouter>
+        <HomePageClient />
+      </MemoryRouter>
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Worker post latest")).toBeInTheDocument()
@@ -79,7 +84,11 @@ describe("HomePageClient feed data source", () => {
   });
 
   it("passes tag filters through to the Worker feed", async () => {
-    render(<HomePageClient />);
+    render(
+      <MemoryRouter>
+        <HomePageClient />
+      </MemoryRouter>
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Worker post latest")).toBeInTheDocument()

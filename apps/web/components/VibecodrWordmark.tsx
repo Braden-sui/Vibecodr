@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const TARGET_TEXT = "Vibecodr";
@@ -54,7 +54,7 @@ export function VibecodrWordmark() {
 
   return (
     <Link
-      href="/"
+      to="/"
       className="text-xl font-bold tracking-tight transition-colors hover:text-primary"
       onMouseEnter={handleMouseEnter}
       aria-label="Vibecodr home"

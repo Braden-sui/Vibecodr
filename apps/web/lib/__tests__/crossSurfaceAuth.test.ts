@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from "vitest";
 import { NextRequest } from "next/server";
 import * as workerProxyRoute from "@/app/api/[...path]/route";
-import * as userSyncRoute from "@/app/api/users/sync/route";
 import { postsApi, capsulesApi } from "@/lib/api";
-import { ensureUserSynced, __resetUserSyncForTests } from "@/lib/user-sync";
+import { ensureUserSynced, __resetUserSyncForTests, type SyncUserPayload } from "@/lib/user-sync";
 
 vi.mock("@clerk/nextjs/server", () => {
   return {
@@ -76,10 +75,6 @@ describe("cross-surface auth propagation", () => {
         });
       }
 
-      if (targetUrl === "/api/users/sync") {
-        return userSyncRoute.POST();
-      }
-
       if (targetUrl.startsWith("/api/")) {
         return dispatchCatchAll(targetUrl, init);
       }
@@ -96,7 +91,16 @@ describe("cross-surface auth propagation", () => {
     const feedResponse = await postsApi.list({ mode: "latest" });
     expect(feedResponse.ok).toBe(true);
 
-    await ensureUserSynced();
+    const userPayload: SyncUserPayload = {
+      id: "user_123",
+      handle: "signedin",
+      name: "Signed In",
+      avatarUrl: "https://avatar.cdn/test.png",
+      bio: null,
+      plan: undefined,
+    };
+
+    await ensureUserSynced({ user: userPayload, token: "test-worker-token" });
 
     const formData = new FormData();
     formData.append("manifest", new Blob(['{"name":"demo"}'], { type: "application/json" }), "manifest.json");
