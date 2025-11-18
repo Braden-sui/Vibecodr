@@ -330,3 +330,217 @@ export const createReportSchema = z.object({
   ]),
   details: z.string().max(1000).optional(),
 });
+
+// Profiles table (1:1 with users)
+export const profiles = sqliteTable("profiles", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  tagline: text("tagline"),
+  location: text("location"),
+  websiteUrl: text("website_url"),
+  xHandle: text("x_handle"),
+  githubHandle: text("github_handle"),
+  pronouns: text("pronouns"),
+  searchTags: text("search_tags"),
+  aboutMd: text("about_md"),
+  layoutVersion: integer("layout_version").notNull().default(1),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
+});
+
+// Profile themes
+export const profileThemes = sqliteTable("profile_themes", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  mode: text("mode", { enum: ["system", "light", "dark"] })
+    .notNull()
+    .default("system"),
+  accentHue: integer("accent_hue").notNull().default(260),
+  accentSaturation: integer("accent_saturation").notNull().default(80),
+  accentLightness: integer("accent_lightness").notNull().default(60),
+  radiusScale: integer("radius_scale").notNull().default(2),
+  density: text("density", { enum: ["comfortable", "cozy", "compact"] })
+    .notNull()
+    .default("comfortable"),
+});
+
+// Profile blocks – configurable layout blocks per user
+export const profileBlocks = sqliteTable("profile_blocks", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  type: text("type").notNull(),
+  position: integer("position").notNull(),
+  visibility: text("visibility", {
+    enum: ["public", "followers", "private"],
+  })
+    .notNull()
+    .default("public"),
+  configJson: text("config_json").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
+});
+
+// Custom profile fields
+export const customFields = sqliteTable("custom_fields", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  key: text("key").notNull(),
+  label: text("label").notNull(),
+  type: text("type").notNull(),
+  icon: text("icon"),
+  configJson: text("config_json"),
+  position: integer("position").notNull().default(0),
+});
+
+// Projects/collections highlighted on profiles
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  coverKey: text("cover_key"),
+  tags: text("tags"),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
+});
+
+// Profile link entries (header links)
+export const profileLinks = sqliteTable("profile_links", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  label: text("label").notNull(),
+  url: text("url").notNull(),
+  icon: text("icon"),
+  position: integer("position").notNull().default(0),
+});
+
+// Badge catalog
+export const badges = sqliteTable("badges", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  label: text("label").notNull(),
+  description: text("description"),
+  icon: text("icon"),
+  tier: text("tier"),
+});
+
+// User-badge mapping
+export const userBadges = sqliteTable(
+  "user_badges",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    badgeId: text("badge_id")
+      .notNull()
+      .references(() => badges.id),
+    grantedAt: integer("granted_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s','now'))`,
+    ),
+    source: text("source"),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.badgeId] }),
+  }),
+);
+
+// Handle history for redirects after rename
+export const handleHistory = sqliteTable("handle_history", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  handle: text("handle").notNull(),
+  validUntil: integer("valid_until", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
+});
+
+// ============================================
+// Profile Zod Schemas
+// ============================================
+
+export const profileThemeSchema = z.object({
+  mode: z.enum(["system", "light", "dark"]).default("system"),
+  accentHue: z.number().int().min(0).max(360).default(260),
+  accentSaturation: z.number().int().min(0).max(100).default(80),
+  accentLightness: z.number().int().min(0).max(100).default(60),
+  radiusScale: z.number().int().min(1).max(4).default(2),
+  density: z.enum(["comfortable", "cozy", "compact"]).default("comfortable"),
+});
+
+export type ProfileThemeInput = z.infer<typeof profileThemeSchema>;
+
+export const profileBlockConfigSchema = z.object({
+  version: z.literal(1),
+  type: z.enum([
+    "header",
+    "about",
+    "activity",
+    "projects",
+    "badges",
+    "text",
+    "markdown",
+    "links",
+    "stats",
+    "imageGallery",
+    "videoEmbed",
+  ]),
+  visibility: z.enum(["public", "followers", "private"]).default("public"),
+  props: z.record(z.string(), z.unknown()).default({}),
+});
+
+export type ProfileBlockConfig = z.infer<typeof profileBlockConfigSchema>;
+
+export const customFieldConfigSchema = z.object({
+  type: z.enum(["text", "number", "url", "date", "select", "multiselect"]),
+  options: z.array(z.string()).optional(),
+  defaultValue: z.union([z.string(), z.number(), z.array(z.string())]).optional(),
+});
+
+export const customFieldDefinitionSchema = z.object({
+  id: z.string().optional(),
+  key: z.string().min(1).max(32),
+  label: z.string().min(1).max(64),
+  type: customFieldConfigSchema.shape.type,
+  icon: z.string().max(64).optional(),
+  config: customFieldConfigSchema.optional(),
+  position: z.number().int().min(0).default(0),
+});
+
+export type CustomFieldDefinition = z.infer<typeof customFieldDefinitionSchema>;
+
+export const updateProfileSchema = z.object({
+  tagline: z.string().max(160).nullable().optional(),
+  location: z.string().max(80).nullable().optional(),
+  websiteUrl: z.string().url().max(255).nullable().optional(),
+  xHandle: z.string().max(50).nullable().optional(),
+  githubHandle: z.string().max(50).nullable().optional(),
+  pronouns: z.string().max(40).nullable().optional(),
+  aboutMd: z.string().max(8000).nullable().optional(),
+  theme: profileThemeSchema.optional(),
+  customFields: z.array(customFieldDefinitionSchema).optional(),
+  blocks: z.array(profileBlockConfigSchema).optional(),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

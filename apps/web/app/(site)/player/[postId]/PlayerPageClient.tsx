@@ -547,10 +547,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             <div>
               <h1 className="text-xl font-bold">{post?.title}</h1>
               <Link
-                href={`/profile/${post?.author.handle}`}
+                href={post ? `/u/${post.author.handle}` : "#"}
                 className="text-sm text-muted-foreground hover:underline"
               >
-                by @{post?.author.handle}
+                {post ? `by @${post.author.handle}` : ""}
               </Link>
             </div>
           </div>
