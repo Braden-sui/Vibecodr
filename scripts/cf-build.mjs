@@ -48,7 +48,7 @@ async function main() {
   const notFoundFunctionDir = path.join(vercelOutputDir, "functions", "_not-found.func");
 
   console.log("[1/2] Building Next.js output for Cloudflare via `@cloudflare/next-on-pages`...");
-  await run("npx", ["@cloudflare/next-on-pages@1"], { cwd: webDir });
+  await run("npx", ["@cloudflare/next-on-pages@1"]);
 
   console.log("[2/2] Cleaning Node-oriented _not-found serverless function and verifying output...");
   await ensureDirectoryExists(vercelOutputDir);
