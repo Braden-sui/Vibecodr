@@ -57,10 +57,16 @@ async function ensureRoutesManifest() {
   const distDir = path.join(projectRoot, config.distDir ?? ".next");
   const manifestPath = path.join(distDir, "routes-manifest.json");
 
+  console.log(`[debug] distDir: ${distDir}`);
+  console.log(`[debug] manifestPath: ${manifestPath}`);
+
   if (existsSync(manifestPath)) {
+    console.log(`[debug] routes-manifest.json exists at ${manifestPath}`);
     // Nothing to do: Next.js produced the manifest as usual.
     return;
   }
+  console.log(`[debug] routes-manifest.json does NOT exist. Generating...`);
+
 
   const [pagesManifest, appPathsManifest] = await Promise.all([
     readJsonIfExists(path.join(distDir, "server", "pages-manifest.json")),
