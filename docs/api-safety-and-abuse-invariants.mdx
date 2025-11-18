@@ -256,3 +256,67 @@ Runtime, compile, and policy failures that affect users **must** surface structu
   - Error codes are stable; if semantics change, update `errors.ts` and this doc together.
 
 This contract keeps safety and runtime behavior debuggable while aligning with social-app norms (stable public-ish error identifiers, internal detail in logs).
+
+## 10) Client Error Telemetry (PostHog / Analytics)
+
+Client-side failures in Feed, Player, comments, and moderation must be observable in analytics, not just in browser consoles.
+
+- **Event shape**
+  - All client error telemetry is sent via `trackClientError(code, props)` in `apps/web/lib/analytics.ts`.
+  - This emits a `client_error` PostHog event with:
+    - `code`: an `E-VIBECODR-####` string.
+    - `type: "client_error"`.
+    - Additional fields in `props` describing the area and context.
+
+- **Key client error codes (frontend)**
+  - **Feed / Home**
+    - `E-VIBECODR-0507` — Feed error JSON parse failed.
+      - `area: "feed"`, `stage: "error_json_parse"`, plus `status`, `mode`, `tagCount`.
+    - `E-VIBECODR-0508` — Feed network error; request failed before response.
+      - `area: "feed"`, `stage: "network"`, plus `mode`, `tagCount`.
+  - **FeedCard / sharing / moderation**
+    - `E-VIBECODR-0206` — Feed manifest preload failed (runtime manifest fetch).
+      - `area: "feed.manifestPreload"`, plus `artifactId`, `postId`.
+    - `E-VIBECODR-0107` — Feed moderation action error body JSON parse failed.
+      - `area: "feed.moderationAction"`, plus `action`, `postId`, `status`.
+    - `E-VIBECODR-0502` — Feed share via `navigator.share` failed or was cancelled.
+      - `area: "feed.share"`, plus `postId`.
+    - `E-VIBECODR-0503` — Feed clipboard write for share link failed.
+      - `area: "feed.shareClipboard"`, plus `postId`.
+  - **Player / runs / moderation / sharing**
+    - `E-VIBECODR-0515` — Player `runsApi.appendLogs` call failed.
+      - `area: "player.appendLogs"`, plus `runId`, `capsuleId`, `postId`.
+    - `E-VIBECODR-0516` — Player `runsApi.complete` call failed.
+      - `area: "player.completeRun"`, plus `runId`, `capsuleId`, `postId`, `status`.
+    - `E-VIBECODR-0509` — Player moderation status JSON parse failed.
+      - `area: "player.moderationStatus"`, `stage: "json_parse"`, plus `postId`, `status`.
+    - `E-VIBECODR-0510` — Player moderation status fetch failed.
+      - `area: "player.moderationStatus"`, `stage: "fetch"`, plus `postId`.
+    - `E-VIBECODR-0511` — Player share via `navigator.share` failed or was cancelled.
+      - `area: "player.share"`, plus `postId`.
+    - `E-VIBECODR-0512` — Player clipboard write for share link failed.
+      - `area: "player.shareClipboard"`, plus `postId`.
+  - **Comments & reporting**
+    - `E-VIBECODR-0504` — Comment create error JSON parse failed.
+      - `area: "comments.create"`, plus `postId`, `status`.
+    - `E-VIBECODR-0505` — Comment delete error JSON parse failed.
+      - `area: "comments.delete"`, plus `postId`, `status`.
+    - `E-VIBECODR-0506` — Report submit error JSON parse failed.
+      - `area: "report.submit"`, plus `targetType`, `targetId`, `status`.
+    - `E-VIBECODR-0514` — Admin moderation resolve error JSON parse failed.
+      - `area: "admin.moderationResolve"`, plus `reportId`, `action`, `status`.
+    - `E-VIBECODR-0513` — Flagged-post quarantine error JSON parse failed.
+      - `area: "moderation.flagged.quarantine"`, plus `postId`, `status`.
+
+- **Server-side vs client-side observability**
+  - Worker and Next.js routes log with `console.error` and structured `E-*` codes to Workers Analytics and platform logs.
+  - Client-only paths (React components, browser-only flows) **must** use `trackClientError` in addition to local `console.error` so we can:
+    - Measure error rate and cohort impact.
+    - Correlate with usage events like `feed_results_loaded`, `player_run_started`, or `composer_*`.
+
+- **Querying and dashboards**
+  - In PostHog:
+    - Filter events where `event = "client_error"` and group by `code` and `area`.
+    - Join with `feed_results_*` and `player_*` events on session or user to see how often errors affect core journeys.
+  - For Workers Analytics:
+    - Use the same `E-VIBECODR-####` codes to correlate backend failures (e.g., proxy, manifest, quotas) with client-side error events.

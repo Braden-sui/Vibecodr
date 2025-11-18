@@ -1,3 +1,4 @@
+?import { describe, it, expect } from "vitest";
 import securityHeaders from "./securityHeaders";
 
 describe("securityHeaders", () => {

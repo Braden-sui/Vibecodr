@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { commentsApi, moderationApi } from "@/lib/api";
+import { trackClientError } from "@/lib/analytics";
 import { useUser } from "@clerk/nextjs";
 
 interface Comment {
@@ -130,13 +131,20 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
         try {
           errorBody = await response.json();
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           if (typeof console !== "undefined" && typeof console.error === "function") {
             console.error("E-VIBECODR-0504 comment create error JSON parse failed", {
               postId,
               status: response.status,
-              error: error instanceof Error ? error.message : String(error),
+              error: message,
             });
           }
+          trackClientError("E-VIBECODR-0504", {
+            area: "comments.create",
+            postId,
+            status: response.status,
+            message,
+          });
         }
         const msg =
           (errorBody && typeof errorBody.error === "string") || "Failed to create comment";
@@ -185,13 +193,20 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
         try {
           errorBody = await response.json();
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           if (typeof console !== "undefined" && typeof console.error === "function") {
             console.error("E-VIBECODR-0505 comment delete error JSON parse failed", {
               postId,
               status: response.status,
-              error: error instanceof Error ? error.message : String(error),
+              error: message,
             });
           }
+          trackClientError("E-VIBECODR-0505", {
+            area: "comments.delete",
+            postId,
+            status: response.status,
+            message,
+          });
         }
         const msg =
           (errorBody && typeof errorBody.error === "string") || "Failed to delete comment";

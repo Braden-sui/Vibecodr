@@ -2,7 +2,7 @@
 
 import posthog from "posthog-js";
 
-type AnalyticsProps = Record<string, unknown>;
+export type AnalyticsProps = Record<string, unknown>;
 
 const isPosthogReady = () => {
   if (typeof window === "undefined") return false;
@@ -19,4 +19,12 @@ export function trackEvent(event: string, properties?: AnalyticsProps) {
       console.debug("[analytics] Failed to capture event", event, error);
     }
   }
+}
+
+export function trackClientError(code: string, properties?: AnalyticsProps) {
+  trackEvent("client_error", {
+    type: "client_error",
+    code,
+    ...(properties ?? {}),
+  });
 }

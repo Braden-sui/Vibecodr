@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
+import { trackClientError } from "@/lib/analytics";
 
 type ModerationReport = {
   id: string;
@@ -137,14 +138,22 @@ export default function ModerationQueue() {
       try {
         data = (await res.json()) as { error?: unknown; message?: unknown } | null;
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         if (typeof console !== "undefined" && typeof console.error === "function") {
-          console.error("E-VIBECODR-0508 moderation resolve error JSON parse failed", {
+          console.error("E-VIBECODR-0514 moderation resolve error JSON parse failed", {
             reportId,
             action,
             status: res.status,
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
           });
         }
+        trackClientError("E-VIBECODR-0514", {
+          area: "admin.moderationResolve",
+          reportId,
+          action,
+          status: res.status,
+          message,
+        });
       }
       if (!res.ok) {
         const message =

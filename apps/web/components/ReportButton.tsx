@@ -24,6 +24,7 @@ import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { Flag, AlertTriangle } from "lucide-react";
 import { moderationApi } from "@/lib/api";
+import { trackClientError } from "@/lib/analytics";
 
 interface ReportButtonProps {
   targetType: "post" | "comment";
@@ -69,14 +70,22 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
         try {
           errorBody = await response.json();
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           if (typeof console !== "undefined" && typeof console.error === "function") {
             console.error("E-VIBECODR-0506 submit report error JSON parse failed", {
               targetType,
               targetId,
               status: response.status,
-              error: error instanceof Error ? error.message : String(error),
+              error: message,
             });
           }
+          trackClientError("E-VIBECODR-0506", {
+            area: "report.submit",
+            targetType,
+            targetId,
+            status: response.status,
+            message,
+          });
         }
         const description =
           errorBody && typeof errorBody.error === "string"

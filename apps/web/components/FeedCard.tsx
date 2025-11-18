@@ -39,6 +39,7 @@ import { budgeted } from "@/lib/perf";
 import { budgetedAsync } from "@/lib/perf";
 import { writePreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
+import { trackClientError } from "@/lib/analytics";
 
 type PublicMetadata = {
   role?: string;
@@ -119,19 +120,31 @@ export function FeedCard({ post }: FeedCardProps) {
         if (response.status === 403) {
           toast({ title: "Forbidden", description: "You don't have moderator access.", variant: "error" });
         } else if (response.status === 503) {
-          toast({ title: "Unavailable", description: "Moderation service is temporarily unavailable.", variant: "warning" });
+          toast({
+            title: "Unavailable",
+            description: "Moderation service is temporarily unavailable.",
+            variant: "warning",
+          });
         } else {
           let errorBody: any = null;
           try {
             errorBody = await response.json();
           } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             if (typeof console !== "undefined" && typeof console.error === "function") {
               console.error("E-VIBECODR-0107 moderation action error JSON parse failed", {
                 postId: post.id,
                 status: response.status,
-                error: error instanceof Error ? error.message : String(error),
+                error: message,
               });
             }
+            trackClientError("E-VIBECODR-0107", {
+              area: "feed.moderationAction",
+              action,
+              postId: post.id,
+              status: response.status,
+              message,
+            });
           }
           const description =
             errorBody && typeof errorBody.error === "string"
@@ -530,12 +543,18 @@ export function FeedCard({ post }: FeedCardProps) {
           url,
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         if (typeof console !== "undefined" && typeof console.debug === "function") {
           console.debug("E-VIBECODR-0502 feed share failed or was cancelled", {
             postId: post.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
           });
         }
+        trackClientError("E-VIBECODR-0502", {
+          area: "feed.share",
+          postId: post.id,
+          message,
+        });
       }
     } else {
       try {
@@ -546,12 +565,18 @@ export function FeedCard({ post }: FeedCardProps) {
           variant: "success",
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         if (typeof console !== "undefined" && typeof console.error === "function") {
           console.error("E-VIBECODR-0503 feed clipboard write failed", {
             postId: post.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
           });
         }
+        trackClientError("E-VIBECODR-0503", {
+          area: "feed.shareClipboard",
+          postId: post.id,
+          message,
+        });
         toast({
           title: "Copy failed",
           description: "Unable to copy share link. You can copy from the address bar instead.",

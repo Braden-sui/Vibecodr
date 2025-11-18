@@ -8,7 +8,7 @@ import { VibesComposer } from "@/components/VibesComposer";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Filter, Sparkles, Tag as TagIcon } from "lucide-react";
-import { trackEvent } from "@/lib/analytics";
+import { trackClientError, trackEvent } from "@/lib/analytics";
 import {
   postsApi,
   type FeedPost,
@@ -164,6 +164,7 @@ export default function FeedPage() {
 
     const load = async () => {
       try {
+        const t0 = performance.now();
         const response = await postsApi.list(
           {
             mode,
@@ -186,6 +187,13 @@ export default function FeedPage() {
                 error: error instanceof Error ? error.message : String(error),
               });
             }
+            trackClientError("E-VIBECODR-0507", {
+              area: "feed",
+              stage: "error_json_parse",
+              status: response.status,
+              mode,
+              tagCount: selectedTags.length,
+            });
           }
           if (cancelled) return;
           setPosts([]);
@@ -199,10 +207,12 @@ export default function FeedPage() {
                   ? "Feed temporarily unavailable. Please try again."
                   : "Unable to load feed.");
           setFeedError(friendly);
+          const durationMs = performance.now() - t0;
           trackEvent("feed_results_failed", {
             mode,
             status: response.status,
             tagCount: selectedTags.length,
+            durationMs,
           });
           return;
         }
@@ -215,11 +225,13 @@ export default function FeedPage() {
         setPosts(mapped);
         setLastUpdated(new Date().toISOString());
         setFeedError(null);
+        const durationMs = performance.now() - t0;
         trackEvent("feed_results_loaded", {
           mode,
           count: mapped.length,
           fromNetwork: true,
           tagCount: selectedTags.length,
+          durationMs,
         });
       } catch (error) {
         if ((error as DOMException)?.name === "AbortError" || cancelled) {
@@ -230,7 +242,17 @@ export default function FeedPage() {
         setPosts([]);
         setFeedError("Feed temporarily unavailable. Please try again.");
         setLastUpdated(null);
-        trackEvent("feed_results_failed", { mode, status: "network_error", tagCount: selectedTags.length });
+        trackClientError("E-VIBECODR-0508", {
+          area: "feed",
+          stage: "network",
+          mode,
+          tagCount: selectedTags.length,
+        });
+        trackEvent("feed_results_failed", {
+          mode,
+          status: "network_error",
+          tagCount: selectedTags.length,
+        });
       } finally {
         if (!cancelled) {
           setIsLoading(false);

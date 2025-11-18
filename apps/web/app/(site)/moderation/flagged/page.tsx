@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { moderationApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import { trackClientError } from "@/lib/analytics";
 
 type FlaggedItem = {
   id: string;
@@ -120,13 +121,20 @@ export default function FlaggedPostsPage() {
                                 message = body.error;
                               }
                             } catch (error) {
+                              const errMessage = error instanceof Error ? error.message : String(error);
                               if (typeof console !== "undefined" && typeof console.error === "function") {
                                 console.error("E-VIBECODR-0513 flagged quarantine error JSON parse failed", {
                                   postId: it.id,
                                   status: res.status,
-                                  error: error instanceof Error ? error.message : String(error),
+                                  error: errMessage,
                                 });
                               }
+                              trackClientError("E-VIBECODR-0513", {
+                                area: "moderation.flagged.quarantine",
+                                postId: it.id,
+                                status: res.status,
+                                message: errMessage,
+                              });
                             }
                             throw new Error(message);
                           }
