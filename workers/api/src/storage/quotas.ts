@@ -246,3 +246,12 @@ export async function getUserMonthlyRuns(
 
   return (results?.[0]?.count as number) || 0;
 }
+
+export async function getUserRunQuotaState(
+  userId: string,
+  env: { DB: D1Database }
+): Promise<{ plan: Plan; runsThisMonth: number; result: QuotaCheckResult }> {
+  const [plan, runsThisMonth] = await Promise.all([getUserPlan(userId, env), getUserMonthlyRuns(userId, env)]);
+  const result = checkRunQuota(plan, runsThisMonth);
+  return { plan, runsThisMonth, result };
+}

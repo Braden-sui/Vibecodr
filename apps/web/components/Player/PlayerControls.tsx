@@ -3,12 +3,12 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ReportButton } from "@/components/ReportButton";
 import {
   RotateCcw,
   StopCircle,
   Activity,
   Share2,
-  Flag,
   Gauge,
 } from "lucide-react";
 
@@ -19,19 +19,19 @@ export interface PlayerControlsProps {
     memory: number;
     bootTime: number;
   };
+  postId: string;
   onRestart: () => void;
   onKill: () => void;
   onShare: () => void;
-  onReport: () => void;
 }
 
 export function PlayerControls({
   isRunning,
   stats,
+  postId,
   onRestart,
   onKill,
   onShare,
-  onReport,
 }: PlayerControlsProps) {
   return (
     <div className="flex items-center justify-between border-t bg-card p-3">
@@ -98,10 +98,12 @@ export function PlayerControls({
           Share
         </Button>
 
-        <Button variant="ghost" size="sm" onClick={onReport} className="gap-1">
-          <Flag className="h-4 w-4" />
-          Report
-        </Button>
+        <ReportButton
+          targetType="post"
+          targetId={postId}
+          variant="text"
+          className="gap-1"
+        />
       </div>
     </div>
   );

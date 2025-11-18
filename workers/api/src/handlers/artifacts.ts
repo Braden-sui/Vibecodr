@@ -1,6 +1,12 @@
 import type { Env, Handler } from "../index";
 import { requireAuth, type AuthenticatedUser } from "../auth";
-import { getUserPlan, getUserStorageUsage, checkBundleSize, checkStorageQuota } from "../storage/quotas";
+import {
+  getUserPlan,
+  getUserStorageUsage,
+  checkBundleSize,
+  checkStorageQuota,
+  getUserRunQuotaState,
+} from "../storage/quotas";
 import { RUNTIME_ARTIFACT_TYPES, type RuntimeArtifactType } from "../runtime/runtimeManifest";
 import {
   ERROR_RUNTIME_MANIFEST_KV_UNAVAILABLE,
@@ -228,6 +234,19 @@ const completeArtifactHandler: AuthedHandler = async (req, env, _ctx, params, us
 
   if (artifact.owner_id !== user.userId) {
     return json({ error: "Forbidden" }, 403);
+  }
+
+  const runQuota = await getUserRunQuotaState(user.userId, env);
+  if (!runQuota.result.allowed) {
+    return json(
+      {
+        error: "Run quota exceeded",
+        reason: runQuota.result.reason,
+        limits: runQuota.result.limits,
+        usage: runQuota.result.usage,
+      },
+      429
+    );
   }
 
   try {

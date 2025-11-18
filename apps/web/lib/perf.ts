@@ -15,9 +15,9 @@ export function budgeted<T>(name: string, fn: () => T): T {
   } finally {
     const dt = now() - t0;
     if (dt > FRAME_BUDGET_MS) {
-      try {
+      if (typeof console !== "undefined" && typeof console.warn === "function") {
         console.warn(`[perf] ${name} took ${dt.toFixed(1)}ms > ${FRAME_BUDGET_MS}ms`);
-      } catch {}
+      }
     }
   }
 }
@@ -29,9 +29,9 @@ export async function budgetedAsync<T>(name: string, fn: () => Promise<T>): Prom
   } finally {
     const dt = now() - t0;
     if (dt > FRAME_BUDGET_MS) {
-      try {
+      if (typeof console !== "undefined" && typeof console.warn === "function") {
         console.warn(`[perf] ${name} took ${dt.toFixed(1)}ms > ${FRAME_BUDGET_MS}ms`);
-      } catch {}
+      }
     }
   }
 }

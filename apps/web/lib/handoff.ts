@@ -1,4 +1,4 @@
-﻿import { HANDOFF_BUDGET_MS } from "./perf";
+import { HANDOFF_BUDGET_MS } from "./perf";
 
 type Dict = Record<string, unknown>;
 
@@ -61,10 +61,19 @@ export function writePreviewHandoff(
       logs: sanitizeLogs(state?.logs),
     };
     window.sessionStorage.setItem(key(postId), JSON.stringify(payload));
-  } catch {}
+  } catch (error) {
+    if (typeof console !== "undefined" && typeof console.error === "function") {
+      console.error("E-VIBECODR-0204 preview handoff write failed", {
+        postId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
-export function readPreviewHandoff(postId: string): { state: PreviewHandoffState | null; dt: number | null } {
+export function readPreviewHandoff(
+  postId: string
+): { state: PreviewHandoffState | null; dt: number | null } {
   try {
     if (typeof window === "undefined") return { state: null, dt: null };
     const raw = window.sessionStorage.getItem(key(postId));
@@ -75,12 +84,22 @@ export function readPreviewHandoff(postId: string): { state: PreviewHandoffState
     const t0 = Number(parsed?.t0 ?? 0);
     const dt = t0 ? Date.now() - t0 : null;
     if (dt != null && dt > HANDOFF_BUDGET_MS) {
-      try {
-        console.warn(`[perf] preview→player handoff ${dt}ms > ${HANDOFF_BUDGET_MS}ms`, { postId });
-      } catch {}
+      if (typeof console !== "undefined" && typeof console.warn === "function") {
+        console.warn(
+          `[perf] preview->player handoff ${dt}ms > ${HANDOFF_BUDGET_MS}ms`,
+          { postId }
+        );
+      }
     }
     return { state: parsed, dt };
-  } catch {
+  } catch (error) {
+    if (typeof console !== "undefined" && typeof console.error === "function") {
+      console.error("E-VIBECODR-0205 preview handoff read failed", {
+        postId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return { state: null, dt: null };
   }
 }
+

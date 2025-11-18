@@ -179,7 +179,7 @@ test.describe("Player Page", () => {
   test("should report post", async ({ page }) => {
     await page.goto("/player/post1");
 
-    // Open menu or find report button
+    // Open the report dialog from Player controls
     const reportButton = page.getByRole("button", { name: /Report/i });
     if (await reportButton.isVisible()) {
       await reportButton.click();
@@ -187,6 +187,65 @@ test.describe("Player Page", () => {
       // Report dialog should open
       await expect(page.getByText(/Report Post/i)).toBeVisible();
     }
+  });
+
+  test("report -> moderator quarantines -> post disappears for normal user (mocked)", async ({ page }) => {
+    // Intercept moderation report calls so we can assert payload and avoid hitting the real backend.
+    await page.route("**/api/moderation/report", async (route) => {
+      const request = route.request();
+      expect(request.method()).toBe("POST");
+
+      const rawBody = request.postData() || "{}";
+      let body: { targetType?: string; targetId?: string; reason?: string };
+      try {
+        body = JSON.parse(rawBody) as { targetType?: string; targetId?: string; reason?: string };
+      } catch {
+        body = {};
+      }
+
+      expect(body.targetType).toBe("post");
+      expect(body.targetId).toBe("post1");
+      expect(typeof body.reason).toBe("string");
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+
+    await page.goto("/player/post1");
+
+    const reportButton = page.getByRole("button", { name: /Report/i });
+    await reportButton.click();
+
+    // Choose a reason and submit the report.
+    const reasonSelect = page.getByRole("combobox", { name: /Reason/i });
+    await reasonSelect.click();
+    await page.getByRole("option", { name: /Spam or misleading/i }).click();
+
+    const submitButton = page.getByRole("button", { name: /Submit Report/i });
+    await submitButton.click();
+
+    await expect(page.getByText(/Report Submitted/i)).toBeVisible();
+
+    // Stop intercepting further report calls.
+    await page.unroute("**/api/moderation/report");
+
+    // Simulate the effect of a moderator quarantining the post by stubbing the feed API
+    // so that the reported post is no longer present for a normal viewer.
+    await page.route("**/api/posts?mode=latest**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ posts: [] }),
+      });
+    });
+
+    await page.goto("/");
+
+    // The reported post title should no longer appear in the feed.
+    await expect(page.getByText("Interactive Boids Simulation")).toHaveCount(0);
   });
 });
 

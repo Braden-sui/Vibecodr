@@ -13,8 +13,7 @@ interface RateLimitState {
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 100;
 const RATE_LIMIT_KEY_PREFIX = "proxy:rate:";
-const FALLBACK_RATE_LIMIT_STORE = new Map<string, RateLimitState>();
-let rateLimitFallbackWarned = false;
+let rateLimitStorageMisconfiguredWarned = false;
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 const DEFAULT_ALLOWED_PORTS = new Set([80, 443]);
@@ -431,51 +430,52 @@ function ipToNumber(parts: number[]): number {
 }
 
 async function readRateLimitState(env: Env, key: string): Promise<RateLimitState | null> {
-  if (env.RUNTIME_MANIFEST_KV) {
-    try {
-      const raw = await env.RUNTIME_MANIFEST_KV.get(key);
-      if (!raw) {
-        return null;
-      }
-
-      const parsed = JSON.parse(raw);
-      if (typeof parsed?.count === "number" && typeof parsed?.resetAt === "number") {
-        return parsed as RateLimitState;
-      }
-    } catch (error) {
-      console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit read failed`, {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
+  if (!env.RUNTIME_MANIFEST_KV) {
+    warnRateLimitStorageMisconfigured();
     return null;
   }
 
-  warnRateLimitFallback();
-  return FALLBACK_RATE_LIMIT_STORE.get(key) ?? null;
+  try {
+    const raw = await env.RUNTIME_MANIFEST_KV.get(key);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.count === "number" && typeof parsed?.resetAt === "number") {
+      return parsed as RateLimitState;
+    }
+  } catch (error) {
+    console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit read failed`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return null;
 }
 
 async function writeRateLimitState(env: Env, key: string, state: RateLimitState): Promise<void> {
-  if (env.RUNTIME_MANIFEST_KV) {
-    try {
-      const ttlSeconds = Math.max(1, Math.ceil((state.resetAt - Date.now()) / 1000));
-      await env.RUNTIME_MANIFEST_KV.put(key, JSON.stringify(state), { expirationTtl: ttlSeconds });
-      return;
-    } catch (error) {
-      console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit write failed`, {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  } else {
-    warnRateLimitFallback();
+  if (!env.RUNTIME_MANIFEST_KV) {
+    warnRateLimitStorageMisconfigured();
+    throw new Error("E-VIBECODR-0304 rate limit storage misconfigured: RUNTIME_MANIFEST_KV binding is required");
   }
 
-  FALLBACK_RATE_LIMIT_STORE.set(key, state);
+  try {
+    const ttlSeconds = Math.max(1, Math.ceil((state.resetAt - Date.now()) / 1000));
+    await env.RUNTIME_MANIFEST_KV.put(key, JSON.stringify(state), { expirationTtl: ttlSeconds });
+  } catch (error) {
+    console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit write failed`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error instanceof Error ? error : new Error(String(error));
+  }
 }
 
-function warnRateLimitFallback() {
-  if (!rateLimitFallbackWarned) {
-    console.warn("E-VIBECODR-0304 proxy rate limit KV unavailable; using in-memory state");
-    rateLimitFallbackWarned = true;
+function warnRateLimitStorageMisconfigured() {
+  if (!rateLimitStorageMisconfiguredWarned) {
+    console.error(
+      "E-VIBECODR-0304 proxy rate limit storage misconfigured; RUNTIME_MANIFEST_KV binding is required for net proxy"
+    );
+    rateLimitStorageMisconfiguredWarned = true;
   }
 }

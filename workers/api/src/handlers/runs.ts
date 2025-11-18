@@ -1,5 +1,6 @@
 import type { Env } from "../index";
 import { incrementPostStats, incrementUserCounters } from "./counters";
+import { getUserRunQuotaState } from "../storage/quotas";
 
 type Handler = (
   req: Request,
@@ -90,6 +91,35 @@ export const completeRun: Handler = async (req, env) => {
           error: err instanceof Error ? err.message : String(err),
         });
       });
+    }
+
+    if (userId) {
+      (async () => {
+        try {
+          const { plan, runsThisMonth, result } = await getUserRunQuotaState(userId, env);
+
+          try {
+            const analytics = env.vibecodr_analytics_engine;
+            if (analytics && typeof analytics.writeDataPoint === "function") {
+              analytics.writeDataPoint({
+                blobs: ["run_quota_observation", plan, userId],
+                doubles: [runsThisMonth, result.percentUsed ?? 0],
+              });
+            }
+          } catch (err) {
+            console.error("E-API-0016 completeRun run quota analytics write failed", {
+              userId,
+              runsThisMonth,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        } catch (err) {
+          console.error("E-API-0017 completeRun run quota snapshot failed", {
+            userId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })();
     }
 
     return json({ ok: true, runId });

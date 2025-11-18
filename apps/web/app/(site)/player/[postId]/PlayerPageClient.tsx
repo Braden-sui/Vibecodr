@@ -521,14 +521,6 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     }
   };
 
-  const handleReport = () => {
-    try {
-      window.location.assign(`/report/new?postId=${encodeURIComponent(postId)}`);
-    } catch {
-      // ignore
-    }
-  };
-
   const handleParamChange = (name: string, value: unknown) => {
     setCapsuleParams((prev) => {
       if (Object.is(prev[name], value)) {
@@ -628,10 +620,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           <PlayerControls
             isRunning={isRunning}
             stats={stats}
+            postId={postId}
             onRestart={handleRestart}
             onKill={handleKill}
             onShare={handleShare}
-            onReport={handleReport}
           />
           <PlayerConsole
             entries={consoleEntries}

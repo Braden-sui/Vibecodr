@@ -15,6 +15,7 @@ import {
   type PublishWarning,
   PublishCapsuleError,
 } from "./capsules";
+import { getUserRunQuotaState } from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
 
 interface AnalysisResult {
@@ -37,6 +38,19 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
 
     if (!url || !url.includes("github.com")) {
       return json({ success: false, error: "Invalid GitHub URL" }, 400);
+    }
+
+    const runQuota = await getUserRunQuotaState(user.userId, env);
+    if (!runQuota.result.allowed) {
+      return json(
+        {
+          error: "Run quota exceeded",
+          reason: runQuota.result.reason,
+          limits: runQuota.result.limits,
+          usage: runQuota.result.usage,
+        },
+        429
+      );
     }
 
     // Parse GitHub URL
@@ -199,6 +213,19 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
           error: "Content-Type must be multipart/form-data or application/zip",
         },
         400
+      );
+    }
+
+    const runQuota = await getUserRunQuotaState(user.userId, env);
+    if (!runQuota.result.allowed) {
+      return json(
+        {
+          error: "Run quota exceeded",
+          reason: runQuota.result.reason,
+          limits: runQuota.result.limits,
+          usage: runQuota.result.usage,
+        },
+        429
       );
     }
 

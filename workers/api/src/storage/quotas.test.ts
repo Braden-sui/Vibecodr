@@ -6,6 +6,7 @@ import {
   checkStorageQuota,
   checkRunQuota,
   formatBytes,
+  getUserRunQuotaState,
 } from "./quotas";
 
 describe("Quota Enforcement", () => {
@@ -107,6 +108,55 @@ describe("Quota Enforcement", () => {
     it("should calculate correct percentUsed", () => {
       const result = checkRunQuota(Plan.FREE, 2500); // 50%
       expect(result.percentUsed).toBe(50);
+    });
+  });
+
+  describe("getUserRunQuotaState", () => {
+    it("returns plan, runsThisMonth, and quota result", async () => {
+      const env = {
+        DB: {
+          prepare(sql: string) {
+            const stmt: any = {
+              sql,
+              bindArgs: [] as any[],
+              bind(...args: any[]) {
+                this.bindArgs = args;
+                return this;
+              },
+              async all() {
+                if (sql.includes("FROM users")) {
+                  return {
+                    results: [
+                      {
+                        plan: "free",
+                        storage_usage_bytes: 0,
+                        storage_version: 1,
+                      },
+                    ],
+                  };
+                }
+                if (sql.includes("FROM runs")) {
+                  return {
+                    results: [
+                      {
+                        count: 2500,
+                      },
+                    ],
+                  };
+                }
+                return { results: [] };
+              },
+            };
+            return stmt;
+          },
+        },
+      } as any;
+
+      const state = await getUserRunQuotaState("user-1", env);
+      expect(state.plan).toBe(Plan.FREE);
+      expect(state.runsThisMonth).toBe(2500);
+      expect(state.result.allowed).toBe(true);
+      expect(state.result.percentUsed).toBeGreaterThan(0);
     });
   });
 

@@ -121,8 +121,23 @@ export function FeedCard({ post }: FeedCardProps) {
         } else if (response.status === 503) {
           toast({ title: "Unavailable", description: "Moderation service is temporarily unavailable.", variant: "warning" });
         } else {
-          const error = await response.json().catch(() => null);
-          toast({ title: "Failed", description: error?.error || "Failed to apply moderation action", variant: "error" });
+          let errorBody: any = null;
+          try {
+            errorBody = await response.json();
+          } catch (error) {
+            if (typeof console !== "undefined" && typeof console.error === "function") {
+              console.error("E-VIBECODR-0107 moderation action error JSON parse failed", {
+                postId: post.id,
+                status: response.status,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+          const description =
+            errorBody && typeof errorBody.error === "string"
+              ? errorBody.error
+              : "Failed to apply moderation action";
+          toast({ title: "Failed", description, variant: "error" });
         }
         return;
       }
@@ -218,7 +233,14 @@ export function FeedCard({ post }: FeedCardProps) {
     void budgetedAsync(`[feed] manifest_preload:${post.id}`, async () => {
       try {
         await loadRuntimeManifest(String(artifactId));
-      } catch {
+      } catch (error) {
+        if (typeof console !== "undefined" && typeof console.error === "function") {
+          console.error("E-VIBECODR-0206 feed manifest preload failed", {
+            artifactId: String(artifactId),
+            postId: post.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         // soft-fail: rely on Player to surface errors
       } finally {
         manifestPreloadsInFlight = Math.max(0, manifestPreloadsInFlight - 1);
@@ -507,12 +529,35 @@ export function FeedCard({ post }: FeedCardProps) {
           text: post.description,
           url,
         });
-      } catch {
-        // User cancelled or error occurred
+      } catch (error) {
+        if (typeof console !== "undefined" && typeof console.debug === "function") {
+          console.debug("E-VIBECODR-0502 feed share failed or was cancelled", {
+            postId: post.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     } else {
-      await navigator.clipboard.writeText(url);
-      toast({ title: "Link copied", description: "Share link copied to clipboard.", variant: "success" });
+      try {
+        await navigator.clipboard.writeText(url);
+        toast({
+          title: "Link copied",
+          description: "Share link copied to clipboard.",
+          variant: "success",
+        });
+      } catch (error) {
+        if (typeof console !== "undefined" && typeof console.error === "function") {
+          console.error("E-VIBECODR-0503 feed clipboard write failed", {
+            postId: post.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        toast({
+          title: "Copy failed",
+          description: "Unable to copy share link. You can copy from the address bar instead.",
+          variant: "error",
+        });
+      }
     }
   };
 

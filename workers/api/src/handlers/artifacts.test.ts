@@ -16,6 +16,14 @@ vi.mock("../auth", () => {
   };
 });
 
+const getUserRunQuotaStateMock = vi.fn();
+
+vi.mock("../storage/quotas", () => {
+  return {
+    getUserRunQuotaState: getUserRunQuotaStateMock,
+  };
+});
+
 const createEnv = (): Env => {
   const prepare = vi.fn((sql: string) => {
     const stmt: any = {
@@ -222,6 +230,12 @@ describe("artifacts handlers", () => {
   beforeEach(() => {
     env = createEnv();
     vi.clearAllMocks();
+    getUserRunQuotaStateMock.mockReset();
+    getUserRunQuotaStateMock.mockResolvedValue({
+      plan: "free",
+      runsThisMonth: 0,
+      result: { allowed: true },
+    });
   });
 
   it("rejects missing type on createArtifactUpload", async () => {
@@ -344,6 +358,34 @@ describe("artifacts handlers", () => {
     expect(ns.idFromName).toHaveBeenCalledWith("a1");
     expect(ns.get).toHaveBeenCalledTimes(1);
     expect(ns.__doFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects compile when run quota is exceeded", async () => {
+    getUserRunQuotaStateMock.mockResolvedValueOnce({
+      plan: "free",
+      runsThisMonth: 6000,
+      result: {
+        allowed: false,
+        reason: "Monthly run quota exceeded (6000/5000).",
+        limits: { maxRuns: 5000 } as any,
+        usage: { runs: 6000 } as any,
+      },
+    });
+
+    const req = new Request("https://api.example/artifacts/a1/complete", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+    });
+
+    const res = await completeArtifact(req, env, {} as any, { p1: "a1" } as any);
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as any;
+    expect(body.error).toBe("Run quota exceeded");
+    expect(body.reason).toContain("Monthly run quota exceeded");
+
+    const ns = env.ARTIFACT_COMPILER_DURABLE as any;
+    expect(ns.idFromName).not.toHaveBeenCalled();
+    expect(ns.__doFetch).not.toHaveBeenCalled();
   });
 
   it("rejects compile for unknown artifact id", async () => {
