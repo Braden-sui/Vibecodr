@@ -1,10 +1,14 @@
 import { redirect } from "next/navigation";
 
-type PageProps = {
-  params: { handle: string };
+type ProfileParams = {
+  handle: string;
 };
 
-export default function LegacyProfileRedirectPage({ params }: PageProps) {
-  const handle = params.handle;
+export default async function LegacyProfileRedirectPage({
+  params,
+}: {
+  params: Promise<ProfileParams>;
+}) {
+  const { handle } = await params;
   redirect(`/u/${encodeURIComponent(handle)}`);
 }
