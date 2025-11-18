@@ -197,7 +197,7 @@ export function NotificationBell() {
                   key={notification.id}
                   href={
                     notification.type === "follow"
-                      ? `/profile/${notification.actor.handle}`
+                      ? `/u/${notification.actor.handle}`
                       : `/player/${notification.post?.id}`
                   }
                 >

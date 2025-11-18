@@ -375,7 +375,7 @@ describe("NotificationBell", () => {
       expect(likeLink).toHaveAttribute("href", "/player/post1");
 
       const followLink = screen.getByText("@charlie").closest("a");
-      expect(followLink).toHaveAttribute("href", "/profile/charlie");
+      expect(followLink).toHaveAttribute("href", "/u/charlie");
     });
   });
 

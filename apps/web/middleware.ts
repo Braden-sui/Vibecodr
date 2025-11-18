@@ -8,6 +8,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/post/:id",
   "/profile/:handle",
+  "/u/:handle",
   "/player/:postId",
 ]);
 
