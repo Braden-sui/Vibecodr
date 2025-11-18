@@ -148,7 +148,6 @@ export default function FeedPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
-  const [isFallbackData, setIsFallbackData] = useState(false);
   const searchParams = useSearchParams();
 
   // Keep searchTerm synced with URL `q`
@@ -162,7 +161,6 @@ export default function FeedPage() {
 
     setIsLoading(true);
     setFeedError(null);
-    setIsFallbackData(false);
 
     const load = async () => {
       try {
@@ -181,7 +179,6 @@ export default function FeedPage() {
           if (cancelled) return;
           setPosts([]);
           setLastUpdated(null);
-          setIsFallbackData(false);
           const friendly =
             mode === "following" && response.status === 400
               ? "Sign in to see the creators you follow."
@@ -207,7 +204,6 @@ export default function FeedPage() {
         setPosts(mapped);
         setLastUpdated(new Date().toISOString());
         setFeedError(null);
-        setIsFallbackData(false);
         trackEvent("feed_results_loaded", {
           mode,
           count: mapped.length,
@@ -220,16 +216,10 @@ export default function FeedPage() {
         }
         console.error("Failed to fetch posts:", error);
         if (cancelled) return;
-        setPosts(fallbackPosts);
-        setIsFallbackData(true);
-        setFeedError("Showing demo vibes while the feed recovers.");
+        setPosts([]);
+        setFeedError("Feed temporarily unavailable. Please try again.");
         setLastUpdated(null);
-        trackEvent("feed_results_loaded", {
-          mode,
-          count: fallbackPosts.length,
-          fromNetwork: false,
-          tagCount: selectedTags.length,
-        });
+        trackEvent("feed_results_failed", { mode, status: "network_error", tagCount: selectedTags.length });
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -376,9 +366,11 @@ export default function FeedPage() {
               Personalized using runs, remixes, and tags you follow.
             </div>
             <div className="text-xs">
-              {isFallbackData
-                ? "Showing sample vibes while we reconnect"
-                : `Updated ${lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : "just now"}`}
+              {lastUpdated
+                ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}`
+                : isLoading
+                ? "Loading recommendations..."
+                : "Waiting for fresh recommendations"}
             </div>
           </div>
         )}

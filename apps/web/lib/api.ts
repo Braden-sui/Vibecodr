@@ -1,5 +1,6 @@
 import { ensureUserSynced } from "./user-sync";
 import type { ApiFeedPost } from "@vibecodr/shared";
+import type { UpdateProfilePayload } from "@/lib/profile/schema";
 
 // Tiny API client for the Worker API. Consider centralizing auth headers here later.
 
@@ -390,6 +391,32 @@ export const runsApi = {
       },
       body: JSON.stringify(payload),
       keepalive: true,
+    });
+  },
+} as const;
+
+export const profileApi = {
+  get(handle: string) {
+    return fetch(`/api/profile/${encodeURIComponent(handle)}`);
+  },
+  search(query: string, options?: { limit?: number }) {
+    const params = new URLSearchParams();
+    params.set("q", query);
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    const queryString = params.toString();
+    const url = queryString ? `/api/profile/search?${queryString}` : "/api/profile/search";
+    return fetch(url);
+  },
+  update: async (payload: UpdateProfilePayload) => {
+    await ensureUserSynced();
+    return fetch("/api/profile", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     });
   },
 } as const;

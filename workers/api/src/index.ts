@@ -54,6 +54,11 @@ import {
   checkFollowing,
   checkLiked,
 } from "./handlers/profiles";
+import {
+  getProfileWithLayout,
+  updateProfile,
+  searchProfiles,
+} from "./handlers/profile-extended";
 import { syncUser } from "./handlers/users";
 import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
 import { ApiFeedResponseSchema, ApiFeedPostSchema, type ApiFeedPost } from "./contracts";
@@ -732,6 +737,11 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "GET", pattern: /^\/users\/([^\/]+)$/, handler: getUserProfile },
   { method: "GET", pattern: /^\/users\/([^\/]+)\/posts$/, handler: getUserPosts },
   { method: "GET", pattern: /^\/users\/([^\/]+)\/check-following$/, handler: checkFollowing },
+
+  // Extended profile feature
+  { method: "GET", pattern: /^\/profile\/([^\/]+)$/, handler: getProfileWithLayout },
+  { method: "PATCH", pattern: /^\/profile$/, handler: updateProfile },
+  { method: "GET", pattern: /^\/profile\/search$/, handler: searchProfiles },
 
   // Follows
   { method: "POST", pattern: /^\/users\/([^\/]+)\/follow$/, handler: followUser },

@@ -666,7 +666,7 @@ export function FeedCard({ post }: FeedCardProps) {
         {/* Author */}
         <div className="flex items-center justify-between gap-2">
           <Link
-            href={`/profile/${post.author.handle}`}
+            href={`/u/${post.author.handle}`}
             className="flex items-center gap-2 text-sm hover:underline"
           >
             <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />
