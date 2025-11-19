@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,7 @@ type CheckStatus = "pass" | "warning" | "fail";
  * Publish Tab - wires bundle upload, capsule publish, and post creation.
  */
 export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { getToken } = useAuth();
   const [title, setTitle] = useState("My Awesome Vibe");
   const [description, setDescription] = useState("");
@@ -284,7 +284,7 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
           : prev
       );
       setPublishStatus("success");
-      router.push(`/post/${postJson.id}`);
+      navigate(`/post/${postJson.id}`);
     } catch (err) {
       console.error("Publish failed", err);
       setPublishStatus("error");
