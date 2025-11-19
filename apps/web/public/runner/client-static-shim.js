@@ -12,6 +12,50 @@
   let isReady = false;
   let isPaused = false;
 
+  const parentOrigin = resolveParentOrigin();
+  let warnedMissingParentOrigin = false;
+
+  function resolveParentOrigin() {
+    if (
+      window.location &&
+      window.location.ancestorOrigins &&
+      window.location.ancestorOrigins.length > 0
+    ) {
+      return window.location.ancestorOrigins[0];
+    }
+
+    if (document.referrer) {
+      try {
+        return new URL(document.referrer).origin;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  function warnMissingParentOrigin() {
+    if (warnedMissingParentOrigin) {
+      return;
+    }
+    warnedMissingParentOrigin = true;
+    if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("E-VIBECODR-0522 runner parent origin missing; blocking bridge traffic");
+    }
+  }
+
+  function isTrustedParentMessage(eventOrigin, eventSource) {
+    if (!parentOrigin) {
+      warnMissingParentOrigin();
+      return false;
+    }
+    if (eventSource && eventSource !== window.parent) {
+      return false;
+    }
+    return eventOrigin === parentOrigin;
+  }
+
   // Console proxy for logging/debugging
   const originalConsole = {
     log: console.log,
@@ -107,21 +151,28 @@
   // PostMessage bridge
   function sendMessage(type, payload) {
     if (window.parent !== window) {
+      if (!parentOrigin) {
+        warnMissingParentOrigin();
+        return;
+      }
+
       window.parent.postMessage(
         {
           type,
           payload,
           source: "vibecodr-capsule",
         },
-        "*"
+        parentOrigin
       );
     }
   }
 
   // Listen for param updates from parent
   window.addEventListener("message", (event) => {
-    // TODO: Verify origin in production
-    const { type, payload } = event.data;
+    if (!isTrustedParentMessage(event.origin, event.source)) {
+      return;
+    }
+    const { type, payload } = event.data || {};
 
     switch (type) {
       case "setParams":

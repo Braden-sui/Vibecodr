@@ -1,6 +1,8 @@
 import type { ApiFeedPost } from "@vibecodr/shared";
+import type { Manifest } from "@vibecodr/shared/manifest";
 import type { UpdateProfilePayload } from "@/lib/profile/schema";
 import { getWorkerApiBase } from "@/lib/worker-api";
+import { safeParseCapsuleManifest } from "@/lib/manifest";
 
 // Tiny API client for the Worker API.
 
@@ -15,25 +17,25 @@ type ModerationPostAction = "quarantine" | "unquarantine" | "remove";
 type ModerationCommentAction = "remove";
 
 export const moderationApi = {
-  moderatePost(postId: string, action: ModerationPostAction, init?: RequestInit) {
+  moderatePost(postId: string, action: ModerationPostAction, init?: RequestInit, notes?: string | null) {
     return fetch(workerUrl(`/moderation/posts/${postId}/action`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers || {}),
       },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, notes: notes ?? undefined }),
       ...init,
     });
   },
-  moderateComment(commentId: string, action: ModerationCommentAction, init?: RequestInit) {
+  moderateComment(commentId: string, action: ModerationCommentAction, init?: RequestInit, notes?: string | null) {
     return fetch(workerUrl(`/moderation/comments/${commentId}/action`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers || {}),
       },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, notes: notes ?? undefined }),
       ...init,
     });
   },
@@ -112,14 +114,18 @@ export const moderationApi = {
       : workerUrl("/moderation/reports");
     return fetch(url, init);
   },
-  resolveReport(reportId: string, action: "dismiss" | "quarantine", init?: RequestInit) {
+  resolveReport(
+    input: { reportId: string; action: "dismiss" | "quarantine"; notes?: string | null },
+    init?: RequestInit,
+  ) {
+    const { reportId, action, notes } = input;
     return fetch(workerUrl(`/moderation/reports/${reportId}/resolve`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers || {}),
       },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, notes: notes ?? undefined }),
       ...init,
     });
   },
@@ -165,13 +171,9 @@ export const commentsApi = {
 // Shared feed post type used by HomePageClient, FeedCard, and Player page.
 type FeedCapsule = {
   id: string;
-  runner: "client-static" | "webcontainer";
-  capabilities?: {
-    net?: string[];
-    storage?: boolean;
-    workers?: boolean;
-  };
-  params?: unknown[];
+  runner: Manifest["runner"];
+  capabilities?: Manifest["capabilities"];
+  params?: Manifest["params"];
   artifactId?: string | null;
 };
 
@@ -204,19 +206,31 @@ export type FeedPost = {
 
 // Map Worker ApiFeedPost payload into the client-side FeedPost shape.
 export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
-  const capsulePayload = (apiPost.capsule as Record<string, unknown> & { id: string }) || null;
-  const capsule: FeedCapsule | null = capsulePayload
-    ? {
-        id: String(capsulePayload.id),
-        runner: (typeof capsulePayload.runner === "string" ? capsulePayload.runner : "client-static") as
-          | "client-static"
-          | "webcontainer",
-        capabilities: capsulePayload.capabilities as FeedCapsule["capabilities"],
-        params: Array.isArray(capsulePayload.params) ? (capsulePayload.params as unknown[]) : undefined,
-        artifactId:
-          capsulePayload.artifactId != null ? String(capsulePayload.artifactId as string | number) : null,
-      }
-    : null;
+  const capsulePayload = apiPost.capsule as Record<string, unknown> & { id?: string } | null;
+  let capsule: FeedCapsule | null = null;
+  if (capsulePayload) {
+    const capsuleId = capsulePayload.id != null ? String(capsulePayload.id) : "";
+    const artifactId =
+      capsulePayload.artifactId != null ? String(capsulePayload.artifactId as string | number) : null;
+
+    const validated = safeParseCapsuleManifest(capsulePayload, {
+      source: "mapApiFeedPostToFeedPost",
+      capsuleId,
+      postId: apiPost.id,
+    });
+
+    if (validated.manifest) {
+      capsule = {
+        id: capsuleId,
+        runner: validated.manifest.runner,
+        capabilities: validated.manifest.capabilities,
+        params: validated.manifest.params,
+        artifactId,
+      };
+    } else if (capsuleId) {
+      capsule = { id: capsuleId, artifactId };
+    }
+  }
 
   const createdAtValue = apiPost.createdAt;
   let createdAt: string;

@@ -4,8 +4,10 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { FeedCard } from "../FeedCard";
+import { capsulesApi } from "@/lib/api";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
+const RUNNER_ORIGIN = new URL(capsulesApi.bundleSrc("capsule1")).origin;
 
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
@@ -169,13 +171,13 @@ describe("FeedCard", () => {
     await act(async () => {
       prObserver.trigger(0.2, false);
     });
-    expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, RUNNER_ORIGIN);
 
     // Back to >=30% -> resume
     await act(async () => {
       prObserver.trigger(0.3, true);
     });
-    expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, RUNNER_ORIGIN);
   });
 
   it("should pause when tab hidden and resume when visible again", async () => {
@@ -199,13 +201,13 @@ describe("FeedCard", () => {
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "pause" }, RUNNER_ORIGIN);
 
     Object.defineProperty(document, "hidden", { configurable: true, value: false });
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, "*");
+    expect(iframePostMessage).toHaveBeenCalledWith({ type: "resume" }, RUNNER_ORIGIN);
 
     // restore
     if (hiddenDescriptor) Object.defineProperty(document, "hidden", hiddenDescriptor);

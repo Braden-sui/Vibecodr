@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -58,6 +59,30 @@ function getErrorMessage(payload: unknown): string | undefined {
   return typeof payload.message === "string" ? payload.message : undefined;
 }
 
+function toOrigin(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRunnerOrigins(capsuleId: string): string[] {
+  const origins = new Set<string>();
+  const bundleOrigin = toOrigin(capsulesApi.bundleSrc(capsuleId));
+  const runtimeCdnOrigin = toOrigin(process.env.NEXT_PUBLIC_RUNTIME_CDN_ORIGIN);
+
+  if (bundleOrigin) {
+    origins.add(bundleOrigin);
+  }
+  if (runtimeCdnOrigin) {
+    origins.add(runtimeCdnOrigin);
+  }
+
+  return Array.from(origins);
+}
+
 export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
   function PlayerIframe(
     { capsuleId, params = {}, onReady, onLog, onStats, onBoot, onError, artifactId },
@@ -67,12 +92,19 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
     const [errorMessage, setErrorMessage] = useState<string>("");
     const pauseStateRef = useRef<"paused" | "running">("running");
+    const runnerOrigins = useMemo(() => resolveRunnerOrigins(capsuleId), [capsuleId]);
 
     const sendToIframe = useCallback(
       (type: string, payload?: unknown) => {
         const iframe = iframeRef.current;
         const target = iframe?.contentWindow;
-        if (!target) {
+        if (!target || runnerOrigins.length === 0) {
+          if (runnerOrigins.length === 0) {
+            console.warn("E-VIBECODR-0520 runner origin allowlist empty; skipping postMessage", {
+              capsuleId,
+              type,
+            });
+          }
           return false;
         }
 
@@ -84,10 +116,13 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
                 payload,
               };
 
-        target.postMessage(message, "*"); // TODO: Use explicit bundle origin
+        for (const origin of runnerOrigins) {
+          target.postMessage(message, origin);
+        }
+
         return true;
       },
-      []
+      [capsuleId, runnerOrigins]
     );
 
     useImperativeHandle(
@@ -125,10 +160,29 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     useEffect(() => {
       if (!iframeRef.current) return;
 
+      let warnedMissingRunnerOrigin = false;
+
       // Listen for messages from the iframe
       const handleMessage = (event: MessageEvent) => {
-        // TODO: Verify origin matches our R2 domain
-        // if (!event.origin.startsWith('https://capsules.vibecodr.space')) return;
+        const iframeWindow = iframeRef.current?.contentWindow;
+        if (!iframeWindow || event.source !== iframeWindow) {
+          return;
+        }
+
+        if (runnerOrigins.length === 0) {
+          if (!warnedMissingRunnerOrigin) {
+            console.warn(
+              "E-VIBECODR-0521 runner origin allowlist empty; dropping incoming message",
+              { capsuleId }
+            );
+            warnedMissingRunnerOrigin = true;
+          }
+          return;
+        }
+
+        if (!runnerOrigins.includes(event.origin)) {
+          return;
+        }
 
         const message = event.data;
         if (!isRecord(message)) {
@@ -178,7 +232,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       return () => {
         window.removeEventListener("message", handleMessage);
       };
-    }, [onReady, onLog, onStats, onBoot, onError]);
+    }, [capsuleId, onReady, onLog, onStats, onBoot, onError, runnerOrigins]);
 
     // Send params to iframe when they change
     useEffect(() => {
@@ -227,8 +281,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
 
     useEffect(() => {
       const onVisibility = () => {
-        const target = iframeRef.current?.contentWindow;
-        if (!target || status !== "ready") {
+        if (status !== "ready") {
           return;
         }
 
@@ -237,21 +290,19 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         if (nextState === pauseStateRef.current) {
           return;
         }
-        pauseStateRef.current = nextState;
 
-        target.postMessage(
-          {
-            type: nextState === "paused" ? "pause" : "resume",
-          },
-          "*"
-        );
+        const sent = sendToIframe(nextState === "paused" ? "pause" : "resume");
+        if (!sent) {
+          return;
+        }
+        pauseStateRef.current = nextState;
       };
 
       document.addEventListener("visibilitychange", onVisibility);
       return () => {
         document.removeEventListener("visibilitychange", onVisibility);
       };
-    }, [status]);
+    }, [sendToIframe, status]);
 
     return (
       <div className="relative h-full w-full overflow-hidden rounded-lg border bg-background">

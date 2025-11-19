@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +58,31 @@ let manifestPreloadsInFlight = 0;
 const MAX_MANIFEST_PREFETCH = 3;
 const PREVIEW_LOG_LIMIT = 40;
 
+function toOrigin(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRunnerOrigins(capsuleId?: string): string[] {
+  if (!capsuleId) return [];
+  const origins = new Set<string>();
+  const bundleOrigin = toOrigin(capsulesApi.bundleSrc(capsuleId));
+  const runtimeCdnOrigin = toOrigin(process.env.NEXT_PUBLIC_RUNTIME_CDN_ORIGIN);
+
+  if (bundleOrigin) {
+    origins.add(bundleOrigin);
+  }
+  if (runtimeCdnOrigin) {
+    origins.add(runtimeCdnOrigin);
+  }
+
+  return Array.from(origins);
+}
+
 export function FeedCard({ post }: FeedCardProps) {
   const navigate = useNavigate();
   const { user, isSignedIn } = useUser();
@@ -68,6 +93,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const isModeratorFlag = metadata?.isModerator === true;
   const isModeratorOrAdmin =
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
+  const actorId = user?.id ?? null;
   const isApp = post.type === "app";
   const detailHref = isApp ? `/player/${post.id}` : `/post/${post.id}`;
   const [_isHovering, setIsHovering] = useState(false);
@@ -85,6 +111,7 @@ export function FeedCard({ post }: FeedCardProps) {
   const pauseStateRef = useRef<"paused" | "running">("running");
   const lastIntersectionRatioRef = useRef(1);
   const [isModerating, setIsModerating] = useState(false);
+  const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const previewLogsRef = useRef<PreviewLogEntry[]>([]);
 
   useEffect(() => {
@@ -120,13 +147,36 @@ export function FeedCard({ post }: FeedCardProps) {
     []
   );
 
+  useEffect(() => {
+    if (!isSignedIn) {
+      setAuthzState("unauthenticated");
+    } else if (!isModeratorOrAdmin) {
+      setAuthzState("forbidden");
+    } else {
+      setAuthzState("authorized");
+    }
+  }, [isSignedIn, isModeratorOrAdmin]);
+
   const handleModerationAction = async (action: "quarantine" | "remove") => {
     if (isModerating) return;
+    if (authzState !== "authorized") {
+      toast({
+        title: "Not authorized",
+        description: "Moderator or admin access is required to perform this action.",
+        variant: "error",
+      });
+      return;
+    }
 
     setIsModerating(true);
     try {
       const init = await buildAuthInit();
-      const response = await moderationApi.moderatePost(post.id, action, init);
+      if (!init) {
+        setAuthzState("unauthenticated");
+        throw new Error("Authentication is required to perform moderation actions.");
+      }
+      const notes = `source=feed_card | action=${action} | target=post:${post.id}${actorId ? ` | actor=${actorId}` : ""}`;
+      const response = await moderationApi.moderatePost(post.id, action, init, notes);
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -189,6 +239,40 @@ export function FeedCard({ post }: FeedCardProps) {
   const capsuleId = post.capsule?.id;
   const isWebContainer = post.capsule?.runner === "webcontainer";
   // Note: WebContainer runner should support equivalent pause/resume semantics when inline runs are enabled.
+  const runnerOrigins = useMemo(() => resolveRunnerOrigins(capsuleId), [capsuleId]);
+  const runnerOriginWarnedRef = useRef(false);
+
+  const warnMissingRunnerOrigins = useCallback(
+    (context: "send" | "receive") => {
+      if (runnerOriginWarnedRef.current) {
+        return;
+      }
+      runnerOriginWarnedRef.current = true;
+      console.warn("E-VIBECODR-0523 runner origin allowlist empty", {
+        capsuleId,
+        context,
+      });
+    },
+    [capsuleId]
+  );
+
+  const sendRunnerControl = useCallback(
+    (command: "pause" | "resume") => {
+      const target = iframeRef.current?.contentWindow;
+      if (!target || !capsuleId) {
+        return false;
+      }
+      if (runnerOrigins.length === 0) {
+        warnMissingRunnerOrigins("send");
+        return false;
+      }
+      for (const origin of runnerOrigins) {
+        target.postMessage({ type: command }, origin);
+      }
+      return true;
+    },
+    [capsuleId, runnerOrigins, warnMissingRunnerOrigins]
+  );
 
   // Track when the card enters the viewport with some padding
   useEffect(() => {
@@ -312,14 +396,11 @@ export function FeedCard({ post }: FeedCardProps) {
           if (nextState === pauseStateRef.current) {
             return;
           }
+          const sent = sendRunnerControl(nextState === "paused" ? "pause" : "resume");
+          if (!sent) {
+            return;
+          }
           pauseStateRef.current = nextState;
-
-          iframeWindow.postMessage(
-            {
-              type: nextState === "paused" ? "pause" : "resume",
-            },
-            "*"
-          );
         });
       },
       {
@@ -334,7 +415,7 @@ export function FeedCard({ post }: FeedCardProps) {
     return () => {
       observer.disconnect();
     };
-  }, [isRunning, capsuleId, post.id]);
+  }, [isRunning, capsuleId, post.id, sendRunnerControl]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -350,8 +431,11 @@ export function FeedCard({ post }: FeedCardProps) {
         if (nextState === pauseStateRef.current) {
           return;
         }
+        const sent = sendRunnerControl(nextState === "paused" ? "pause" : "resume");
+        if (!sent) {
+          return;
+        }
         pauseStateRef.current = nextState;
-        target.postMessage({ type: nextState === "paused" ? "pause" : "resume" }, "*");
       });
     };
 
@@ -359,7 +443,7 @@ export function FeedCard({ post }: FeedCardProps) {
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isRunning, capsuleId, post.id]);
+  }, [capsuleId, isRunning, post.id, sendRunnerControl]);
 
   useEffect(() => {
     if (!isApp || !capsuleId) {
@@ -368,6 +452,13 @@ export function FeedCard({ post }: FeedCardProps) {
 
     const handleMessage = (event: MessageEvent) => {
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
+        return;
+      }
+      if (runnerOrigins.length === 0) {
+        warnMissingRunnerOrigins("receive");
+        return;
+      }
+      if (!runnerOrigins.includes(event.origin)) {
         return;
       }
       const data = event.data;
@@ -395,7 +486,7 @@ export function FeedCard({ post }: FeedCardProps) {
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [capsuleId, isApp, pushPreviewLog]);
+  }, [capsuleId, isApp, pushPreviewLog, runnerOrigins, warnMissingRunnerOrigins]);
 
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
