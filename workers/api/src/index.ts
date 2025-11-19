@@ -806,6 +806,14 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
+    if (req.method === "OPTIONS") {
+      const headers = new Headers();
+      headers.set("Access-Control-Allow-Origin", "*");
+      headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return new Response(null, { status: 204, headers });
+    }
+
     const url = new URL(req.url);
     // Allow optional /api prefix when running behind Pages/Next routing
     const pathname = url.pathname.startsWith("/api/")
@@ -830,5 +838,11 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" }, ...init });
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "application/json");
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  return new Response(JSON.stringify(data), { status, ...init, headers });
 }
