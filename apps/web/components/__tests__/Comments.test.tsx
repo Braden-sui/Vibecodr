@@ -17,6 +17,9 @@ const mockUseUser = vi.fn(() => ({
 
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
 }));
 
 describe("Comments", () => {
@@ -157,10 +160,23 @@ describe("Comments", () => {
     await screen.findByText(/Sending/i);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/posts/post1/comments",
+      expect(fetchMock).toHaveBeenCalled();
+      const calls = (fetchMock as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(
+        ([url, init]) =>
+          typeof url === "string" &&
+          url.includes("/posts/post1/comments") &&
+          (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+            Authorization: "Bearer test-token",
+          }),
           body: expect.stringContaining("New comment"),
         })
       );
@@ -355,8 +371,12 @@ describe("Comments", () => {
     await user.click(deleteButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/comments/comment1",
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/comments/comment1"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(
         expect.objectContaining({
           method: "DELETE",
         })
@@ -446,4 +466,3 @@ describe("Comments", () => {
     });
   });
 });
-

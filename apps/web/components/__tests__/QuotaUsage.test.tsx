@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { QuotaUsage } from "../QuotaUsage";
+
+const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
+
+vi.mock("@clerk/clerk-react", () => ({
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
+}));
 
 describe("QuotaUsage", () => {
   beforeEach(() => {
@@ -10,7 +19,7 @@ describe("QuotaUsage", () => {
   it("should display loading state initially", () => {
     global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch; // Never resolves
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     expect(screen.getByText(/Loading your usage statistics/i)).toBeInTheDocument();
   });
@@ -33,7 +42,7 @@ describe("QuotaUsage", () => {
       }),
     });
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     await waitFor(() => {
       expect(screen.getByText("Usage & Quota")).toBeInTheDocument();
@@ -62,7 +71,7 @@ describe("QuotaUsage", () => {
       }),
     });
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     await waitFor(() => {
       expect(screen.getByText(/You've used 78% of your storage/i)).toBeInTheDocument();
@@ -87,7 +96,7 @@ describe("QuotaUsage", () => {
       }),
     });
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     await waitFor(() => {
       expect(screen.getByText(/Running low on resources/i)).toBeInTheDocument();
@@ -113,7 +122,7 @@ describe("QuotaUsage", () => {
       }),
     });
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     await waitFor(() => {
       expect(screen.getByText(/2\.5 GB/)).toBeInTheDocument();
@@ -134,7 +143,7 @@ describe("QuotaUsage", () => {
       }),
     });
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     await waitFor(() => {
       expect(screen.getByText("PRO")).toBeInTheDocument();
@@ -144,7 +153,7 @@ describe("QuotaUsage", () => {
   it("should handle API errors gracefully", async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
 
-    render(<QuotaUsage />);
+    renderWithRouter(<QuotaUsage />);
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to load quota information/i)).toBeInTheDocument();

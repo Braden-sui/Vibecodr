@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act } from "react-dom/test-utils";
 import userEvent from "@testing-library/user-event";
 import { ReportButton } from "../ReportButton";
 
@@ -38,6 +39,12 @@ if (!elementProto.setPointerCapture) {
 if (!elementProto.releasePointerCapture) {
   elementProto.releasePointerCapture = () => {};
 }
+
+vi.mock("@clerk/clerk-react", () => ({
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
+}));
 
 describe("ReportButton", () => {
   beforeEach(() => {
@@ -131,8 +138,12 @@ describe("ReportButton", () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/moderation/report",
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/moderation/report"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
           body: expect.stringContaining("spam"),
@@ -191,8 +202,9 @@ describe("ReportButton", () => {
       expect(screen.getByText("Report Submitted")).toBeInTheDocument();
     });
 
-    // Wait for auto-close timeout (2s) using real timers
-    await new Promise((resolve) => setTimeout(resolve, 2100));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+    });
 
     expect(screen.queryByText("Report Submitted")).not.toBeInTheDocument();
   });
@@ -253,8 +265,12 @@ describe("ReportButton", () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/moderation/report",
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/moderation/report"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(
         expect.objectContaining({
           body: expect.stringContaining("This violates my copyright"),
         })
@@ -288,9 +304,11 @@ describe("ReportButton", () => {
       expect(screen.getByRole("button", { name: /Submitting/i })).toBeDisabled();
     });
 
-    resolveSubmit!({
-      ok: true,
-      json: async () => ({ ok: true }),
+    await act(async () => {
+      resolveSubmit!({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
     });
   });
 });

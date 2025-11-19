@@ -167,9 +167,11 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
       }
 
       const data = await response.json();
-      setComments((prev) =>
-        prev.map((comment) => (comment.id === optimisticId ? (data.comment as Comment) : comment))
-      );
+      setComments((prev) => {
+        const withoutOptimistic = prev.filter((comment) => comment.id !== optimisticId);
+        const nextComment = data.comment as Comment;
+        return [...withoutOptimistic, nextComment];
+      });
       setReplyTo(null);
     } catch (error) {
       console.error("Failed to create comment:", error);

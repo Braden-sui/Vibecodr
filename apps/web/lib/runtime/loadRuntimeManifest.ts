@@ -1,3 +1,5 @@
+import { getWorkerApiBase } from "@/lib/worker-api";
+
 export type ClientRuntimeType = "react-jsx" | "html";
 
 export interface ClientRuntimeBundle {
@@ -50,8 +52,14 @@ function toAbsoluteAssetPath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function getRuntimeManifestUrl(artifactId: string): string {
+  const base = getWorkerApiBase();
+  const encodedId = encodeURIComponent(artifactId);
+  return `${base}/artifacts/${encodedId}/manifest`;
+}
+
 export async function loadRuntimeManifest(artifactId: string): Promise<ClientRuntimeManifest> {
-  const res = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/manifest`);
+  const res = await fetch(getRuntimeManifestUrl(artifactId));
 
   if (!res.ok) {
     throw new Error(`Failed to load runtime manifest for ${artifactId}: ${res.status}`);

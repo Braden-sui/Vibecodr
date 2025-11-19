@@ -31,6 +31,37 @@ vi.mock("next/link", () => ({
   },
 }));
 
+// Mock Clerk hooks/components with safe defaults for tests.
+vi.mock("@clerk/clerk-react", () => {
+  const mockUser = {
+    id: "test-user",
+    username: "tester",
+    fullName: "Test User",
+    imageUrl: "",
+    publicMetadata: {},
+  };
+  const useUser = vi.fn(() => ({ user: mockUser, isSignedIn: true, isLoaded: true }));
+  const useAuth = vi.fn(() => ({
+    getToken: vi.fn(async () => "test-token"),
+    isLoaded: true,
+    userId: mockUser.id,
+    sessionId: "sess-test",
+    orgId: null,
+  }));
+  const passthrough = ({ children }: any) => createElement("div", null, children);
+  const button = ({ children, ...props }: any) => createElement("button", { type: "button", ...props }, children);
+  return {
+    useUser,
+    useAuth,
+    ClerkProvider: passthrough,
+    SignedIn: passthrough,
+    SignedOut: passthrough,
+    SignInButton: button,
+    SignUpButton: button,
+    UserButton: () => createElement("div", { "data-testid": "mock-user-button" }),
+  };
+});
+
 // Mock window.matchMedia
 Object.defineProperty(window, "matchMedia", {
   writable: true,

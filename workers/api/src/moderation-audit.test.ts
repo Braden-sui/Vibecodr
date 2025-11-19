@@ -68,7 +68,7 @@ describe("moderation audit logging", () => {
               return null;
             },
             async run() {
-              if (query.startsWith("INSERT INTO moderation_audit_log")) {
+              if (query.includes("INSERT INTO moderation_audit_log")) {
                 const [, moderatorId, action, targetType, targetId, notes] = prepared.args;
                 state.auditInserts.push({
                   moderatorId,
@@ -135,7 +135,7 @@ describe("moderation audit logging", () => {
               if (query.startsWith("UPDATE posts SET quarantined = 1")) {
                 return {};
               }
-              if (query.startsWith("INSERT INTO moderation_audit_log")) {
+              if (query.includes("INSERT INTO moderation_audit_log")) {
                 const [, , action, targetType, targetId] = prepared.args;
                 state.auditInserts.push({
                   action,
@@ -201,7 +201,7 @@ describe("moderation audit logging", () => {
               if (query.startsWith("UPDATE comments SET quarantined = 1")) {
                 return {};
               }
-              if (query.startsWith("INSERT INTO moderation_audit_log")) {
+              if (query.includes("INSERT INTO moderation_audit_log")) {
                 const [, , action, targetType, targetId] = prepared.args;
                 state.auditInserts.push({
                   action,

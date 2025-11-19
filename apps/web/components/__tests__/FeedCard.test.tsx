@@ -1,13 +1,20 @@
+import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { FeedCard } from "../FeedCard";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
 
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
 }));
+
+const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 class MockIntersectionObserver {
   callback: IntersectionObserverCallback;
@@ -98,7 +105,7 @@ describe("FeedCard", () => {
   };
 
   it("should render post title and description", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     expect(screen.getByText("Test App")).toBeInTheDocument();
     expect(screen.getByText("A test application")).toBeInTheDocument();
@@ -111,7 +118,7 @@ describe("FeedCard", () => {
     const postB = { ...mockPost, id: "postB" };
     const postC = { ...mockPost, id: "postC" };
 
-    render(
+    renderWithRouter(
       <>
         <FeedCard post={postA} />
         <FeedCard post={postB} />
@@ -135,7 +142,7 @@ describe("FeedCard", () => {
     // Immediate successful manifest for prewarm
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as any;
 
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     const ioInstances = (window as any).__mockIOInstances as MockIntersectionObserver[];
     const viewObserver = ioInstances.find(
@@ -174,7 +181,7 @@ describe("FeedCard", () => {
   it("should pause when tab hidden and resume when visible again", async () => {
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as any;
 
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     const ioInstances = (window as any).__mockIOInstances as MockIntersectionObserver[];
     const viewObserver = ioInstances.find(
@@ -205,13 +212,13 @@ describe("FeedCard", () => {
   });
 
   it("should render author information", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     expect(screen.getByText("@testuser")).toBeInTheDocument();
   });
 
   it("should display stats correctly", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     expect(screen.getByText("10")).toBeInTheDocument(); // likes
     expect(screen.getByText("5")).toBeInTheDocument(); // comments
@@ -219,14 +226,14 @@ describe("FeedCard", () => {
   });
 
   it("should show capability badges", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     expect(screen.getByText("Network")).toBeInTheDocument();
     expect(screen.getByText("1 params")).toBeInTheDocument();
   });
 
   it("should show tags", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     expect(screen.getByText("#test")).toBeInTheDocument();
     expect(screen.getByText("#demo")).toBeInTheDocument();
@@ -238,14 +245,18 @@ describe("FeedCard", () => {
       json: async () => ({ ok: true, liked: true }),
     });
 
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     const likeButton = screen.getByRole("button", { name: "10" });
     fireEvent.click(likeButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/posts/post1/like",
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/posts/post1/like"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
         })
@@ -256,16 +267,18 @@ describe("FeedCard", () => {
   it("should optimistically follow and unfollow authors", async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true });
 
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     const followButton = screen.getByRole("button", { name: /follow/i });
     fireEvent.click(followButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/users/user1/follow",
-        expect.objectContaining({ method: "POST" })
-      );
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/users/user1/follow"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(expect.objectContaining({ method: "POST" }));
     });
     await waitFor(() => {
       expect(followButton).toHaveTextContent(/Following/i);
@@ -279,21 +292,23 @@ describe("FeedCard", () => {
     };
     global.fetch = vi.fn().mockResolvedValue({ ok: true });
 
-    render(<FeedCard post={followingPost} />);
+    renderWithRouter(<FeedCard post={followingPost} />);
 
     const followButton = screen.getByRole("button", { name: /Following/i });
     fireEvent.click(followButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/users/user1/follow",
-        expect.objectContaining({ method: "DELETE" })
-      );
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/users/user1/follow"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(expect.objectContaining({ method: "DELETE" }));
     });
   });
 
   it("should handle comment button click", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     const commentButton = screen.getByRole("button", { name: "5" });
     fireEvent.click(commentButton);
@@ -302,7 +317,7 @@ describe("FeedCard", () => {
   });
 
   it("should show remix button for app type", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     const remixButton = screen.getByRole("button", { name: "Remix" });
     expect(remixButton).toBeInTheDocument();
@@ -310,13 +325,13 @@ describe("FeedCard", () => {
 
   it("should not show remix button for report type", () => {
     const reportPost = { ...mockPost, type: "report" as const, capsule: undefined };
-    render(<FeedCard post={reportPost} />);
+    renderWithRouter(<FeedCard post={reportPost} />);
 
     expect(screen.queryByRole("button", { name: "Remix" })).not.toBeInTheDocument();
   });
 
   it("should show Report button", () => {
-    render(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={mockPost} />);
 
     // Report button is rendered (icon button)
     const buttons = screen.getAllByRole("button");

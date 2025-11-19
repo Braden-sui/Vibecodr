@@ -1,8 +1,21 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { loadRuntimeManifest } from "./loadRuntimeManifest";
 
 describe("loadRuntimeManifest", () => {
   const originalFetch = global.fetch;
+  const ORIGINAL_WORKER_BASE = process.env.WORKER_API_BASE;
+
+  beforeAll(() => {
+    process.env.WORKER_API_BASE = "https://worker.test";
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_WORKER_BASE) {
+      process.env.WORKER_API_BASE = ORIGINAL_WORKER_BASE;
+    } else {
+      delete process.env.WORKER_API_BASE;
+    }
+  });
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -45,7 +58,9 @@ describe("loadRuntimeManifest", () => {
 
     const result = await loadRuntimeManifest("a1");
 
-    expect(global.fetch).toHaveBeenCalledWith("/api/artifacts/a1/manifest");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://worker.test/artifacts/a1/manifest"
+    );
     expect(result.artifactId).toBe("a1");
     expect(result.type).toBe("react-jsx");
     expect(result.runtimeVersion).toBe("v0.1.0");

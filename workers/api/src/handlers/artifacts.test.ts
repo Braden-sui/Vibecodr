@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "../index";
 import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest } from "./artifacts";
+import { getUserRunQuotaState, Plan } from "../storage/quotas";
 
 vi.mock("../auth", () => {
   return {
@@ -16,13 +17,15 @@ vi.mock("../auth", () => {
   };
 });
 
-const getUserRunQuotaStateMock = vi.fn();
-
-vi.mock("../storage/quotas", () => {
+vi.mock("../storage/quotas", async () => {
+  const actual = await vi.importActual<typeof import("../storage/quotas")>("../storage/quotas");
   return {
-    getUserRunQuotaState: getUserRunQuotaStateMock,
+    ...actual,
+    getUserRunQuotaState: vi.fn(),
   };
 });
+
+const getUserRunQuotaStateMock = vi.mocked(getUserRunQuotaState);
 
 const createEnv = (): Env => {
   const prepare = vi.fn((sql: string) => {
@@ -232,7 +235,7 @@ describe("artifacts handlers", () => {
     vi.clearAllMocks();
     getUserRunQuotaStateMock.mockReset();
     getUserRunQuotaStateMock.mockResolvedValue({
-      plan: "free",
+      plan: Plan.FREE,
       runsThisMonth: 0,
       result: { allowed: true },
     });
@@ -362,7 +365,7 @@ describe("artifacts handlers", () => {
 
   it("rejects compile when run quota is exceeded", async () => {
     getUserRunQuotaStateMock.mockResolvedValueOnce({
-      plan: "free",
+      plan: Plan.FREE,
       runsThisMonth: 6000,
       result: {
         allowed: false,

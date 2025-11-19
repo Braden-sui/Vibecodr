@@ -32,6 +32,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
     "idle" | "downloading" | "analyzing" | "success" | "error"
   >("idle");
   const [error, setError] = useState<string>("");
+  const [isZipDragActive, setIsZipDragActive] = useState(false);
 
   const totalSize = useMemo(() => {
     if (!draft?.files || draft.files.length === 0) return 0;
@@ -56,31 +57,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
 
   const readyStepStatus = importStatus === "success" ? "complete" : "pending";
 
-  const handleGithubImport = async () => {
-    if (!githubUrl) return;
-
-    setIsImporting(true);
-    setImportStatus("downloading");
-    setError("");
-
-    try {
-      // TODO: Call API endpoint POST /import/github once backend is wired.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setImportStatus("analyzing");
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setImportStatus("success");
-    } catch (err) {
-      setImportStatus("error");
-      setError(err instanceof Error ? err.message : "Import failed");
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const importZipFile = async (file: File) => {
     setIsImporting(true);
     setImportStatus("downloading");
     setError("");
@@ -131,8 +108,61 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
       setError(err instanceof Error ? err.message : "Failed to process ZIP file");
     } finally {
       setIsImporting(false);
-      e.target.value = "";
     }
+  };
+
+  const handleGithubImport = async () => {
+    if (!githubUrl) return;
+
+    setIsImporting(true);
+    setImportStatus("downloading");
+    setError("");
+
+    try {
+      // TODO: Call API endpoint POST /import/github once backend is wired.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setImportStatus("analyzing");
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setImportStatus("success");
+    } catch (err) {
+      setImportStatus("error");
+      setError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    await importZipFile(file);
+    e.target.value = "";
+  };
+
+  const handleZipDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsZipDragActive(false);
+
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+
+    await importZipFile(file);
+  };
+
+  const handleZipDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isZipDragActive) {
+      setIsZipDragActive(true);
+    }
+  };
+
+  const handleZipDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsZipDragActive(false);
   };
 
   const handleContinueToPublish = () => {
@@ -254,7 +284,14 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
               <CardDescription>Upload a ZIP containing your built static files</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center">
+              <div
+                className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center ${
+                  isZipDragActive ? "border-primary bg-primary/5" : "border-muted"
+                }`}
+                onDragOver={handleZipDragOver}
+                onDragLeave={handleZipDragLeave}
+                onDrop={handleZipDrop}
+              >
                 <Upload className="mb-4 h-12 w-12 text-muted-foreground" />
                 <Label htmlFor="zip-upload" className="cursor-pointer">
                   <div className="space-y-2">

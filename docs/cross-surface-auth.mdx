@@ -1,18 +1,18 @@
 ---
 title: Cross-Surface Auth Handshake
-description: How Clerk sessions flow from the Next.js Pages proxies into the Worker API for feed, studio, and publish flows.
+description: How Clerk sessions in the React SPA call the Cloudflare Worker API for feed, studio, and publish flows.
 ---
 
 # Cross-Surface Auth Handshake
 
-Clerk issues the primary session cookies that live on the Pages runtime. Protected flows (feed interactions, studio, publish) must reuse that session to talk to the Worker API. This document captures the request path plus the automated proof we run when landing auth-sensitive changes.
+Clerk issues the primary session cookies, and the SPA requests scoped JWTs via `useAuth().getToken({ template: "workers" })`. Protected flows (feed interactions, studio, publish) must reuse that session to talk directly to the Worker API. This document captures the request path plus the automated proof we run when landing auth-sensitive changes.
 
 ## Request Path: Feed → Studio → Worker
 
-1. **Feed** `postsApi.list` calls `/api/posts?...` on the Pages runtime. The catch-all proxy in `apps/web/app/api/[...path]/route.ts` strips hop-by-hop headers, calls `auth().getToken({ template: "workers" })`, and forwards the request to `${WORKER_API_BASE}/posts?...` with `Authorization: Bearer <worker-token>`.
-2. **Studio entry** mounts `EnsureUserSynced`, which uses Clerk client hooks to call `ensureUserSynced({ user, token })`. That helper POSTs directly to `${WORKER_API_BASE}/users/sync` with `Authorization: Bearer <worker-token>` and the Clerk-normalized profile.
+1. **Feed** `postsApi.list` asks `useAuth().getToken({ template: "workers" })`, then calls `${getWorkerApiBase()}/posts?...` with `Authorization: Bearer <worker-token>`.
+2. **Studio entry** mounts `EnsureUserSynced`, which uses Clerk client hooks to call `ensureUserSynced({ user, token })`. That helper POSTs directly to `${getWorkerApiBase()}/users/sync` with the normalized profile.
 3. **Worker API** handlers such as `syncUser` and `capsules/publish` use `requireUser` to verify the JWT via Clerk JWKS, enforce that the `sub` matches the body payload, and reject mismatches with `E-VIBECODR-0404`.
-4. **Publish / heavy actions** like `capsulesApi.publish` go through the catch-all proxy, so the Worker receives the same signed bearer token and can audit/authorize the action against plan + quota state.
+4. **Publish / heavy actions** like `capsulesApi.publish` submit `FormData` straight to `${getWorkerApiBase()}/capsules/publish`, so the Worker receives the same signed bearer token and can audit/authorize the action against plan + quota state.
 
 ## Token Propagation Diagram
 
@@ -20,25 +20,22 @@ Clerk issues the primary session cookies that live on the Pages runtime. Protect
 sequenceDiagram
   autonumber
   participant Browser
-  participant PagesProxy as Next.js Edge Proxy
   participant Clerk
   participant WorkerAPI
-  Browser->>PagesProxy: GET /api/posts (Clerk cookies)
-  PagesProxy->>Clerk: auth() + getToken("workers")
-  PagesProxy->>WorkerAPI: GET /posts (Authorization: Bearer <worker-token>)
+  Browser->>Clerk: getToken("workers")
+  Clerk-->>Browser: Bearer token
+  Browser->>WorkerAPI: GET /posts (Authorization: Bearer <token>)
   WorkerAPI->>Clerk: Verify JWT via JWKS
-  WorkerAPI-->>PagesProxy: Feed JSON
-  PagesProxy-->>Browser: Feed response
-  Browser->>WorkerAPI: POST /users/sync (Clerk cookies, via token from useAuth.getToken("workers"))
+  WorkerAPI-->>Browser: Feed response
+  Browser->>WorkerAPI: POST /users/sync (Bearer token + Clerk profile)
   WorkerAPI->>Clerk: Verify JWT via JWKS
   WorkerAPI-->>Browser: Sync OK / errors
-  Browser->>PagesProxy: POST /api/capsules/publish (FormData)
-  PagesProxy->>WorkerAPI: POST /capsules/publish (Bearer token + blob)
+  Browser->>WorkerAPI: POST /capsules/publish (FormData + Bearer token)
   WorkerAPI-->>Browser: Publish response
 ```
 
 ## Regression Guards
 
-- `apps/web/lib/__tests__/crossSurfaceAuth.test.ts` spins up the feed → studio → publish call chain and asserts that every Worker-bound request carries the Clerk worker token.
+- `apps/web/lib/user-sync.test.ts` ensures `ensureUserSynced` only POSTs once per session, retries on failure, and targets the Worker base URL.
 - The Worker `syncUser` handler requires `requireUser`, validates that request bodies reference the authenticated subject, and returns `E-VIBECODR-0404` when mismatched.
 - Use this doc to update the diagram whenever we add new surfaces (e.g., moderation tooling, quota enforcement) so the checklist stays honest.

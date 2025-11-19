@@ -107,7 +107,11 @@ describe("HomePageClient feed data source", () => {
   it("does not fall back to sample posts on network errors", async () => {
     mockList.mockRejectedValueOnce(new Error("network-failure"));
 
-    render(<HomePageClient />);
+    render(
+      <MemoryRouter>
+        <HomePageClient />
+      </MemoryRouter>
+    );
 
     await waitFor(() =>
       expect(

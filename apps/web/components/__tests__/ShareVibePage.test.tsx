@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import ShareVibePage from "../../app/(site)/post/new/page";
+
+vi.mock("@clerk/clerk-react", () => ({
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
+}));
 
 describe("ShareVibePage", () => {
   beforeEach(() => {
@@ -9,7 +16,11 @@ describe("ShareVibePage", () => {
   });
 
   it("renders header and core fields", () => {
-    render(<ShareVibePage />);
+    render(
+      <MemoryRouter>
+        <ShareVibePage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByRole("heading", { level: 1, name: /Share a vibe/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Vibe title/i)).toBeInTheDocument();
@@ -19,7 +30,7 @@ describe("ShareVibePage", () => {
     expect(screen.getByText("Import a new vibe")).toBeInTheDocument();
   });
 
-  it("submits to /api/posts with title and description", async () => {
+  it("submits a post with title and description", async () => {
     const user = userEvent.setup({ delay: null });
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -28,7 +39,11 @@ describe("ShareVibePage", () => {
     });
     (global as any).fetch = fetchMock;
 
-    render(<ShareVibePage />);
+    render(
+      <MemoryRouter>
+        <ShareVibePage />
+      </MemoryRouter>
+    );
 
     await user.type(screen.getByLabelText(/Vibe title/i), "My demo vibe");
     await user.type(screen.getByLabelText(/Vibe text/i), "This is a test vibe.");
@@ -37,11 +52,14 @@ describe("ShareVibePage", () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/posts",
+      expect(fetchMock).toHaveBeenCalled();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(typeof url).toBe("string");
+      expect(url).toContain("/posts");
+      expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
-          headers: expect.objectContaining({ "Content-Type": "application/json" }),
+          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
           body: expect.stringContaining("My demo vibe"),
         })
       );

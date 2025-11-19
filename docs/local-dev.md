@@ -1,6 +1,6 @@
 # Local Development
 
-This repo ships both the Next.js UI (`apps/web`) and the Cloudflare Worker API (`workers/api`). The web app proxies every `/api/*` request through `apps/web/app/api/[...path]/route.ts`, so the browser never needs to know where the Worker lives – just point the proxy at the right base URL and everything else uses relative paths.
+This repo ships a single React Router SPA in `apps/web/src`. The `"use client"` page modules still live under `apps/web/app/(site)` for organizational parity, but everything renders through the Vite entry point. Every browser call hits the Cloudflare Worker API (`workers/api`) directly via helpers in `apps/web/lib/api.ts`.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ This repo ships both the Next.js UI (`apps/web`) and the Cloudflare Worker API (
 | File | Purpose | Required keys |
 | ---- | ------- | ------------- |
 | `.env.local` (repo root) | Worker secrets + database bindings | `CLERK_*`, `ALLOWLIST_HOSTS`, `D1_DATABASE_ID`, `R2_*`, etc. |
-| `apps/web/.env.local` | Next.js client + proxy config | `NEXT_PUBLIC_CLERK_*`, `NEXT_PUBLIC_POSTHOG_*`, `WORKER_API_BASE` and/or `NEXT_PUBLIC_API_BASE` |
+| `apps/web/.env.local` | Shared by Vite dev server, Vitest, and build | `NEXT_PUBLIC_CLERK_*`, `NEXT_PUBLIC_POSTHOG_*`, `WORKER_API_BASE` and/or `NEXT_PUBLIC_API_BASE` |
 
 For local API development set:
 
@@ -47,12 +47,11 @@ The proxy helper (`getWorkerApiBase`) reads `WORKER_API_BASE`, `NEXT_PUBLIC_API_
    pnpm --filter apps/web dev
    ```
 
-   Alternatively, run `pnpm dev` from the repo root to let Turbo spawn both `apps/web` and `workers/api` concurrently.
-
-The browser only ever talks to `http://localhost:3000`. When the UI calls `fetch("/api/posts")`, Next's catch‑all API route proxies that request to `${WORKER_API_BASE}/posts` (including credentials, method, and body) so you can swap between local and remote Workers without touching client code.
+   This command launches the Vite dev server on `http://localhost:3000`. Alternatively, run `pnpm dev` from the repo root to let Turbo spawn both `apps/web` (Vite) and `workers/api` concurrently.
 
 ## Notes
 
-- To target your production Worker from local Next, set `WORKER_API_BASE=https://<your-worker>.workers.dev` in `apps/web/.env.local`. The proxy will forward `/api/*` requests there automatically.
+- To target your production Worker from local dev, set `WORKER_API_BASE=https://<your-worker>.workers.dev` in `apps/web/.env.local`. All SPA fetches will point there automatically.
+- The SPA calls `workerUrl(...)` directly using the host you configured above. There is no `/api/*` proxy layer anymore, so browsers always talk straight to the Worker origin.
 - The Studio publish workflow uploads bundles via `/api/capsules/publish`, so keep the Worker dev server running when testing publish/post creation flows.
 - If you see `401 Unauthorized` responses during local dev, confirm you are signed into Clerk and that `WORKER_API_BASE` matches the host where you also configured your Clerk JWT issuer.

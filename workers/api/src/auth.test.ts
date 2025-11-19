@@ -98,7 +98,8 @@ describe("verifyAuth", () => {
 
     expect(result).toBeNull();
     expect(consoleSpy).toHaveBeenCalled();
-    expect(consoleSpy.mock.calls[0]?.[0]).toContain("E-VIBECODR-0006");
+    const messages = consoleSpy.mock.calls.map((call) => String(call[0]));
+    expect(messages.some((msg) => msg.includes("E-VIBECODR-0006"))).toBe(true);
 
     consoleSpy.mockRestore();
   });

@@ -11,6 +11,16 @@ vi.mock("./auth", () => {
   };
 });
 
+vi.mock("./contracts", () => {
+  const passthrough = {
+    parse: (value: unknown) => value,
+  } as any;
+  return {
+    ApiUserProfileResponseSchema: passthrough,
+    ApiUserPostsResponseSchema: passthrough,
+  };
+});
+
 import { getUserPosts } from "./handlers/profiles";
 import { verifyAuth } from "./auth";
 

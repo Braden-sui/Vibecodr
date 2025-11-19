@@ -1,7 +1,17 @@
+import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { NotificationBell } from "../Notifications";
+
+vi.mock("@clerk/clerk-react", () => ({
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
+}));
+
+const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 describe("NotificationBell", () => {
   const mockNotifications = [
@@ -70,7 +80,7 @@ describe("NotificationBell", () => {
       json: async () => ({ count: 0 }),
     });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     expect(button).toBeInTheDocument();
@@ -82,7 +92,7 @@ describe("NotificationBell", () => {
       json: async () => ({ count: 3 }),
     });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     await waitFor(() => {
       expect(screen.getByText("3")).toBeInTheDocument();
@@ -95,7 +105,7 @@ describe("NotificationBell", () => {
       json: async () => ({ count: 15 }),
     });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     await waitFor(() => {
       expect(screen.getByText("9+")).toBeInTheDocument();
@@ -110,7 +120,7 @@ describe("NotificationBell", () => {
       json: async () => ({ count: 2 }),
     });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -134,7 +144,7 @@ describe("NotificationBell", () => {
         json: async () => ({ notifications: mockNotifications }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     await waitFor(() => {
       expect(screen.getByText("3")).toBeInTheDocument();
@@ -144,7 +154,10 @@ describe("NotificationBell", () => {
     await user.click(button);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith("/api/notifications/summary?limit=20");
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/notifications/summary?limit=20"));
+      expect(match).toBeTruthy();
     });
   });
 
@@ -161,7 +174,7 @@ describe("NotificationBell", () => {
         json: async () => ({ notifications: mockNotifications }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -191,7 +204,7 @@ describe("NotificationBell", () => {
         json: async () => ({ notifications: [] }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -214,7 +227,7 @@ describe("NotificationBell", () => {
         json: async () => ({ notifications: mockNotifications }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -245,9 +258,15 @@ describe("NotificationBell", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true }),
-      });
+      })
+      .mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({}),
+        }),
+      );
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -260,9 +279,12 @@ describe("NotificationBell", () => {
     await user.click(aliceHandle);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenNthCalledWith(
-        3,
-        "/api/notifications/mark-read",
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/notifications/mark-read"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
           body: expect.stringContaining("notif1"),
@@ -286,9 +308,15 @@ describe("NotificationBell", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true }),
-      });
+      })
+      .mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({}),
+        }),
+      );
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -301,12 +329,12 @@ describe("NotificationBell", () => {
     await user.click(markAllButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        "/api/notifications/mark-read",
-        expect.objectContaining({
-          method: "POST",
-        })
-      );
+      expect(global.fetch).toHaveBeenCalled();
+      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
+      const match = calls.find(([url]) => typeof url === "string" && url.includes("/notifications/mark-read"));
+      expect(match).toBeTruthy();
+      const [, init] = match!;
+      expect(init).toEqual(expect.objectContaining({ method: "POST" }));
     });
 
     await waitFor(() => {
@@ -331,7 +359,7 @@ describe("NotificationBell", () => {
         json: async () => ({ ok: true }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     await waitFor(() => {
       expect(screen.getByText("3")).toBeInTheDocument();
@@ -365,7 +393,7 @@ describe("NotificationBell", () => {
         json: async () => ({ notifications: mockNotifications }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -392,7 +420,7 @@ describe("NotificationBell", () => {
         json: async () => ({ notifications: mockNotifications }),
       });
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     const button = screen.getByRole("button");
     await user.click(button);
@@ -409,7 +437,7 @@ describe("NotificationBell", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
 
-    render(<NotificationBell />);
+    renderWithRouter(<NotificationBell />);
 
     await waitFor(() => {
       expect(consoleSpy).toHaveBeenCalledWith(

@@ -139,6 +139,7 @@ export const commentsApi = {
     return fetch(url, init);
   },
   create(postId: string, body: string, options?: { parentCommentId?: string }, init?: RequestInit) {
+    const { headers: initHeaders, ...rest } = init ?? {};
     const payload: Record<string, unknown> = { body };
     if (options?.parentCommentId) {
       payload.parentCommentId = options.parentCommentId;
@@ -147,10 +148,10 @@ export const commentsApi = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(init?.headers || {}),
+        ...(initHeaders || {}),
       },
       body: JSON.stringify(payload),
-      ...init,
+      ...rest,
     });
   },
   delete(commentId: string, init?: RequestInit) {

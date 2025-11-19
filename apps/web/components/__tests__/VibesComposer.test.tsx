@@ -8,6 +8,9 @@ import { postsApi, capsulesApi, coversApi } from "@/lib/api";
 
 vi.mock("@clerk/clerk-react", () => ({
   useUser: vi.fn(),
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
 }));
 
 vi.mock("@/lib/client-auth", () => ({
@@ -389,6 +392,9 @@ describe("VibesComposer inline code mode", () => {
         title: "Inline app",
         type: "app",
         capsuleId: "caps123",
+      }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
       }),
     );
 

@@ -39,6 +39,9 @@ vi.mock("@/lib/perf", () => ({
 
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => ({ user: { publicMetadata: {} }, isSignedIn: false }),
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
 }));
 
 vi.mock("@/components/Player/PlayerControls", () => ({
@@ -134,7 +137,15 @@ describe("PlayerPageClient", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(mockPostsGet).toHaveBeenCalledWith("post-123"));
+    await waitFor(() => expect(mockPostsGet).toHaveBeenCalled());
+    const [postIdArg, initArg] = mockPostsGet.mock.calls[0];
+    expect(postIdArg).toBe("post-123");
+    expect(initArg).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+      })
+    );
+    await waitFor(() => expect(mockMapPost).toHaveBeenCalled());
     await waitFor(() => expect(iframePropsRef.current).not.toBeNull());
 
     act(() => {

@@ -2,8 +2,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Env } from "./index";
 import { importGithub, importZip } from "./handlers/import";
+import { getUserRunQuotaState, Plan } from "./storage/quotas";
 
-vi.mock("../auth", () => {
+vi.mock("./auth", () => {
   return {
     requireAuth:
       (handler: any) =>
@@ -22,13 +23,15 @@ vi.mock("../auth", () => {
   };
 });
 
-const getUserRunQuotaStateMock = vi.fn();
-
-vi.mock("../storage/quotas", () => {
+vi.mock("./storage/quotas", async () => {
+  const actual = await vi.importActual<typeof import("./storage/quotas")>("./storage/quotas");
   return {
-    getUserRunQuotaState: getUserRunQuotaStateMock,
+    ...actual,
+    getUserRunQuotaState: vi.fn(),
   };
 });
+
+const getUserRunQuotaStateMock = vi.mocked(getUserRunQuotaState);
 
 const createEnv = (): Env => {
   return {
@@ -58,7 +61,7 @@ describe("import handlers run quota enforcement", () => {
 
   it("rejects GitHub import when run quota is exceeded and does not call fetch", async () => {
     getUserRunQuotaStateMock.mockResolvedValueOnce({
-      plan: "free",
+      plan: Plan.FREE,
       runsThisMonth: 6000,
       result: {
         allowed: false,
@@ -88,7 +91,7 @@ describe("import handlers run quota enforcement", () => {
 
   it("rejects ZIP import when run quota is exceeded", async () => {
     getUserRunQuotaStateMock.mockResolvedValueOnce({
-      plan: "free",
+      plan: Plan.FREE,
       runsThisMonth: 6000,
       result: {
         allowed: false,
@@ -113,4 +116,3 @@ describe("import handlers run quota enforcement", () => {
     expect(body.reason).toContain("Monthly run quota exceeded");
   });
 });
-
