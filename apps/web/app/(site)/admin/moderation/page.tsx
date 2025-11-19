@@ -7,7 +7,7 @@
 // - Authz gate; audit log for actions
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -239,7 +239,7 @@ export default function ModerationQueue() {
                   <div className="text-xs text-muted-foreground break-all">
                     Target:{" "}
                     {report.targetType === "post" ? (
-                      <Link href={`/player/${report.targetId}`} className="underline">
+                      <Link to={`/player/${report.targetId}`} className="underline">
                         {report.targetId}
                       </Link>
                     ) : (

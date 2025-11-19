@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -111,13 +111,13 @@ export default function FlaggedPostsPage() {
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <Link href={`/player/${it.id}`} className="font-medium hover:underline">
+                    <Link to={`/player/${it.id}`} className="font-medium hover:underline">
                       {it.title || "Untitled"}
                     </Link>
                     <div className="text-xs text-muted-foreground">by @{it.author.handle}</div>
                   </div>
                   <div className="flex gap-2">
-                    <Link href={`/player/${it.id}`}>
+                    <Link to={`/player/${it.id}`}>
                       <Button size="sm" variant="outline">Open</Button>
                     </Link>
                     <Button

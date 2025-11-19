@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, TrendingUp, Zap } from "lucide-react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { quotaApi } from "@/lib/api";
 
 interface QuotaData {
@@ -208,7 +208,7 @@ export function QuotaUsage() {
                 <p className="text-xs text-orange-800 dark:text-orange-200">
                   Upgrade your plan to get more storage, runs, and larger bundle sizes.
                 </p>
-                <Link href="/pricing">
+                <Link to="/pricing">
                   <Button size="sm" className="gap-1">
                     <Zap className="h-3 w-3" />
                     Upgrade Plan
@@ -222,7 +222,7 @@ export function QuotaUsage() {
         {/* Plan benefits */}
         {quota.plan === "free" && !needsUpgrade && (
           <div className="text-center text-sm text-muted-foreground">
-            <Link href="/pricing" className="text-blue-600 dark:text-blue-400 hover:underline">
+            <Link to="/pricing" className="text-blue-600 dark:text-blue-400 hover:underline">
               Upgrade to Creator
             </Link>{" "}
             for 10x more runs (50k/month)
