@@ -827,15 +827,28 @@ export default {
         // naive: capture groups as p1/p2
         match.slice(1).forEach((v, i) => (params[`p${i + 1}`] = v));
         try {
-          return await r.handler(req, env, ctx, params);
+          const response = await r.handler(req, env, ctx, params);
+          return withCors(response);
         } catch (e: any) {
-          return json({ error: e?.message || "internal" }, 500);
+          return withCors(json({ error: e?.message || "internal" }, 500));
         }
       }
     }
-    return json({ error: "not found" }, 404);
+    return withCors(json({ error: "not found" }, 404));
   }
 } satisfies ExportedHandler<Env>;
+
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
+}
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
