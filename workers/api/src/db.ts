@@ -21,23 +21,43 @@ export async function getUserByHandle(env: Env, handle: string) {
   });
 }
 
-export async function getPostById(env: Env, id: string) {
-  const db = getDb(env);
-  return await db.query.posts.findFirst({
-    where: (posts, { eq }) => eq(posts.id, id),
-    with: {
-      author: true,
-      capsule: true,
-    },
-  });
+export async function upsertUser(env: Env, user: { id: string; email?: string; password_hash?: string }) {
+  await env.DB.prepare(
+    `INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET email=excluded.email, password_hash=COALESCE(excluded.password_hash, users.password_hash)`
+  ).bind(user.id, user.email || null, user.password_hash || null).run();
 }
 
-export async function getCapsuleById(env: Env, id: string) {
-  const db = getDb(env);
-  return await db.query.capsules.findFirst({
-    where: (capsules, { eq }) => eq(capsules.id, id),
-    with: {
-      owner: true,
-    },
-  });
+export async function upsertProfile(
+  env: Env,
+  profile: {
+    id: string;
+    user_id: string;
+    handle: string;
+    display_name?: string;
+    avatar_url?: string;
+    bio?: string;
+    theme?: string;
+  }
+) {
+  await env.DB.prepare(
+    `INSERT INTO profiles (id, user_id, handle, display_name, avatar_url, bio, theme)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       handle=excluded.handle,
+       display_name=excluded.display_name,
+       avatar_url=excluded.avatar_url,
+       bio=excluded.bio,
+       theme=excluded.theme`
+  )
+    .bind(
+      profile.id,
+      profile.user_id,
+      profile.handle,
+      profile.display_name || null,
+      profile.avatar_url || null,
+      profile.bio || null,
+      profile.theme || null
+    )
+    .run();
 }
