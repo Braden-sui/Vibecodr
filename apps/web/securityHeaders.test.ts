@@ -18,12 +18,12 @@ describe("securityHeaders", () => {
     expect(permissionsPolicy?.value).not.toContain("document-domain");
   });
 
-  it("allows the PostHog asset origin in connect-src", () => {
+  it("allows the worker API origin in connect-src", () => {
     const headers = securityHeaders.buildSecurityHeaders();
     const cspHeader = headers.find((header) => header.key === "Content-Security-Policy");
 
     expect(cspHeader).toBeDefined();
-    expect(cspHeader?.value).toContain("https://us-assets.i.posthog.com");
+    expect(cspHeader?.value).toContain("https://vibecodr-api.braden-yig.workers.dev");
   });
 
   it("allows the Clerk accounts origin in connect-src", () => {

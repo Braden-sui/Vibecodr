@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Github, Upload, Loader2, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { analyzeZipFile, formatBytes } from "@/lib/zipBundle";
-import type { CapsuleDraft, DraftFile } from "./StudioShell";
+import { capsulesApi } from "@/lib/api";
+import { redirectToSignIn } from "@/lib/client-auth";
+import { trackEvent } from "@/lib/analytics";
+import type { Manifest } from "@vibecodr/shared/manifest";
+import type { CapsuleDraft, DraftArtifact, DraftFile } from "./StudioShell";
 
 type ImportMethod = "github" | "zip";
 
@@ -33,6 +38,48 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
   >("idle");
   const [error, setError] = useState<string>("");
   const [isZipDragActive, setIsZipDragActive] = useState(false);
+  const { getToken } = useAuth();
+
+  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  }, [getToken]);
+
+  const applyServerManifest = useCallback(
+    (
+      manifest: Manifest,
+      warnings?: Array<{ path: string; message: string }>,
+      errors?: Array<{ path: string; message: string }>,
+      options?: {
+        sourceName?: string;
+        capsuleId?: string;
+        artifact?: DraftArtifact | null;
+        files?: DraftFile[];
+      }
+    ) => {
+      onDraftChange(() => ({
+        id: crypto.randomUUID(),
+        manifest,
+        files: options?.files,
+        sourceZipName: options?.sourceName,
+        validationStatus: "valid",
+        validationWarnings: warnings,
+        validationErrors: errors,
+        buildStatus: "success",
+        artifact: options?.artifact ?? null,
+        capsuleId: options?.capsuleId,
+        publishStatus: "idle",
+        postId: undefined,
+      }));
+    },
+    [onDraftChange]
+  );
 
   const totalSize = useMemo(() => {
     if (!draft?.files || draft.files.length === 0) return 0;
@@ -61,12 +108,19 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
     setIsImporting(true);
     setImportStatus("downloading");
     setError("");
+    setZipManifestWarnings([]);
+    setZipPublishWarnings([]);
 
     try {
       setImportStatus("analyzing");
       const analysis = await analyzeZipFile(file);
 
       if (analysis.errors && analysis.errors.length > 0) {
+        setZipSummary({
+          fileName: file.name,
+          totalSize: analysis.totalSize,
+        });
+        setZipManifestWarnings(analysis.errors);
         setImportStatus("error");
         setError("Manifest validation failed. Review the errors below.");
         onDraftChange(() => ({
@@ -86,47 +140,111 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         return;
       }
 
-      onDraftChange(() => ({
-        id: crypto.randomUUID(),
-        manifest: analysis.manifest,
-        files: analysis.files as DraftFile[],
-        sourceZipName: file.name,
-        validationStatus: "valid",
-        validationWarnings: analysis.warnings,
-        validationErrors: undefined,
-        buildStatus: "idle",
-        artifact: null,
-        capsuleId: undefined,
-        publishStatus: "idle",
-        postId: undefined,
-      }));
+      setZipSummary({
+        fileName: file.name,
+        totalSize: analysis.totalSize,
+      });
+      setZipManifestWarnings(analysis.warnings ?? []);
 
+      const init = await buildAuthInit();
+      const response = await capsulesApi.importZip(file, init);
+
+      if (response.status === 401) {
+        redirectToSignIn();
+        return;
+      }
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        capsuleId?: string;
+        manifest?: Manifest;
+        warnings?: Array<{ path: string; message: string }>;
+        errors?: Array<{ path: string; message: string }>;
+        artifact?: DraftArtifact | null;
+        error?: string;
+      };
+
+      if (!response.ok || !data.success || !data.manifest) {
+        const message = data.error || "ZIP import failed. Please check your archive.";
+        setImportStatus("error");
+        setError(message);
+        setZipManifestWarnings(data.warnings ?? analysis.warnings ?? []);
+        setZipPublishWarnings(data.warnings ?? []);
+        trackEvent("studio_import_zip_failed", { error: message });
+        return;
+      }
+
+      setZipManifestWarnings(data.warnings ?? analysis.warnings ?? []);
+      setZipPublishWarnings(data.warnings ?? []);
+      applyServerManifest(data.manifest, data.warnings, data.errors, {
+        sourceName: file.name,
+        capsuleId: data.capsuleId,
+        artifact: data.artifact ?? null,
+        files: analysis.files as DraftFile[],
+      });
       setImportStatus("success");
+      trackEvent("studio_import_zip_success", { capsuleId: data.capsuleId });
     } catch (err) {
       console.error("ZIP upload failed:", err);
+      const message = err instanceof Error ? err.message : "Failed to process ZIP file";
       setImportStatus("error");
-      setError(err instanceof Error ? err.message : "Failed to process ZIP file");
+      setError(message);
+      trackEvent("studio_import_zip_failed", { error: message });
     } finally {
       setIsImporting(false);
     }
   };
 
   const handleGithubImport = async () => {
-    if (!githubUrl) return;
+    const trimmedUrl = githubUrl.trim();
+    if (!trimmedUrl) return;
 
     setIsImporting(true);
     setImportStatus("downloading");
     setError("");
 
     try {
-      // TODO: Call API endpoint POST /import/github once backend is wired.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
       setImportStatus("analyzing");
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const init = await buildAuthInit();
+      const response = await capsulesApi.importGithub(
+        { url: trimmedUrl, branch: branch.trim() || undefined },
+        init
+      );
+
+      if (response.status === 401) {
+        redirectToSignIn();
+        return;
+      }
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        capsuleId?: string;
+        manifest?: Manifest;
+        warnings?: Array<{ path: string; message: string }>;
+        errors?: Array<{ path: string; message: string }>;
+        artifact?: DraftArtifact | null;
+        error?: string;
+      };
+
+      if (!response.ok || !data.success || !data.manifest) {
+        const message = data.error || "Import failed. Check the repository and try again.";
+        setImportStatus("error");
+        setError(message);
+        trackEvent("studio_import_github_failed", { error: message });
+        return;
+      }
+
+      applyServerManifest(data.manifest, data.warnings, data.errors, {
+        capsuleId: data.capsuleId,
+        artifact: data.artifact ?? null,
+      });
       setImportStatus("success");
+      trackEvent("studio_import_github_success", { capsuleId: data.capsuleId });
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Import failed";
       setImportStatus("error");
-      setError(err instanceof Error ? err.message : "Import failed");
+      setError(message);
+      trackEvent("studio_import_github_failed", { error: message });
     } finally {
       setIsImporting(false);
     }

@@ -3,19 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useUser, useAuth } from "@clerk/clerk-react";
-import {
-  PlayerIframe,
-  type PlayerIframeHandle,
-} from "@/components/Player/PlayerIframe";
-import { PlayerControls } from "@/components/Player/PlayerControls";
+import { type PlayerIframeHandle } from "@/components/Player/PlayerIframe";
 import { PlayerDrawer } from "@/components/Player/PlayerDrawer";
 import { ParamControls } from "@/components/Player/ParamControls";
-import { PlayerConsole, type PlayerConsoleEntry } from "@/components/Player/PlayerConsole";
+import { PlayerConsoleEntry } from "@/components/Player/PlayerConsole";
+import { PlayerShell } from "@/components/PlayerShell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sliders } from "lucide-react";
 import { postsApi, runsApi, moderationApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { trackClientError, trackEvent } from "@/lib/analytics";
+import { toast } from "@/lib/toast";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { budgeted } from "@/lib/perf";
@@ -73,6 +71,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const isModeratorFlag = metadata?.isModerator === true;
   const isModeratorOrAdmin =
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
+  const actorId = user?.id ?? null;
+  const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const tabParam = searchParams.get("tab");
   const initialTab: "notes" | "remix" | "chat" =
     tabParam === "chat" || tabParam === "comments"
@@ -139,12 +139,25 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   }, []);
 
   const handleUnquarantine = useCallback(async () => {
-    if (!post || !isModeratorOrAdmin || isUnquarantining) return;
+    if (!post || isUnquarantining) return;
+    if (authzState !== "authorized") {
+      toast({
+        title: "Not authorized",
+        description: "Moderator or admin access is required to unquarantine posts.",
+        variant: "error",
+      });
+      return;
+    }
 
     setIsUnquarantining(true);
     try {
       const init = await buildAuthInit();
-      const response = await moderationApi.moderatePost(post.id, "unquarantine", init);
+      if (!init) {
+        setAuthzState("unauthenticated");
+        throw new Error("Authentication is required to perform moderation actions.");
+      }
+      const notes = `source=player_page | action=unquarantine | target=post:${post.id}${actorId ? ` | actor=${actorId}` : ""}`;
+      const response = await moderationApi.moderatePost(post.id, "unquarantine", init, notes);
       if (!response.ok) {
         // Soft-fail: leave current banner; moderators can retry or use other tools.
         return;
@@ -153,7 +166,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     } finally {
       setIsUnquarantining(false);
     }
-  }, [isModeratorOrAdmin, isUnquarantining, post]);
+  }, [actorId, authzState, isUnquarantining, post]);
 
   const flushLogBatch = useCallback(
     (explicitRunId?: string) => {
@@ -426,6 +439,16 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       cancelled = true;
     };
   }, [postId]);
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setAuthzState("unauthenticated");
+    } else if (!isModeratorOrAdmin) {
+      setAuthzState("forbidden");
+    } else {
+      setAuthzState("authorized");
+    }
+  }, [isModeratorOrAdmin, isSignedIn]);
 
   useEffect(() => {
     if (!isModeratorOrAdmin) {
@@ -706,49 +729,29 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       {/* Main Player Area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Player */}
-        <div className="flex flex-1 flex-col">
-          <div className="flex-1 p-4">
-            {post?.capsule ? (
-              <PlayerIframe
-                ref={iframeHandleRef}
-                capsuleId={post.capsule.id}
-                artifactId={post.capsule.artifactId ?? undefined}
-                params={capsuleParams}
-                onReady={handleRunnerReady}
-                onError={handleRuntimeError}
-                onLog={handleConsoleLog}
-                onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
-                onBoot={handleBootMetrics}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-lg border border-dashed">
-                <p className="text-sm text-muted-foreground">
-                  {isLoading
-                    ? "Loading vibe..."
-                    : error === "not_found"
-                    ? "Vibe not found."
-                    : "This vibe does not have a runnable capsule attached yet."}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Controls */}
-          <PlayerControls
-            isRunning={isRunning}
-            stats={stats}
-            postId={postId}
-            onRestart={handleRestart}
-            onKill={handleKill}
-            onShare={handleShare}
-          />
-          <PlayerConsole
-            entries={consoleEntries}
-            collapsed={isConsoleCollapsed}
-            onToggle={() => setIsConsoleCollapsed((prev) => !prev)}
-            onClear={handleClearConsole}
-          />
-        </div>
+        <PlayerShell
+          ref={iframeHandleRef}
+          capsuleId={post?.capsule?.id}
+          artifactId={post?.capsule?.artifactId ?? undefined}
+          params={capsuleParams}
+          postId={postId}
+          isRunning={isRunning}
+          stats={stats}
+          consoleEntries={consoleEntries}
+          consoleCollapsed={isConsoleCollapsed}
+          onConsoleToggle={() => setIsConsoleCollapsed((prev) => !prev)}
+          onClearConsole={handleClearConsole}
+          onRestart={handleRestart}
+          onKill={handleKill}
+          onShare={handleShare}
+          onReady={handleRunnerReady}
+          onError={handleRuntimeError}
+          onLog={handleConsoleLog}
+          onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
+          onBoot={handleBootMetrics}
+          isLoading={isLoading}
+          loadError={error}
+        />
 
         {/* Right: Drawer */}
         <div className="w-80">

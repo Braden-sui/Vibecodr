@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi } from "vitest";
 import type { Env } from "../index";
-import { incrementPostStats } from "./counters";
+import { incrementPostStats, incrementUserCounters } from "./counters";
 
 const createEnv = (): Env => ({
   DB: {
@@ -30,7 +30,9 @@ describe("incrementPostStats", () => {
     expect(sql).toContain("comments_count");
     expect(sql).toContain("UPDATE posts SET");
 
+    const placeholderCount = (sql.match(/\?/g) ?? []).length;
     const bindArgs = (env.DB as any).bind.mock.calls[0];
+    expect(placeholderCount).toBe(bindArgs.length);
     expect(bindArgs[0]).toBe(1);
     expect(bindArgs[1]).toBe(-2);
     expect(bindArgs[2]).toBe("p1");
@@ -46,5 +48,19 @@ describe("incrementPostStats", () => {
 
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("incrementUserCounters", () => {
+  it("binds match placeholders when updating multiple counters", async () => {
+    const env = createEnv();
+    await incrementUserCounters(env, "u1", { followersDelta: 2, runsDelta: -3 });
+
+    expect((env.DB as any).prepare).toHaveBeenCalledTimes(1);
+    const sql = (env.DB as any).prepare.mock.calls[0][0] as string;
+    const placeholderCount = (sql.match(/\?/g) ?? []).length;
+    const bindArgs = (env.DB as any).bind.mock.calls[0];
+    expect(placeholderCount).toBe(bindArgs.length);
+    expect(bindArgs).toEqual([2, -3, "u1"]);
   });
 });

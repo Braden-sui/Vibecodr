@@ -2,8 +2,17 @@
 -- SQLite (D1) doesn't have robust IF NOT EXISTS for columns; these ALTERs will fail if column exists.
 -- Run once on fresh DBs; on existing DBs, comment out lines that already exist.
 
+CREATE TABLE IF NOT EXISTS _schema_guard (name TEXT PRIMARY KEY);
+
+CREATE TRIGGER IF NOT EXISTS add_followers_count_trigger
+AFTER INSERT ON _schema_guard
+WHEN NEW.name = 'followers_count'
+BEGIN
+  ALTER TABLE users ADD COLUMN followers_count INTEGER NOT NULL DEFAULT 0;
+END;
+
 -- Users table augmentations
-ALTER TABLE users ADD COLUMN followers_count INTEGER NOT NULL DEFAULT 0;
+INSERT OR IGNORE INTO _schema_guard (name) VALUES ('followers_count');
 ALTER TABLE users ADD COLUMN following_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN posts_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN runs_count INTEGER NOT NULL DEFAULT 0;

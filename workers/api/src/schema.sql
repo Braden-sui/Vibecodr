@@ -104,6 +104,18 @@ CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_comment_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
 
+CREATE TABLE IF NOT EXISTS live_waitlist (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  plan TEXT NOT NULL CHECK (plan IN ('free','creator','pro','team')),
+  user_id TEXT REFERENCES users(id),
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_live_waitlist_session ON live_waitlist(session_id);
+
 -- Moderation tables
 CREATE TABLE IF NOT EXISTS moderation_reports (
   id TEXT PRIMARY KEY,
@@ -271,3 +283,19 @@ CREATE TABLE IF NOT EXISTS handle_history (
 
 CREATE INDEX IF NOT EXISTS idx_handle_history_handle_valid
   ON handle_history(handle, valid_until DESC);
+
+CREATE TABLE IF NOT EXISTS runtime_events (
+  id TEXT PRIMARY KEY,
+  event_name TEXT NOT NULL,
+  capsule_id TEXT,
+  artifact_id TEXT,
+  runtime_type TEXT,
+  runtime_version TEXT,
+  code TEXT,
+  message TEXT,
+  properties TEXT,
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_events_created_at ON runtime_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runtime_events_event_name ON runtime_events(event_name);

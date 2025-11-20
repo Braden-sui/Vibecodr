@@ -2,8 +2,6 @@ const DEFAULTS = {
   runtimeCdnOrigin: "https://runtime.vibecodr.com",
   playerOrigin: "https://vibecodr.space",
   workerApiBase: "https://vibecodr-api.braden-yig.workers.dev",
-  posthogHost: "https://us.i.posthog.com",
-  posthogAssetOrigin: "https://us-assets.i.posthog.com",
   clerkScriptOrigin: "https://clerk.vibecodr.space",
   clerkAccountsOrigin: "https://accounts.vibecodr.space",
   fontCdnOrigin: "https://r2cdn.perplexity.ai",
@@ -102,11 +100,6 @@ function resolveWorkerApiOrigin() {
   return normalizeOrigin(raw) || DEFAULTS.workerApiBase;
 }
 
-function resolvePosthogOrigin() {
-  const raw = firstDefined([process.env.NEXT_PUBLIC_POSTHOG_HOST]);
-  return normalizeOrigin(raw) || DEFAULTS.posthogHost;
-}
-
 function uniqueSources(values) {
   return Array.from(
     new Set(values.filter((value) => typeof value === "string" && value.length > 0))
@@ -140,14 +133,6 @@ function resolveFontOrigin() {
   return origin || DEFAULTS.fontCdnOrigin;
 }
 
-function resolvePosthogAssetOrigin() {
-  const raw = firstDefined([
-    process.env.NEXT_PUBLIC_POSTHOG_ASSET_ORIGIN,
-    process.env.POSTHOG_ASSET_ORIGIN,
-  ]);
-  return normalizeOrigin(raw) || DEFAULTS.posthogAssetOrigin;
-}
-
 function resolveClerkImageOrigins() {
   const raw = firstDefined([
     process.env.NEXT_PUBLIC_CLERK_IMAGE_ORIGINS,
@@ -170,8 +155,6 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
   const runtimeCdnSource = resolveRuntimeCdnSource();
   const playerOrigin = resolvePlayerOrigin();
   const workerApiOrigin = resolveWorkerApiOrigin();
-  const posthogOrigin = resolvePosthogOrigin();
-  const posthogAssetOrigin = resolvePosthogAssetOrigin();
   const clerkScriptOrigin = resolveClerkScriptOrigin();
   const clerkAccountsOrigin = resolveClerkAccountsOrigin();
   const fontOrigin = resolveFontOrigin();
@@ -182,15 +165,12 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     "'self'",
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
     clerkScriptOrigin,
-    posthogAssetOrigin,
     cloudflareBeaconOrigin,
   ]);
 
   const connectSrc = uniqueSources([
     "'self'",
     workerApiOrigin,
-    posthogOrigin,
-    posthogAssetOrigin,
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
     clerkScriptOrigin,
     clerkAccountsOrigin,

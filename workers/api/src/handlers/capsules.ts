@@ -20,6 +20,7 @@ import { requireAuth, type AuthenticatedUser } from "../auth";
 import { incrementUserCounters } from "./counters";
 import { buildRuntimeManifest, type RuntimeArtifactType } from "../runtime/runtimeManifest";
 import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
+import { recordBundleWarningMetrics } from "../runtime/bundleTelemetry";
 
 export type PublishWarning = { path: string; message: string };
 
@@ -268,6 +269,7 @@ export function sanitizeHtmlEntryIfNeeded(
 
 export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<PersistCapsuleResult> {
   const { env, user, manifest, manifestText, files, totalSize, warnings } = input;
+  recordBundleWarningMetrics(env, warnings, "capsulePublish");
 
   const { plan, storageUsageBytes, storageVersion } = await getUserStorageState(user.userId, env);
   const sizeCheck = checkBundleSize(plan, totalSize);

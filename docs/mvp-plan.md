@@ -55,7 +55,7 @@ Per-run COGS on Cloudflare (Workers + R2) stay under $0.0003, so gross margins r
 | Realtime presence | Durable Objects | Track who’s viewing/remixing a capsule; global singleton per capsule for param sync. |
 | Queue / build throttle | Durable Object “BuildCoordinator” | Serializes heavy ZIP/GitHub imports, captures logs, emits status events. |
 | Auth | Clerk or Lucia + Workers | GitHub + Google OAuth; Clerk offers native Workers support and UI components. |
-| Observability | Workers Analytics Engine + PostHog | Capture run metrics, param usage, errors. |
+| Observability | Workers Analytics Engine (product & runtime telemetry) | Capture run metrics, param usage, errors. |
 | Video (future) | Daily SDK | Mentioned in roadmap only; no infrastructure deployed until activation milestone. |
 
 ### Non-goals for MVP

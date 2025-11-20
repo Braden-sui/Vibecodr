@@ -8,11 +8,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactElement,
 } from "react";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { capsulesApi } from "@/lib/api";
+import { trackRuntimeEvent } from "@/lib/analytics";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
+import { loadRuntime } from "@/lib/runtime/registry";
+import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
+import type { PolicyViolationEvent } from "@/lib/runtime/types";
 
 export interface PlayerIframeProps {
   capsuleId: string;
@@ -59,6 +64,16 @@ function getErrorMessage(payload: unknown): string | undefined {
   return typeof payload.message === "string" ? payload.message : undefined;
 }
 
+function getPolicyViolationDetails(payload: unknown) {
+  if (!isRecord(payload)) {
+    return { message: "Policy violation detected", code: undefined };
+  }
+  const message =
+    typeof payload.message === "string" ? payload.message : "Policy violation detected";
+  const code = typeof payload.code === "string" ? payload.code : undefined;
+  return { message, code };
+}
+
 function toOrigin(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
@@ -80,6 +95,12 @@ function resolveRunnerOrigins(capsuleId: string): string[] {
     origins.add(runtimeCdnOrigin);
   }
 
+  if (typeof window !== "undefined" && window.location?.origin) {
+    origins.add(window.location.origin);
+  }
+
+  origins.add("null");
+
   return Array.from(origins);
 }
 
@@ -93,13 +114,61 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const [errorMessage, setErrorMessage] = useState<string>("");
     const pauseStateRef = useRef<"paused" | "running">("running");
     const runnerOrigins = useMemo(() => resolveRunnerOrigins(capsuleId), [capsuleId]);
+    const [runtimeManifest, setRuntimeManifest] = useState<ClientRuntimeManifest | null>(null);
+    const [runtimeFrame, setRuntimeFrame] = useState<ReactElement | null>(null);
+    const heartbeatTrackedRef = useRef(false);
+    const bundleUrl = useMemo(() => capsulesApi.bundleSrc(capsuleId), [capsuleId]);
+    const paramsRef = useRef(params);
+    useEffect(() => {
+      paramsRef.current = params;
+    }, [params]);
+    const telemetryArtifactId = runtimeManifest?.artifactId ?? artifactId;
+    const postOrigins = useMemo(() => {
+      // INVARIANT: keep the sandboxed "null" origin so srcDoc iframe runtimes can receive commands.
+      return runnerOrigins.filter((origin): origin is string => Boolean(origin));
+    }, [runnerOrigins]);
+    const handleSandboxReady = useCallback(() => {
+      trackRuntimeEvent("runtime_frame_loaded", {
+        capsuleId,
+        artifactId: telemetryArtifactId,
+      });
+    }, [capsuleId, telemetryArtifactId]);
+
+    const handleSandboxError = useCallback(
+      (message: string) => {
+        trackRuntimeEvent("runtime_frame_error", {
+          capsuleId,
+          artifactId: telemetryArtifactId,
+          message,
+        });
+        setStatus("error");
+        setErrorMessage(message);
+        onError?.(message);
+      },
+      [capsuleId, telemetryArtifactId, onError]
+    );
+
+    const handlePolicyViolation = useCallback(
+      (violation: PolicyViolationEvent) => {
+        setStatus("error");
+        setErrorMessage(violation.message);
+        onError?.(violation.message);
+        trackRuntimeEvent("runtime_policy_violation", {
+          capsuleId,
+          artifactId: telemetryArtifactId,
+          message: violation.message,
+          code: violation.code,
+        });
+      },
+      [capsuleId, telemetryArtifactId, onError]
+    );
 
     const sendToIframe = useCallback(
       (type: string, payload?: unknown) => {
         const iframe = iframeRef.current;
         const target = iframe?.contentWindow;
-        if (!target || runnerOrigins.length === 0) {
-          if (runnerOrigins.length === 0) {
+        if (!target || postOrigins.length === 0) {
+          if (postOrigins.length === 0) {
             console.warn("E-VIBECODR-0520 runner origin allowlist empty; skipping postMessage", {
               capsuleId,
               type,
@@ -116,13 +185,13 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
                 payload,
               };
 
-        for (const origin of runnerOrigins) {
+        for (const origin of postOrigins) {
           target.postMessage(message, origin);
         }
 
         return true;
       },
-      [capsuleId, runnerOrigins]
+      [capsuleId, postOrigins]
     );
 
     useImperativeHandle(
@@ -193,6 +262,10 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return;
         }
         const payload = message.payload;
+        const telemetryBase = {
+          capsuleId,
+          artifactId: telemetryArtifactId,
+        };
 
         switch (type) {
           case "ready": {
@@ -202,6 +275,18 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
               onBoot?.({ bootTimeMs: bootTime });
             }
             onReady?.();
+            trackRuntimeEvent("runtime_ready", {
+              ...telemetryBase,
+              bootTime: bootTime ?? null,
+            });
+            break;
+          }
+
+          case "heartbeat": {
+            if (!heartbeatTrackedRef.current) {
+              heartbeatTrackedRef.current = true;
+              trackRuntimeEvent("runtime_heartbeat", telemetryBase);
+            }
             break;
           }
 
@@ -222,6 +307,24 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             setStatus("error");
             setErrorMessage(message);
             onError?.(message);
+            trackRuntimeEvent("runtime_error", {
+              ...telemetryBase,
+              message,
+              code: (isRecord(payload) && typeof payload.code === "string" ? payload.code : undefined) ?? undefined,
+            });
+            break;
+          }
+
+          case "policyViolation": {
+            const { message: violationMessage, code } = getPolicyViolationDetails(payload);
+            setStatus("error");
+            setErrorMessage(violationMessage);
+            onError?.(violationMessage);
+            trackRuntimeEvent("runtime_policy_violation", {
+              ...telemetryBase,
+              message: violationMessage,
+              code,
+            });
             break;
           }
         }
@@ -245,9 +348,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     // error state before attempting to talk to the iframe runtime.
     useEffect(() => {
       let cancelled = false;
+      heartbeatTrackedRef.current = false;
+      setRuntimeManifest(null);
+      setRuntimeFrame(null);
 
       if (!artifactId) {
-        // No runtime artifact; rely on legacy capsule bundle path.
         setStatus("loading");
         setErrorMessage("");
         return () => {
@@ -260,24 +365,82 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
 
       (async () => {
         try {
-          await loadRuntimeManifest(artifactId);
+          const manifest = await loadRuntimeManifest(artifactId);
           if (cancelled) return;
-          // Successful manifest load; actual boot still happens via iframe src + bridge.
+          setRuntimeManifest(manifest);
+          trackRuntimeEvent("runtime_manifest_loaded", {
+            capsuleId,
+            artifactId: manifest.artifactId ?? artifactId,
+            runtimeVersion: manifest.runtimeVersion,
+            runtimeType: manifest.type,
+            bundleDigest: manifest.bundle.digest,
+            bundleSizeBytes: manifest.bundle.sizeBytes,
+          });
         } catch (err) {
           if (cancelled) return;
+          const errorMessageText = "Failed to load runtime manifest for this artifact.";
           console.error("[player] runtime manifest load failed", {
             artifactId,
             error: err instanceof Error ? err.message : String(err),
           });
           setStatus("error");
-          setErrorMessage("Failed to load runtime manifest for this artifact.");
+          setErrorMessage(errorMessageText);
+          trackRuntimeEvent("runtime_manifest_error", {
+            capsuleId,
+            artifactId,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       })();
 
       return () => {
         cancelled = true;
       };
-    }, [artifactId]);
+    }, [artifactId, capsuleId]);
+
+    useEffect(() => {
+      if (!runtimeManifest) {
+        setRuntimeFrame(null);
+        return;
+      }
+
+      try {
+        const element = loadRuntime(runtimeManifest.type, {
+          manifest: runtimeManifest,
+          bundleUrl,
+          params: paramsRef.current,
+          frameRef: iframeRef,
+          title: "Vibecodr runtime",
+          onReady: handleSandboxReady,
+          onError: handleSandboxError,
+          onPolicyViolation: handlePolicyViolation,
+        });
+        setRuntimeFrame(element);
+      } catch (error) {
+        const errorMessage = "Failed to initialize runtime.";
+        console.error("E-VIBECODR-2108 runtime loader failed to render", {
+          capsuleId,
+          artifactId: runtimeManifest.artifactId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        trackRuntimeEvent("runtime_loader_error", {
+          capsuleId,
+          artifactId: runtimeManifest.artifactId ?? artifactId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        setStatus("error");
+        setErrorMessage(errorMessage);
+        setRuntimeFrame(null);
+      }
+    }, [
+      runtimeManifest,
+      bundleUrl,
+      handleSandboxReady,
+      handleSandboxError,
+      handlePolicyViolation,
+      capsuleId,
+      artifactId,
+    ]);
 
     useEffect(() => {
       const onVisibility = () => {
@@ -304,6 +467,23 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       };
     }, [sendToIframe, status]);
 
+    const runtimeRender = runtimeFrame ?? (
+      <iframe
+        ref={iframeRef}
+        src={capsulesApi.bundleSrc(capsuleId)}
+        data-capsule-id={capsuleId}
+        className="h-full w-full"
+        sandbox="allow-scripts allow-same-origin"
+        allow=""
+        title="Vibe Runner"
+        style={{
+          border: "none",
+          width: "100%",
+          height: "100%",
+        }}
+      />
+    );
+
     return (
       <div className="relative h-full w-full overflow-hidden rounded-lg border bg-background">
         {/* Loading State */}
@@ -327,20 +507,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         )}
 
         {/* Sandboxed Iframe */}
-        <iframe
-          ref={iframeRef}
-          src={capsulesApi.bundleSrc(capsuleId)}
-          data-capsule-id={capsuleId}
-          className="h-full w-full"
-          sandbox="allow-scripts allow-same-origin"
-          allow=""
-          title="Vibe Runner"
-          style={{
-            border: "none",
-            width: "100%",
-            height: "100%",
-          }}
-        />
+        {runtimeRender}
       </div>
     );
   }

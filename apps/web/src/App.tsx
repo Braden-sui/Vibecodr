@@ -5,6 +5,7 @@ import { EnsureUserSynced } from "@/components/EnsureUserSynced";
 import { AppRoutes } from "./routes";
 import { VibecodrWordmark } from "@/components/VibecodrWordmark";
 import { ModerationNavLinks } from "@/components/ModerationNavLinks";
+import { AdminAnalyticsNavLink } from "@/components/AdminAnalyticsNavLink";
 import { NotificationBell } from "@/components/Notifications";
 import { TopbarSearch } from "@/components/TopbarSearch";
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/clerk-react";
@@ -19,14 +20,15 @@ export function App() {
         <BrowserRouter>
           <div className="border-b">
             <nav className="container mx-auto flex items-center gap-6 py-4">
-              <VibecodrWordmark />
-              <a href="/studio" className="hover:text-primary">
-                Studio
-              </a>
-              <a href="/post/new" className="hover:text-primary">
-                Share a vibe
-              </a>
-              <ModerationNavLinks />
+            <VibecodrWordmark />
+            <a href="/studio" className="hover:text-primary">
+              Studio
+            </a>
+            <a href="/post/new" className="hover:text-primary">
+              Share a vibe
+            </a>
+            <ModerationNavLinks />
+            <AdminAnalyticsNavLink />
               <div className="ml-auto flex items-center gap-3">
                 <TopbarSearch />
                 <SignedIn>

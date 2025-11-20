@@ -161,6 +161,14 @@ If any invariant would be violated by a change, **the change is not allowed** wi
   - **How we enforce it**
     - All secrets stay in server-side env vars or Workers bindings.
     - Frontend talks to our Worker, and the Worker talks to third-party APIs using secure bindings.
+- **[INV-API-0502] Client must validate manifests before using capabilities**
+  - **Goal**: UI should never trust unvalidated manifest JSON for capability flags or param shapes.
+  - **Examples of what we are preventing**
+    - A malformed or malicious manifest crashing a new UI surface that reads `capabilities`/`params` directly.
+    - Rendering network/storage/worker badges from raw JSON without schema checks.
+  - **How we enforce it**
+    - Run `safeParseCapsuleManifest` (apps/web/lib/manifest.ts) on any manifest pulled in the browser before using its fields; fall back to `{ id, artifactId }` only if validation fails.
+    - Server-side paths already run `validateManifest`/`requireCapsuleManifest`; keep parity in new client routes.
 
 ---
 
@@ -257,13 +265,13 @@ Runtime, compile, and policy failures that affect users **must** surface structu
 
 This contract keeps safety and runtime behavior debuggable while aligning with social-app norms (stable public-ish error identifiers, internal detail in logs).
 
-## 10) Client Error Telemetry (PostHog / Analytics)
+## 10) Client Error Telemetry (Cloudflare Analytics Engine)
 
 Client-side failures in Feed, Player, comments, and moderation must be observable in analytics, not just in browser consoles.
 
-- **Event shape**
-  - All client error telemetry is sent via `trackClientError(code, props)` in `apps/web/lib/analytics.ts`.
-  - This emits a `client_error` PostHog event with:
+  - **Event shape**
+    - All client error telemetry is sent via `trackClientError(code, props)` in `apps/web/lib/analytics.ts`.
+  - This emits a `client_error` analytics engine datapoint with:
     - `code`: an `E-VIBECODR-####` string.
     - `type: "client_error"`.
     - Additional fields in `props` describing the area and context.
@@ -315,7 +323,7 @@ Client-side failures in Feed, Player, comments, and moderation must be observabl
     - Correlate with usage events like `feed_results_loaded`, `player_run_started`, or `composer_*`.
 
 - **Querying and dashboards**
-  - In PostHog:
+    - In the Cloudflare Analytics Engine:
     - Filter events where `event = "client_error"` and group by `code` and `area`.
     - Join with `feed_results_*` and `player_*` events on session or user to see how often errors affect core journeys.
   - For Workers Analytics:

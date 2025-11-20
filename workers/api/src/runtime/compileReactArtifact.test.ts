@@ -6,17 +6,17 @@ function makeCode(lines: string[]): string {
 }
 
 describe("compileReactArtifact", () => {
-  it("rejects empty source", () => {
-    const result = compileReactArtifact({ code: "" });
+  it("rejects empty source", async () => {
+    const result = await compileReactArtifact({ code: "" });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errorCode).toBe("E-VIBECODR-1100");
     }
   });
 
-  it("rejects when size exceeds maxBytes", () => {
+  it("rejects when size exceeds maxBytes", async () => {
     const code = "export default function A() { return null; }";
-    const result = compileReactArtifact({ code, maxBytes: 4 });
+    const result = await compileReactArtifact({ code, maxBytes: 4 });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errorCode).toBe("E-VIBECODR-1110");
@@ -24,7 +24,23 @@ describe("compileReactArtifact", () => {
     }
   });
 
-  it("accepts allowed imports", () => {
+  it("rejects when additionalFiles push size over maxBytes", async () => {
+    const code = "export default function A() { return null; }";
+    const result = await compileReactArtifact({
+      code,
+      maxBytes: 128,
+      additionalFiles: {
+        "helper.ts": "export const big = '" + "x".repeat(1024) + "';",
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorCode).toBe("E-VIBECODR-1110");
+      expect(result.details?.size).toBeGreaterThan(128);
+    }
+  });
+
+  it("accepts allowed imports", async () => {
     const code = makeCode([
       "import React from 'react';",
       "import ReactDOM from 'react-dom';",
@@ -32,20 +48,20 @@ describe("compileReactArtifact", () => {
       "export default function RuntimeArtifact() { return null; }",
     ]);
 
-    const result = compileReactArtifact({ code, maxBytes: 1024 * 1024 });
+    const result = await compileReactArtifact({ code, maxBytes: 1024 * 1024 });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.code).toContain("RuntimeArtifact");
+      expect(result.code).toContain("return null");
     }
   });
 
-  it("rejects unsupported bare imports", () => {
+  it("rejects unsupported bare imports", async () => {
     const code = makeCode([
       "import fs from 'fs';",
       "export default function RuntimeArtifact() { return null; }",
     ]);
 
-    const result = compileReactArtifact({ code });
+    const result = await compileReactArtifact({ code });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errorCode).toBe("E-VIBECODR-1103");
@@ -53,27 +69,68 @@ describe("compileReactArtifact", () => {
     }
   });
 
-  it("allows relative imports without checking allowlist", () => {
+  it("allows relative imports inside additional files when modules are allowed", async () => {
     const code = makeCode([
       "import React from 'react';",
       "import Component from './Component';",
       "export default function RuntimeArtifact() { return React.createElement(Component); }",
     ]);
 
-    const result = compileReactArtifact({ code });
+    const result = await compileReactArtifact({
+      code,
+      additionalFiles: {
+        "Component.tsx": "export default function Component() { return null; }",
+      },
+    });
     expect(result.ok).toBe(true);
   });
 
-  it("rejects unsupported require calls", () => {
+  it("rejects unsupported bare imports inside additional files", async () => {
+    const code = makeCode([
+      "import Helper from './helper';",
+      "export default function RuntimeArtifact() { return Helper; }",
+    ]);
+
+    const result = await compileReactArtifact({
+      code,
+      additionalFiles: {
+        "helper.ts": "import fs from 'fs'; export default fs;",
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorCode).toBe("E-VIBECODR-1103");
+      expect(result.details?.imports).toContain("fs");
+    }
+  });
+
+  it("rejects unsupported require calls", async () => {
     const code = makeCode([
       "const fs = require('fs');",
       "export default function RuntimeArtifact() { return null; }",
     ]);
 
-    const result = compileReactArtifact({ code });
+    const result = await compileReactArtifact({ code });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errorCode).toBe("E-VIBECODR-1103");
+    }
+  });
+
+  it("bundles React source and tree-shakes unused exports", async () => {
+    const code = makeCode([
+      "import { foo } from './foo.js';",
+      "console.log(foo);",
+    ]);
+    const result = await compileReactArtifact({
+      code: `${code}\nexport const foo = 42;`,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.code).toContain("console.log");
+      expect(result.code).toContain("42");
+      expect(result.code).not.toContain("foo = 42");
     }
   });
 });

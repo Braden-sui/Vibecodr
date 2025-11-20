@@ -35,9 +35,11 @@ export interface CapsuleDraft {
   postId?: string;
 }
 
+export type StudioTab = "import" | "params" | "files" | "publish";
+
 export interface StudioShellProps {
   children: React.ReactNode;
-  currentTab: "import" | "params" | "files" | "publish";
+  currentTab: StudioTab;
   draft?: CapsuleDraft;
   onTabChange?: (tab: string) => void;
 }

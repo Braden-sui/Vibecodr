@@ -33,5 +33,5 @@ This package hosts the front-end SPA:
 - Data fetching: wire to Workers API endpoints
 - Styling: Tailwind + shadcn (tokens, components)
 - Auth: Clerk/Lucia (GitHub + Google)
-- Analytics: PostHog events for Player interactions
+- Analytics: Cloudflare Analytics Engine datapoints for Player interactions
 - Accessibility: focus traps in Player, keyboard navigation

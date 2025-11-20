@@ -6,7 +6,7 @@ import { safeParseCapsuleManifest } from "@/lib/manifest";
 
 // Tiny API client for the Worker API.
 
-function workerUrl(path: string): string {
+export function workerUrl(path: string): string {
   const base = getWorkerApiBase();
   if (!path) return base;
   return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
@@ -455,6 +455,32 @@ export const capsulesApi = {
   },
   importGithub(input: { url: string; branch?: string }, init?: RequestInit) {
     return fetch(workerUrl("/import/github"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify(input),
+      ...init,
+    });
+  },
+  importZip(file: File, init?: RequestInit) {
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    return fetch(workerUrl("/import/zip"), {
+      method: "POST",
+      body: formData,
+      ...init,
+    });
+  },
+} as const;
+
+export const liveApi = {
+  joinWaitlist(
+    input: { sessionId: string; email: string; handle: string; plan: string },
+    init?: RequestInit,
+  ) {
+    return fetch(workerUrl("/live/waitlist"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

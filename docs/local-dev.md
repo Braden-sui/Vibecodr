@@ -13,7 +13,7 @@ This repo ships a single React Router SPA in `apps/web/src`. The `"use client"` 
 | File | Purpose | Required keys |
 | ---- | ------- | ------------- |
 | `.env.local` (repo root) | Worker secrets + database bindings | `CLERK_*`, `ALLOWLIST_HOSTS`, `D1_DATABASE_ID`, `R2_*`, etc. |
-| `apps/web/.env.local` | Shared by Vite dev server, Vitest, and build | `NEXT_PUBLIC_CLERK_*`, `NEXT_PUBLIC_POSTHOG_*`, `WORKER_API_BASE` and/or `NEXT_PUBLIC_API_BASE` |
+| `apps/web/.env.local` | Shared by Vite dev server, Vitest, and build | `NEXT_PUBLIC_CLERK_*`, `WORKER_API_BASE`, and/or `NEXT_PUBLIC_API_BASE` |
 
 For local API development set:
 

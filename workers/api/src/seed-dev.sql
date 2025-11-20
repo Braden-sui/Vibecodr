@@ -99,3 +99,29 @@ VALUES
     0,
     strftime('%s','now')
   );
+
+INSERT OR IGNORE INTO runtime_events (
+  id,
+  event_name,
+  capsule_id,
+  artifact_id,
+  runtime_type,
+  runtime_version,
+  code,
+  message,
+  properties,
+  created_at
+)
+VALUES
+  (
+    'runtime_demo_boot',
+    'runtime_ready',
+    'capsule_demo',
+    NULL,
+    'react-jsx',
+    'v0.1.0',
+    NULL,
+    'Demo runtime ready event',
+    '{"capabilities":{"net":[]}}',
+    strftime('%s','now')
+  );

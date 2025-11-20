@@ -64,6 +64,37 @@ describe("PlayerIframe", () => {
     expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, runnerOrigin);
   });
 
+  it("routes control messages to sandboxed null-origin runtimes", () => {
+    const postMessage = vi.fn();
+    const contentWindow = { postMessage } as any;
+
+    Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", {
+      configurable: true,
+      get() {
+        return contentWindow;
+      },
+    });
+
+    render(<PlayerIframe capsuleId="capsule1" />);
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "ready", payload: {} },
+          origin: "null",
+          source: contentWindow,
+        })
+      );
+    });
+
+    act(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "null");
+  });
+
   it("notifies parent when runtime posts an error message", () => {
     const onError = vi.fn();
     const runnerOrigin = new URL(capsulesApi.bundleSrc("capsule1")).origin;

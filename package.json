@@ -33,8 +33,5 @@
     "workers/*",
     "packages/*"
   ],
-  "dependencies": {
-    "posthog-js": "^1.293.0",
-    "posthog-node": "^5.11.2"
-  }
+  "dependencies": {}
 }

@@ -136,10 +136,11 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 - Auto-run lifecycle (feed): the host may auto-start runtime when a card enters the viewport, but must enforce an engagement window (for example, kill if there is no hover/click/param interaction within roughly 10 seconds), unload iframes that are far outside the viewport, and cap the number of simultaneously active auto-run iframes (for example, 5–7) to keep CPU and memory usage bounded.
 
 ### Observability & Admin Tooling
-- **Compile logs:** artifact id, owner, duration, bundle size, violations. Export to analytics pipeline + Grafana dashboard.
+- **Compile logs:** artifact id, owner, duration, bundle size, violations (including `bundle.*` warnings emitted by `workers/api/src/runtime/esbuildBundler.ts`) exported as structured events (`bundle_warning_count`) via `vibecodr_analytics_engine`.
 - **Runtime logs:** event types `runtime_init`, `runtime_ready`, `runtime_error`, `policy_violation`, `heartbeat_timeout`.
 - Dashboard widgets: compile success %, average runtime bootstrap latency, top violation codes.
 - Admin UX: internal page to view artifact manifests, revoke, trigger recompile with new runtime version.
+- Runtime telemetry pipeline: runtime events are posted to the Worker (`/runtime-events`), persisted to `runtime_events`, and surfaced in `/admin/analytics` so the admin dashboards/alerts you build can rely on the same dataset before broader rollout. Ingestion now returns HTTP 500 with `E-VIBECODR-2130` and `retryable: true` when D1 writes fail; clients must treat non-2xx as failures and perform a bounded retry instead of assuming 202.
 
 ### Testing & Validation
 - **Unit:** schema validation, import allowlist, guard script functions, registry behavior.
@@ -169,12 +170,19 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
        - For each code, document user-facing message, internal description, HTTP status, severity, logging/telemetry requirements, and recommended user action; keep codes stable over time to match social-app expectations.  
        - Cross-link runtime-related codes into `api-safety-and-abuse-invariants.mdx` and ensure FeedCard and Player error UIs surface the code plus clear next steps without leaking sensitive implementation details.
 2. **Compile & Storage Pipeline**
-   - [x] 2.1 Scaffold Cloudflare Worker/Durable Object for artifact compilation.  
-   - [x] 2.2 Implement authenticated upload API to R2 (signed or Worker-mediated) for artifact sources.  
-   - [x] 2.3 Build React compile pipeline (esbuild config, import validator, size guard).  
-   - [ ] 2.4 Build HTML sanitize pipeline (DOMPurify config, script tag enforcement).  
-   - [ ] 2.5 Emit manifests + store in KV/R2; add integration tests.  
-   - [ ] 2.6 Instrument Worker logs + metrics dashboards.
+- [x] 2.1 Scaffold Cloudflare Worker/Durable Object for artifact compilation.  
+- [x] 2.2 Implement authenticated upload API to R2 (signed or Worker-mediated) for artifact sources.  
+- [x] 2.3 Build React compile pipeline (esbuild config, import validator, size guard).  
+- [x] 2.3.1 Share `workers/api/src/runtime/esbuildBundler.ts` between import + artifact flows so every publish uses the same tree-shaken/minified output and entry detection logic, and surface bundler warnings as `bundle_warning_count` via `vibecodr_analytics_engine`.  
+- [x] 2.4 Build HTML sanitize pipeline (DOMPurify config, script tag enforcement).  
+  - Target: scrub HTML entries of `<script>` tags, inline handlers, and dangerous URIs before runtime execution; reuse `compileHtmlArtifact` and expose warnings in manifests.  
+  - Deliverables: validator w/ tests (see `workers/api/src/runtime/compileHtmlArtifact.ts`), sanitized output added to publications, and guard script + metadata documenting the HTML-only runtime expectations.
+- [x] 2.5 Emit manifests + store in KV/R2; add integration tests.  
+  - Ensure each artifact run produces a validated manifest (versioned key) along with the bundler output and manifest bytes persisted to `artifact_manifests` plus runtime KV (see `persistCapsuleBundle`/`recordBundleWarningMetrics`).  
+  - Integration test: upload fixture → compile pipeline → fetch manifest → verify versioned key contents when `runtimeArtifactsEnabled`; detect warnings + telemetry.  
+- [x] 2.6 Instrument Worker logs + metrics dashboards.  
+  - Record `bundle_warning_count` datapoints from the shared bundler (captured in `workers/api/src/runtime/bundleTelemetry.ts`) so dashboards can highlight warning spikes.  
+  - Add structured logs/alerts for compile failures, include telemetry for manifest emission latency, and surface `E-VIBECODR-1114` when telemetry writes fail; tie the metrics to the ArtifactCompiler Durable Object control loop.
 3. **Runtime Assets**
    - [x] 3.1 Create shared runtime bundles (React runtime, HTML runtime, guard script, bridge).  
    - [x] 3.2 Publish assets to Cloudflare static hosting with versioning + `runtime-index.json`.  

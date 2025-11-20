@@ -4,7 +4,6 @@
  * Based on research-github-import-storage.md
  */
 
-import * as esbuild from "esbuild-wasm";
 import JSZip from "jszip";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import type { Env, Handler } from "../index";
@@ -17,6 +16,7 @@ import {
 } from "./capsules";
 import { getUserRunQuotaState } from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
+import { bundleWithEsbuild } from "../runtime/esbuildBundler";
 
 interface AnalysisResult {
   entryPoint: string;
@@ -99,10 +99,19 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
     }
 
     // Bundle with esbuild-wasm
-    const bundled = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
+    const {
+      files: bundledFiles,
+      entryPoint: bundledEntryPoint,
+      warnings: bundlerWarnings,
+    } = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
+
+    const analysisForManifest: AnalysisResult = {
+      ...analysis,
+      entryPoint: bundledEntryPoint,
+    };
 
     // Generate manifest
-    const manifest = await generateManifest(bundled, analysis);
+    const manifest = await generateManifest(bundledFiles, analysisForManifest);
 
     // Validate manifest
     const validation = validateManifest(manifest);
@@ -118,7 +127,7 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
     }
 
     const manifestText = JSON.stringify(manifest, null, 2);
-    const files = convertBundledMapToCapsuleFiles(bundled);
+    const files = convertBundledMapToCapsuleFiles(bundledFiles);
     const manifestBytes = new TextEncoder().encode(manifestText);
     files.push({
       path: "manifest.json",
@@ -129,14 +138,20 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
 
     const validationWarnings = validation.warnings ?? [];
     const analysisWarnings =
-      analysis.warnings?.map<PublishWarning>((message, index) => ({
+      analysisForManifest.warnings?.map<PublishWarning>((message, index) => ({
         path: `analysis.${index}`,
         message,
       })) ?? [];
+    const bundlerWarningEntries = bundlerWarnings.map<PublishWarning>((message, index) => ({
+      path: `bundle.${index}`,
+      message,
+    }));
     const combinedWarnings =
-      validationWarnings.length === 0 && analysisWarnings.length === 0
+      validationWarnings.length === 0 &&
+      analysisWarnings.length === 0 &&
+      bundlerWarningEntries.length === 0
         ? undefined
-        : [...analysisWarnings, ...validationWarnings];
+        : [...analysisWarnings, ...bundlerWarningEntries, ...validationWarnings];
 
     let publishResult;
     try {
@@ -254,10 +269,19 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
     }
 
     // Bundle with esbuild-wasm
-    const bundled = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
+    const {
+      files: bundledFiles,
+      entryPoint: bundledEntryPoint,
+      warnings: bundlerWarnings,
+    } = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
+
+    const analysisForManifest: AnalysisResult = {
+      ...analysis,
+      entryPoint: bundledEntryPoint,
+    };
 
     // Generate manifest
-    const manifest = await generateManifest(bundled, analysis);
+    const manifest = await generateManifest(bundledFiles, analysisForManifest);
 
     // Validate manifest
     const validation = validateManifest(manifest);
@@ -273,7 +297,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
     }
 
     const manifestText = JSON.stringify(manifest, null, 2);
-    const files = convertBundledMapToCapsuleFiles(bundled);
+    const files = convertBundledMapToCapsuleFiles(bundledFiles);
     const manifestBytes = new TextEncoder().encode(manifestText);
     files.push({
       path: "manifest.json",
@@ -284,14 +308,20 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
 
     const validationWarnings = validation.warnings ?? [];
     const analysisWarnings =
-      analysis.warnings?.map<PublishWarning>((message, index) => ({
+      analysisForManifest.warnings?.map<PublishWarning>((message, index) => ({
         path: `analysis.${index}`,
         message,
       })) ?? [];
+    const bundlerWarningEntries = bundlerWarnings.map<PublishWarning>((message, index) => ({
+      path: `bundle.${index}`,
+      message,
+    }));
     const combinedWarnings =
-      validationWarnings.length === 0 && analysisWarnings.length === 0
+      validationWarnings.length === 0 &&
+      analysisWarnings.length === 0 &&
+      bundlerWarningEntries.length === 0
         ? undefined
-        : [...analysisWarnings, ...validationWarnings];
+        : [...analysisWarnings, ...bundlerWarningEntries, ...validationWarnings];
 
     let publishResult;
     try {
@@ -462,65 +492,6 @@ function detectSPDXLicense(text: string): string | undefined {
   }
 
   return undefined;
-}
-
-/**
- * Bundle files using esbuild-wasm
- * Client-side bundling with performance budget
- */
-async function bundleWithEsbuild(
-  files: Map<string, Uint8Array>,
-  entryPoint: string
-): Promise<Map<string, Uint8Array>> {
-  const bundled = new Map<string, Uint8Array>();
-
-  // If entry is HTML, no need to bundle - just include all files
-  if (entryPoint.endsWith(".html") || entryPoint.endsWith(".htm")) {
-    // Copy all files as-is
-    for (const [path, content] of files.entries()) {
-      bundled.set(path, content);
-    }
-    return bundled;
-  }
-
-  // For JavaScript entry points, bundle with esbuild
-  // Note: esbuild-wasm needs to be initialized first
-  // This is a simplified version - full implementation would handle:
-  // - Module resolution
-  // - Code splitting
-  // - Minification
-  // - Source maps
-
-  try {
-    // Initialize esbuild (one-time setup)
-    await esbuild.initialize({
-      wasmURL: "https://unpkg.com/esbuild-wasm@0.24.0/esbuild.wasm",
-    });
-
-    // Create virtual file system for esbuild
-    const entryContent = files.get(entryPoint);
-    if (!entryContent) {
-      throw new Error(`Entry point ${entryPoint} not found`);
-    }
-
-    // Simple bundling - in production, this would use esbuild's build API
-    // For now, just copy files
-    for (const [path, content] of files.entries()) {
-      bundled.set(path, content);
-    }
-
-    // TODO: Implement actual esbuild bundling with:
-    // - Build API for JavaScript modules
-    // - Tree shaking
-    // - Minification
-    // - Code splitting
-
-    return bundled;
-  } catch (error) {
-    console.error("Bundling error:", error);
-    // Fallback: return files as-is
-    return new Map(files);
-  }
 }
 
 /**

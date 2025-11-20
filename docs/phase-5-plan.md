@@ -7,7 +7,7 @@ Phase 5 extends the initial four-phase MVP program by tackling the “Post-MVP P
 1. **Live Capsules & Presence** – ship a gated live streaming beta (Daily/LiveKit) for showcasing projects and demos with waitlist activation, pointer sync, and post-session VOD chapters while keeping infra spend predictable (`docs/research-live-roadmap.md`). Hosts can present their capsules, walk through features, or even stream their coding process with Claude Code/Codex if desired.
 2. **Advanced Runtimes** – graduate WebContainer previews from flag to supported tier and stand up a worker-edge runner track for lightweight server logic, enforcing the bundle/cap limits defined in `docs/research-code-showcase-platforms.md` and `docs/checklist.mdx §18`.
 3. **Discovery & Collaboration Loops** – add For You ranking, full-text search, richer embeds, and collaborative editing/annotations so remixes and shares compound (`docs/research-social-platforms.md`, `docs/research-embed-share-and-seo.md`).
-4. **Observable Reliability** – deepen analytics (PostHog funnels + Workers Analytics Engine) and moderation tooling so the new capabilities stay safe (`docs/research-analytics-and-growth.md`, `docs/research-moderation-and-safety.md`, `docs/research-sandbox-and-runner.md`).
+4. **Observable Reliability** - deepen analytics (Cloudflare Analytics Engine dashboards + Workers Analytics Engine) and moderation tooling so the new capabilities stay safe (`docs/research-analytics-and-growth.md`, `docs/research-moderation-and-safety.md`, `docs/research-sandbox-and-runner.md`).
 
 Early indicators of success:
 - ≥10 live sessions/week with >70% completion and TTFF ≤1.5 s for webcontainer/live handoff.
@@ -45,7 +45,7 @@ Early indicators of success:
 - Sharing enhancements: OG image renderer V2, `embed.js` auto-theme + resize, oEmbed JSON endpoint, snapshot links that freeze param state for comments/shares.
 
 ### 4. Analytics, Moderation & Ops
-- Expand analytics: PostHog dashboards for live usage, runner mix, embed-driven runs; Workers Analytics Engine rollups for proxy/load metrics.
+- Expand analytics: Cloudflare Analytics Engine dashboards for live usage, runner mix, embed-driven runs; Workers Analytics Engine rollups for proxy/load metrics.
 - Moderation queue V2: escalation states, quarantine workflow, staff audit logs, keyword filters tuned for live chat.
 - Reliability tooling: incident runbook, synthetic TTFF tests for each runner type, alerts on live minute spikes or runner error rate.
 - Plan + quota enforcement: integrate new capabilities into billing (live minutes, worker-edge CPU) with UI progress banners.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LiveSession } from "./LiveSessionCard";
 import { trackEvent } from "@/lib/analytics";
+import { liveApi } from "@/lib/api";
+import { useAuth } from "@clerk/clerk-react";
+import { redirectToSignIn } from "@/lib/client-auth";
 
 interface Props {
   open: boolean;
@@ -21,6 +24,18 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
   const [plan, setPlan] = useState<"free" | "creator" | "pro" | "team">("free");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const { getToken } = useAuth();
+
+  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  }, [getToken]);
 
   const resetForm = () => {
     setEmail("");
@@ -37,17 +52,40 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
     setMessage("");
 
     try {
-      // TODO: POST /api/live/waitlist
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      const init = await buildAuthInit();
+      const response = await liveApi.joinWaitlist(
+        {
+          sessionId: session.id,
+          email,
+          handle,
+          plan,
+        },
+        init
+      );
+
+      if (response.status === 401) {
+        redirectToSignIn();
+        return;
+      }
+
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        const errorMessage =
+          typeof data.error === "string" ? data.error : "Failed to join waitlist. Please try again.";
+        throw new Error(errorMessage);
+      }
+
       trackEvent("live_waitlist_submitted", {
         sessionId: session.id,
         plan,
       });
-      setMessage("You&apos;re on the list. We&apos;ll email you as soon as slots open up.");
       resetForm();
+      setMessage("You&apos;re on the list. We&apos;ll email you as soon as slots open up.");
     } catch (error) {
       console.error("Failed to join waitlist", error);
-      setMessage("Something went wrong. Please try again shortly.");
+      const nextMessage =
+        error instanceof Error ? error.message : "Something went wrong. Please try again shortly.";
+      setMessage(nextMessage);
     } finally {
       setIsSubmitting(false);
     }

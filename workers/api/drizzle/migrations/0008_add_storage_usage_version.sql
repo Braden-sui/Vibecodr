@@ -1,8 +1,13 @@
--- Track storage usage and optimistic version per user for capsule uploads
--- Tier: T1 (public API storage accounting, reversible via column drop)
+-- SAFETY: ensure columns exist (raise divide-by-zero if missing)
+SELECT CASE
+  WHEN NOT EXISTS (SELECT 1 FROM pragma_table_info('users') WHERE name = 'storage_usage_bytes')
+    THEN 1/0
+END;
 
-ALTER TABLE users ADD COLUMN storage_usage_bytes INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE users ADD COLUMN storage_version INTEGER NOT NULL DEFAULT 0;
+SELECT CASE
+  WHEN NOT EXISTS (SELECT 1 FROM pragma_table_info('users') WHERE name = 'storage_version')
+    THEN 1/0
+END;
 
 -- Backfill usage from existing capsule assets
 UPDATE users

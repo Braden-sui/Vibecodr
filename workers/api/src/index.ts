@@ -1,5 +1,5 @@
-// Cloudflare Worker API skeleton for Vibecod
-// Routes documented in SITEMAP.md. Each handler returns 501 with TODOs.
+// Cloudflare Worker API implementation for Vibecod
+// Routes documented in SITEMAP.md.
 
 export interface Env {
   DB: D1Database;
@@ -88,6 +88,8 @@ import {
 } from "./handlers/embeds";
 import { completeRun, appendRunLogs } from "./handlers/runs";
 import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest } from "./handlers/artifacts";
+import { joinLiveWaitlist } from "./handlers/live";
+import { recordRuntimeEvent, getRuntimeAnalyticsSummary } from "./handlers/runtimeEvents";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
 export { ArtifactCompiler } from "./durable/ArtifactCompiler";
 
@@ -777,6 +779,10 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "POST", pattern: /^\/notifications\/mark-read$/, handler: markNotificationsRead },
   { method: "GET", pattern: /^\/notifications\/unread-count$/, handler: getUnreadCount },
 
+  // Runtime analytics
+  { method: "POST", pattern: /^\/runtime-events$/, handler: recordRuntimeEvent },
+  { method: "GET", pattern: /^\/runtime-analytics\/summary$/, handler: getRuntimeAnalyticsSummary },
+
   // Runs & Logs
   { method: "POST", pattern: /^\/runs\/([^\/]+)\/logs$/, handler: appendRunLogs },
   { method: "POST", pattern: /^\/runs\/complete$/, handler: completeRun },
@@ -794,6 +800,7 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "GET", pattern: /^\/moderation\/flagged-posts$/, handler: getFlaggedPosts },
   { method: "GET", pattern: /^\/moderation\/audit$/, handler: getModerationAudit },
   { method: "POST", pattern: /^\/moderation\/filter-content$/, handler: filterContent },
+  { method: "POST", pattern: /^\/live\/waitlist$/, handler: joinLiveWaitlist },
 
   // Embeds & SEO
   { method: "GET", pattern: /^\/oembed$/, handler: oEmbedHandler },

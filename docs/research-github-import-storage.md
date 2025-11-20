@@ -28,6 +28,7 @@ What it takes to import from GitHub reliably, respect limits, and cache artifact
 ## Implementation Notes
 - Rate limiting: batch GitHub API calls; prefer archive downloads over many content API calls.
 - Build: esbuild-wasm in-browser first; fall back to Worker queue for heavy builds.
+- Build pipeline now shares `workers/api/src/runtime/esbuildBundler.ts` with the artifact compiler so tree-shaking/minification and entry detection stay consistent; bundler warnings flow into the `bundle_warning_count` datapoint on `vibecodr_analytics_engine`.
 - Storage: R2 for assets; D1 for capsule record; include integrity hash for tamper checks.
 - Security: never execute arbitrary build scripts client-side; whitelist simple static bundling only.
 
@@ -35,4 +36,3 @@ What it takes to import from GitHub reliably, respect limits, and cache artifact
 - GitHub large files: https://docs.github.com/api/article/body?pathname=/en/repositories/working-with-files/managing-large-files/about-large-files-on-github
 - REST API rate limits: https://docs.github.com/api/article/body?pathname=/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 - Git LFS overview: https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-git-large-file-storage
-

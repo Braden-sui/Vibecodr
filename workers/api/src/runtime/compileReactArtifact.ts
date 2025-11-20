@@ -1,9 +1,13 @@
 // React artifact compile helper for iframe runtime loader
 // 2.3: esbuild config stub, import validator, size guard.
 
+import { bundleWithEsbuild } from "./esbuildBundler";
+
 export interface ReactCompileInput {
   code: string;
   maxBytes?: number;
+  entry?: string;
+  additionalFiles?: Record<string, string>;
 }
 
 export interface ReactCompileResult {
@@ -21,7 +25,8 @@ export interface ReactCompileError {
 
 export type ReactCompileOutcome = ReactCompileResult | ReactCompileError;
 
-// Minimal initial allowlist based on docs; can be extended by later work.
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
 const ALLOWED_IMPORTS = new Set([
   "react",
   "react-dom",
@@ -33,8 +38,9 @@ const ALLOWED_IMPORTS = new Set([
 ]);
 
 // INVARIANT: Caller passes already-size-gated source when using plan-aware quotas.
-export function compileReactArtifact(input: ReactCompileInput): ReactCompileOutcome {
-  const { code, maxBytes } = input;
+export async function compileReactArtifact(input: ReactCompileInput): Promise<ReactCompileOutcome> {
+  const { code, maxBytes, entry = "index.tsx" } = input;
+  const normalizedEntry = normalizeEntryName(entry);
 
   if (!code.trim()) {
     return {
@@ -44,43 +50,16 @@ export function compileReactArtifact(input: ReactCompileInput): ReactCompileOutc
     };
   }
 
-  const size = new TextEncoder().encode(code).byteLength;
-  if (typeof maxBytes === "number" && size > maxBytes) {
-    return {
-      ok: false,
-      errorCode: "E-VIBECODR-1110",
-      message: "Artifact source exceeds allowed size budget",
-      details: { size, maxBytes },
-    };
+  const importViolations: string[] = [];
+  const filesToValidate: Array<{ path: string; content: string }> = [{ path: normalizedEntry, content: code }];
+  if (input.additionalFiles) {
+    for (const [path, content] of Object.entries(input.additionalFiles)) {
+      filesToValidate.push({ path, content });
+    }
   }
 
-  const importViolations: string[] = [];
-
-  // Very small, line-based import scan for now.
-  const lines = code.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("//")) continue;
-
-    // Handle `import x from "pkg";` and `import {x} from 'pkg';`
-    const importMatch = trimmed.match(/^import\s+[^"']+['"]([^"']+)['"];?/);
-    if (importMatch) {
-      const spec = importMatch[1];
-      if (!isAllowedImport(spec)) {
-        importViolations.push(spec);
-      }
-      continue;
-    }
-
-    // Handle `require("pkg")` style usage conservatively.
-    const requireMatch = trimmed.match(/require\(['"]([^'\"]+)['"]\)/);
-    if (requireMatch) {
-      const spec = requireMatch[1];
-      if (!isAllowedImport(spec)) {
-        importViolations.push(spec);
-      }
-      continue;
-    }
+  for (const { content } of filesToValidate) {
+    collectImportViolations(content, importViolations);
   }
 
   if (importViolations.length > 0) {
@@ -92,29 +71,95 @@ export function compileReactArtifact(input: ReactCompileInput): ReactCompileOutc
     };
   }
 
-  // NOTE: esbuild-wasm integration will be added later by the broader pipeline work.
-  // For 2.3, we return the original code once it passes validation so downstream
-  // steps (HTML pipeline, manifest emission) can be implemented independently.
+  const files = new Map<string, Uint8Array>();
+  const entryBytes = TEXT_ENCODER.encode(code);
+  files.set(normalizedEntry, entryBytes);
 
-  return {
-    ok: true,
-    code,
-    warnings: [],
-  };
+  let totalBytes = entryBytes.byteLength;
+  if (input.additionalFiles) {
+    for (const [path, content] of Object.entries(input.additionalFiles)) {
+      const encoded = TEXT_ENCODER.encode(content);
+      files.set(path, encoded);
+      totalBytes += encoded.byteLength;
+    }
+  }
+
+  // INVARIANT: size guard accounts for entry and all additional files to enforce quotas.
+  if (typeof maxBytes === "number" && totalBytes > maxBytes) {
+    return {
+      ok: false,
+      errorCode: "E-VIBECODR-1110",
+      message: "Artifact source exceeds allowed size budget",
+      details: { size: totalBytes, maxBytes },
+    };
+  }
+
+  try {
+    const bundle = await bundleWithEsbuild(files, normalizedEntry);
+    const compiled = bundle.files.get(bundle.entryPoint);
+    if (!compiled) {
+      return {
+        ok: false,
+        errorCode: "E-VIBECODR-1104",
+        message: "Bundler did not produce an entry file",
+      };
+    }
+
+    return {
+      ok: true,
+      code: TEXT_DECODER.decode(compiled),
+      warnings: bundle.warnings,
+    };
+  } catch (error) {
+    console.error("React artifact compile failed:", error);
+    return {
+      ok: false,
+      errorCode: "E-VIBECODR-1105",
+      message: "Failed to bundle artifact",
+      details: { error: error instanceof Error ? error.message : String(error) },
+    };
+  }
+}
+
+function normalizeEntryName(name: string): string {
+  return name.includes(".") ? name : `${name}.tsx`;
+}
+
+function collectImportViolations(source: string, importViolations: string[]) {
+  const lines = source.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("//")) continue;
+
+    const importMatch = trimmed.match(/^import\s+[^"']+['"]([^"']+)['"];?/);
+    if (importMatch) {
+      const spec = importMatch[1];
+      if (!isAllowedImport(spec)) {
+        importViolations.push(spec);
+      }
+      continue;
+    }
+
+    const requireMatch = trimmed.match(/require\(['"]([^'"]+)['"]\)/);
+    if (requireMatch) {
+      const spec = requireMatch[1];
+      if (!isAllowedImport(spec)) {
+        importViolations.push(spec);
+      }
+      continue;
+    }
+  }
 }
 
 function isAllowedImport(specifier: string): boolean {
-  // Allow relative/absolute paths; bundler resolves them outside the allowlist policy.
   if (specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("/")) {
     return true;
   }
 
-  // Bare specifiers must be explicitly allowed.
   if (ALLOWED_IMPORTS.has(specifier)) {
     return true;
   }
 
-  // Simple namespace allowance, e.g. "d3-scale" under "d3" umbrella.
   for (const allowed of ALLOWED_IMPORTS) {
     if (specifier === allowed) return true;
     if (specifier.startsWith(`${allowed}/`)) return true;

@@ -208,6 +208,14 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Compile telemetry for this capsule may be temporarily degraded.",
     logMessage: "ArtifactCompiler analytics datapoint write failed",
   },
+  "E-VIBECODR-1114": {
+    code: "E-VIBECODR-1114",
+    category: "runtime",
+    httpStatus: 202,
+    severity: "warning",
+    userMessage: "Bundle warning telemetry is temporarily degraded.",
+    logMessage: "Artifact bundle warning telemetry write failed",
+  },
   "E-VIBECODR-1110": {
     code: "E-VIBECODR-1110",
     category: "manifest",
@@ -284,6 +292,22 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Navigation APIs are disabled inside this capsule.",
     logMessage: "Runtime guard blocked window.open/navigation attempt",
   },
+  "E-VIBECODR-2130": {
+    code: "E-VIBECODR-2130",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Runtime analytics collection is temporarily unavailable. Please retry.",
+    logMessage: "Runtime analytics write failed",
+  },
+  "E-VIBECODR-2131": {
+    code: "E-VIBECODR-2131",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Unable to load runtime analytics data right now.",
+    logMessage: "Runtime analytics summary fetch failed",
+  },
 };
 
 export type ErrorCode = keyof typeof definitions;
@@ -298,6 +322,7 @@ export const ERROR_MANIFEST_INVALID: ErrorCode = "E-VIBECODR-1100";
 export const ERROR_MANIFEST_TOO_LARGE: ErrorCode = "E-VIBECODR-1110";
 export const ERROR_ARTIFACT_COMPILER_STATE_WRITE_FAILED: ErrorCode = "E-VIBECODR-1104";
 export const ERROR_ARTIFACT_COMPILER_ANALYTICS_FAILED: ErrorCode = "E-VIBECODR-1105";
+export const ERROR_BUNDLE_WARNING_TELEMETRY_FAILED: ErrorCode = "E-VIBECODR-1114";
 export const ERROR_RUNTIME_MANIFEST_PARSE_FAILED: ErrorCode = "E-VIBECODR-1201";
 export const ERROR_RUNTIME_MANIFEST_LOAD_FAILED: ErrorCode = "E-VIBECODR-1202";
 export const ERROR_RUNTIME_MANIFEST_KV_UNAVAILABLE: ErrorCode = "E-VIBECODR-1203";
@@ -305,6 +330,8 @@ export const ERROR_RUNTIME_BRIDGE_HANDLER_FAILED: ErrorCode = "E-VIBECODR-2102";
 export const ERROR_RUNTIME_STORAGE_BLOCKED: ErrorCode = "E-VIBECODR-2120";
 export const ERROR_RUNTIME_COOKIE_BLOCKED: ErrorCode = "E-VIBECODR-2121";
 export const ERROR_RUNTIME_NAVIGATION_BLOCKED: ErrorCode = "E-VIBECODR-2122";
+export const ERROR_RUNTIME_ANALYTICS_FAILED: ErrorCode = "E-VIBECODR-2130";
+export const ERROR_RUNTIME_ANALYTICS_SUMMARY_FAILED: ErrorCode = "E-VIBECODR-2131";
 
 export function getErrorDefinition(code: string): ErrorDefinition | undefined {
   return definitions[code];

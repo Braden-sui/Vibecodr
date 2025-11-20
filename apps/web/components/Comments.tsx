@@ -33,6 +33,23 @@ type PublicMetadata = {
   isModerator?: boolean;
 } | null;
 
+type AuthzState = "unknown" | "unauthenticated" | "forbidden" | "authorized";
+
+function buildAuditNotes(params: { action: "remove"; commentId: string; postId: string; actorId?: string | null }) {
+  const segments = [
+    "source=comments",
+    `action=${params.action}`,
+    `target=comment:${params.commentId}`,
+    `post=${params.postId}`,
+  ];
+
+  if (params.actorId) {
+    segments.push(`actor=${params.actorId}`);
+  }
+
+  return segments.join(" | ");
+}
+
 interface CommentsProps {
   postId: string;
   currentUserId?: string;
@@ -55,6 +72,8 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const isModeratorFlag = metadata?.isModerator === true;
   const isModeratorOrAdmin =
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
+  const actorId = user?.id ?? null;
+  const [authzState, setAuthzState] = useState<AuthzState>("unknown");
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -90,6 +109,16 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   useEffect(() => {
     fetchComments();
   }, [fetchComments]);
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setAuthzState("unauthenticated");
+    } else if (!isModeratorOrAdmin) {
+      setAuthzState("forbidden");
+    } else {
+      setAuthzState("authorized");
+    }
+  }, [isModeratorOrAdmin, isSignedIn]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,8 +226,27 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
 
     try {
       const init = await buildAuthInit();
+      if (isModeratorOrAdmin) {
+        if (authzState !== "authorized") {
+          toast({
+            title: "Not authorized",
+            description: "Moderator or admin access is required to remove comments across posts.",
+            variant: "error",
+          });
+          return;
+        }
+        if (!init) {
+          setAuthzState("unauthenticated");
+          throw new Error("Authentication is required to perform moderation actions.");
+        }
+      }
       const response = isModeratorOrAdmin
-        ? await moderationApi.moderateComment(commentId, "remove", init)
+        ? await moderationApi.moderateComment(
+            commentId,
+            "remove",
+            init,
+            buildAuditNotes({ action: "remove", commentId, postId, actorId }),
+          )
         : await commentsApi.delete(commentId, init);
 
       if (response.status === 401) {

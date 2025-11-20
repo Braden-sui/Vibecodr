@@ -3,8 +3,8 @@ import type { Env } from "../index";
 // Small, centralized counter helpers. No schema changes. Safe against negatives.
 
 function clampDelta(currentExpr: string, deltaParam: string) {
-  // SQLite doesn't have GREATEST; use CASE to prevent negatives
-  return `CASE WHEN ${currentExpr} + ${deltaParam} < 0 THEN 0 ELSE ${currentExpr} + ${deltaParam} END`;
+  // SQLite doesn't have GREATEST; MAX avoids double-binding while preventing negatives
+  return `MAX(${currentExpr} + ${deltaParam}, 0)`;
 }
 
 export async function incrementUserCounters(

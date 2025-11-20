@@ -31,7 +31,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] Workers Analytics Engine dataset bound (`vibecodr_analytics_engine`).
 - [x] Cloudflare Pages project for Next.js fully wired (production + preview deployments confirmed).
 - [x] Custom domain and SSL mapped to Pages (vibecodr.space) documented and periodically verified.
-- [x] Secrets configured and documented (Clerk, PostHog, etc.) with rotation expectations.
+- [x] Secrets configured and documented (Clerk, Cloudflare Analytics Engine, etc.) with rotation expectations.
 
 ## 2) Auth and Accounts (Phase 1)
 
@@ -74,7 +74,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] postMessage bridge implemented (`ready`, `setParams`, logs, stats).
 - [x] Capability badges surfaced (currently runner + storage only; net/workers reserved for premium tiers).
 - [x] Micro-player variant reused in Feed cards for inline runs.
-- [x] Console proxy + sampled analytics wired to PostHog/Analytics Engine.
+- [x] Console proxy + sampled analytics wired to Cloudflare Analytics Engine.
 - [x] Restart without full reload where possible (warm restarts).
 - [x] Preview-to-Player handoff preserves param state and logs.
 
@@ -152,7 +152,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 
 ## 13) Analytics & Growth (Phase 1 + 4)
 
-- [x] PostHog initialized on web; Workers Analytics Engine bound in API.
+- [x] Cloudflare Analytics Engine wired on the web; Workers Analytics Engine bound in API.
 - [ ] Player events instrumented with structured events: `boot_start`, `boot_ready`, `set_param`, `restart`, `kill`, `error`.
 - [ ] Network proxy metrics: requests per capsule/host, rate-limit hits, error codes.
 - [ ] Preview runner metrics segmented by runner type (client-static vs WebContainer); boot P95 tracked.
@@ -224,7 +224,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] D1 for relational data (users, posts, capsules, runs, comments, follows, remixes, artifacts).
 - [x] R2 for immutable capsule bundles and runtime manifests (content-hash keyed).
 - [x] Durable Objects for build coordination and artifact compile telemetry.
-- [x] Workers Analytics Engine + PostHog for observability.
+- [x] Workers Analytics Engine for observability.
 
 ## Guardrails Recap (Safety First)
 

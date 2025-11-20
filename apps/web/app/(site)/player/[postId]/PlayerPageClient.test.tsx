@@ -6,8 +6,7 @@ import React from "react";
 import { MemoryRouter } from "react-router-dom";
 import PlayerPageClient from "./PlayerPageClient";
 
-const iframePropsRef: { current: any } = { current: null };
-const controlsPropsRef: { current: any } = { current: null };
+const playerShellPropsRef: { current: any } = { current: null };
 
 const mockPostsGet = vi.fn();
 const mockRunsComplete = vi.fn().mockResolvedValue({ ok: true });
@@ -44,17 +43,6 @@ vi.mock("@clerk/clerk-react", () => ({
   }),
 }));
 
-vi.mock("@/components/Player/PlayerControls", () => ({
-  PlayerControls: (props: any) => {
-    controlsPropsRef.current = props;
-    return React.createElement("div", { "data-testid": "player-controls" });
-  },
-}));
-
-vi.mock("@/components/Player/PlayerConsole", () => ({
-  PlayerConsole: () => React.createElement("div", { "data-testid": "player-console" }),
-}));
-
 vi.mock("@/components/Player/PlayerDrawer", () => ({
   PlayerDrawer: () => React.createElement("div", { "data-testid": "player-drawer" }),
 }));
@@ -63,9 +51,9 @@ vi.mock("@/components/Player/ParamControls", () => ({
   ParamControls: () => React.createElement("div", { "data-testid": "param-controls" }),
 }));
 
-vi.mock("@/components/Player/PlayerIframe", () => ({
-  PlayerIframe: React.forwardRef((props: any, ref: React.Ref<any>) => {
-    iframePropsRef.current = props;
+vi.mock("@/components/PlayerShell", () => ({
+  PlayerShell: React.forwardRef((props: any, ref: React.Ref<any>) => {
+    playerShellPropsRef.current = props;
     const bridge = {
       postMessage: () => true,
       restart: () => true,
@@ -76,7 +64,7 @@ vi.mock("@/components/Player/PlayerIframe", () => ({
     } else if (ref && "current" in ref) {
       (ref as React.MutableRefObject<any>).current = bridge;
     }
-    return React.createElement("div", { "data-testid": "mock-player-iframe" });
+    return React.createElement("div", { "data-testid": "player-shell" });
   }),
 }));
 
@@ -88,8 +76,7 @@ vi.mock("@vibecodr/shared", () => ({
 
 describe("PlayerPageClient", () => {
   beforeEach(() => {
-    iframePropsRef.current = null;
-    controlsPropsRef.current = null;
+    playerShellPropsRef.current = null;
     mockRunsComplete.mockClear();
     mockAppendLogs.mockClear();
     mockMapPost.mockClear();
@@ -146,16 +133,16 @@ describe("PlayerPageClient", () => {
       })
     );
     await waitFor(() => expect(mockMapPost).toHaveBeenCalled());
-    await waitFor(() => expect(iframePropsRef.current).not.toBeNull());
+    await waitFor(() => expect(playerShellPropsRef.current).not.toBeNull());
 
     act(() => {
-      iframePropsRef.current?.onReady?.();
+      playerShellPropsRef.current?.onReady?.();
     });
 
-    await waitFor(() => expect(controlsPropsRef.current?.isRunning).toBe(true));
+    await waitFor(() => expect(playerShellPropsRef.current?.isRunning).toBe(true));
 
     act(() => {
-      iframePropsRef.current?.onError?.("runtime_crash");
+      playerShellPropsRef.current?.onError?.("runtime_crash");
     });
 
     await waitFor(() =>
@@ -166,7 +153,7 @@ describe("PlayerPageClient", () => {
         })
       )
     );
-    expect(controlsPropsRef.current?.isRunning).toBe(false);
+    expect(playerShellPropsRef.current?.isRunning).toBe(false);
 
     unmount();
   });
