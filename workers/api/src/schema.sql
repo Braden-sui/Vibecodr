@@ -1,12 +1,23 @@
 -- D1 schema skeleton for Vibecodr. Aligns with docs/mvp-plan.md.
 -- TODO: Migrations via Drizzle or Kysely later.
 
+-- Identity: immutable anchor used for auth/account linkage.
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
+  email TEXT UNIQUE,
+  password_hash TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
+-- Vanity/representation: mutable profile metadata.
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE REFERENCES users(id),
   handle TEXT UNIQUE NOT NULL,
-  name TEXT,
+  display_name TEXT,
   avatar_url TEXT,
   bio TEXT,
+  theme TEXT,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 
@@ -66,4 +77,3 @@ CREATE TABLE IF NOT EXISTS remixes (
   parent_capsule_id TEXT NOT NULL REFERENCES capsules(id),
   PRIMARY KEY (child_capsule_id, parent_capsule_id)
 );
-
