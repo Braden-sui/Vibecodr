@@ -12,6 +12,11 @@ export interface Env {
   ARTIFACT_COMPILER_DURABLE: DurableObjectNamespace;
   vibecodr_analytics_engine: AnalyticsEngineDataset;
   RUNTIME_ARTIFACTS_ENABLED?: string;
+  AWSBEDROCKAPI?: string;
+  BEDROCK_REGION?: string;
+  BEDROCK_SAFETY_MODEL?: string;
+  SAFETY_ENABLED?: string;
+  SAFETY_TIMEOUT_MS?: string;
 }
 
 export type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;

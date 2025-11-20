@@ -21,6 +21,7 @@ import { incrementUserCounters } from "./counters";
 import { buildRuntimeManifest, type RuntimeArtifactType } from "../runtime/runtimeManifest";
 import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
 import { recordBundleWarningMetrics } from "../runtime/bundleTelemetry";
+import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClient";
 
 export type PublishWarning = { path: string; message: string };
 
@@ -118,6 +119,15 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
       size: manifestBytes.byteLength,
     });
     totalSize += manifestBytes.byteLength;
+
+    try {
+      await enforceEntrySafety(env, manifest, files);
+    } catch (err) {
+      if (err instanceof PublishCapsuleError) {
+        return json(err.body, err.status);
+      }
+      throw err;
+    }
 
     let publishResult:
       | {
@@ -265,6 +275,45 @@ export function sanitizeHtmlEntryIfNeeded(
   }
 
   return { files, totalSize };
+}
+
+export async function enforceEntrySafety(env: Env, manifest: Manifest, files: CapsuleFile[]): Promise<void> {
+  const entryPath = manifest.entry;
+  const entryFile = files.find((file) => file.path === entryPath);
+  if (!entryFile) {
+    // If entry is missing, let the later validation fail in its own path.
+    return;
+  }
+
+  const language = entryPath.toLowerCase().endsWith(".html") ? "html" : "javascript";
+  const decoder = new TextDecoder();
+  const content =
+    typeof entryFile.content === "string"
+      ? entryFile.content
+      : decoder.decode(entryFile.content as ArrayBuffer);
+
+  const codeHash = await hashCode(content);
+  const verdict = await runSafetyCheck(env, {
+    code: content,
+    language,
+    environment: "capsule",
+  });
+
+  logSafetyVerdict(env, {
+    entryPath,
+    codeHash,
+    verdict,
+  });
+
+  if (!verdict.safe) {
+    throw new PublishCapsuleError(403, {
+      error: "Unsafe code detected",
+      code: "E-VIBECODR-SECURITY-BLOCK",
+      reasons: verdict.reasons,
+      risk: verdict.risk_level,
+      tags: verdict.tags,
+    });
+  }
 }
 
 export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<PersistCapsuleResult> {
