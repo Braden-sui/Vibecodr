@@ -11,6 +11,7 @@ Endpoints (stubs return 501 until implemented):
 
 Infra notes:
 - D1 schema lives in src/schema.sql (apply via wrangler migrations later)
+- Users are the auth anchor; Profiles store mutable metadata and are joined at read time when rendering posts.
 - R2 stores immutable bundles keyed by content hash
 - Durable Objects can be added later for build queue or presence
 

@@ -30,5 +30,5 @@ API (Cloudflare Worker, workers/api):
 - POST /moderation/report → flag content
 - GET /proxy?host=… → allowlist network proxy
 
-DB (D1, workers/api/src/schema.sql): users, capsules, assets, posts, runs, comments, follows, remixes.
+DB (D1, workers/api/src/schema.sql): users (auth anchor) → profiles (vanity metadata), capsules, assets, posts, runs, comments, follows, remixes.
 
