@@ -1,0 +1,25 @@
+{
+  "versions": [
+    {
+      "version": "v0.1.0",
+      "assets": {
+        "bridge": {
+          "path": "runtime-assets/v0.1.0/bridge.js",
+          "checksum": null
+        },
+        "guard": {
+          "path": "runtime-assets/v0.1.0/guard.js",
+          "checksum": null
+        },
+        "reactRuntime": {
+          "path": "runtime-assets/v0.1.0/react-runtime.js",
+          "checksum": null
+        },
+        "htmlRuntime": {
+          "path": "runtime-assets/v0.1.0/html-runtime.js",
+          "checksum": null
+        }
+      }
+    }
+  ]
+}

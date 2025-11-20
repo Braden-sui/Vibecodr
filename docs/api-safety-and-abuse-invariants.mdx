@@ -1,0 +1,330 @@
+---
+title: API Safety & Abuse Invariants
+description: Non-negotiable rules to prevent abusive usage and runaway costs for Vibecodr APIs
+---
+
+# API Safety & Abuse Invariants
+
+This checklist defines **hard invariants** for how we expose and protect Vibecodr APIs, to prevent abusive usage (bots, scripts, spam) from turning into runaway cost or security issues.
+
+Use this doc when:
+- Adding a new endpoint or modifying an existing one
+- Reviewing product flows that call `/api/*`
+- Designing new features that hit external services (GitHub, proxies, etc.)
+
+If any invariant would be violated by a change, **the change is not allowed** without a deliberate design doc and explicit sign-off.
+
+---
+
+## 1) Surface Area Invariants
+
+- **[INV-API-0001] No dev/ops actions over HTTP**
+  - **Goal**: Seeds, migrations, and ops scripts must never be triggerable by public HTTP requests.
+  - **Examples of what we are preventing**
+    - Hitting an undocumented `/api/admin/seed` that runs `seed-dev.sql` on production.
+    - Any endpoint that shells out to `wrangler d1 execute` or similar.
+  - **How we enforce it**
+    - Seeds/migrations live as **files + CLI scripts only**:
+      - e.g. `src/seed-dev.sql`, `db:migrate`, `d1:seed:*` in `package.json`.
+    - No route in `workers/api/src/index.ts` may call these; they are wired only via `npm/pnpm` scripts.
+
+- **[INV-API-0002] No public “platform” API (for now)**
+  - **Goal**: The API exists only to serve our own UI and first-party flows, not arbitrary third-party integrations.
+  - **Examples of what we are preventing**
+    - Publishing a public docs page that says “here is our REST API, use it however you like.”
+    - Adding `apiKeys` table + issuing keys to arbitrary developers pre-SaaS maturity.
+  - **How we enforce it**
+    - Treat all `/api/*` endpoints as **UI-only**, subject to UI-driven rate and quota assumptions.
+    - If we ever add a real developer platform, it should have its own doc + key model.
+
+---
+
+## 2) Auth & Identity Invariants
+
+- **[INV-API-0100] All write endpoints require auth**
+  - **Goal**: Any endpoint that changes state must tie usage to an authenticated user.
+  - **Examples of what we are preventing**
+    - Anonymous `POST /api/capsules/publish` creating capsules in bulk.
+    - Anonymous `POST /api/posts/:id/like` or `/comments` that can be scripted.
+  - **How we enforce it**
+    - Wrap Handlers for writes in `requireAuth` / `requireUser`.
+    - Quick check: if the endpoint does `INSERT`, `UPDATE`, or `DELETE` on D1 (or writes to R2, queues), it **must** use an auth wrapper.
+
+- **[INV-API-0101] Sensitive admin/mod endpoints require role checks**
+  - **Goal**: Moderation and admin actions should be limited to moderators/admins, not just "any logged-in user".
+  - **Examples of what we are preventing**
+    - Normal users calling `POST /api/moderation/posts/:id/action` to quarantine others' content.
+    - Users closing moderation reports on themselves.
+  - **How we enforce it**
+    - Use `isModeratorOrAdmin` (from `auth.ts`) in moderation handlers.
+    - Refuse with 403 if user lacks required role.
+
+---
+
+## 3) Rate Limiting & Quota Invariants
+
+- **[INV-API-0200] Public read endpoints must have upstream rate limits**
+  - **Goal**: Even for cheap reads, we cap worst-case abuse.
+  - **Examples of what we are preventing**
+    - A botnet hammering `GET /api/posts` or `GET /api/users/:handle` at hundreds of QPS.
+    - Automated scraping of every profile and feed at high speed.
+  - **How we enforce it**
+    - Cloudflare WAF and/or rate-limiting rules for `/api/*`:
+      - e.g. `GET /api/*`: per-IP and per-ASN limits (e.g. 60 requests/minute/IP as a starting point).
+    - Tighten rules specifically on:
+      - `/api/capsules/*`
+      - `/api/proxy`
+      - `/api/oembed`, `/e/:id` if abused for scraping.
+
+- **[INV-API-0201] Expensive actions are quota-limited per user**
+  - **Goal**: Tie cost to users and their plan; cap worst-case daily/monthly spend.
+  - **Examples of what we are preventing**
+    - A single user importing hundreds of GitHub repos or publishing thousands of capsules in a day.
+    - A script repeatedly triggering WebContainer runs or heavy builds.
+  - **How we enforce it** (target design)
+    - Maintain a `usage` table keyed by `(userId, date, actionType)` with counters.
+    - Before heavy actions (e.g., `publishCapsule`, `importGithub`, future build pipelines), we:
+      - Read current usage for that user.
+      - Compare against their plan's allotment.
+      - Return `429` or `402` with a clear message if exceeded (and do **not** perform the action).
+    - Plans & quotas are documented in Plans/Quotas docs and enforced consistently.
+
+---
+
+## 4) External Calls & Proxy Invariants
+
+- **[INV-API-0300] Network proxy and external fetches are allowlisted**
+  - **Goal**: Prevent using our infra as a generic HTTP proxy.
+  - **Examples of what we are preventing**
+    - Attackers using `/api/proxy` to hit arbitrary hosts.
+    - Capsules or users abusing external calls to launch attacks or exfiltrate data.
+  - **How we enforce it**
+    - Proxy handler only allows hosts listed in allowlist (e.g. `ALLOWLIST_HOSTS`, manifest `net: []`).
+    - Proxy is authenticated and only uses manifests for capsules owned by the caller; requests with foreign `capsuleId` values are rejected.
+    - Validate URLs and reject any host not in the allowlist.
+
+- **[INV-API-0301] External calls are bounded & time-limited**
+  - **Goal**: No unbounded retries or super-long upstream timeouts.
+  - **Examples of what we are preventing**
+    - Long-hanging requests to GitHub or other APIs that consume Workers CPU and concurrency.
+  - **How we enforce it**
+    - Use reasonable timeouts and limit per-request fan-out.
+    - Avoid unbounded loops making external calls inside a single request.
+
+- **[INV-API-0302] Runtime iframes are cross-origin and sandboxed**
+  - **Goal**: Prevent shared state between the host UI and user-authored runtime code, even if sandbox guards are bypassed.
+  - **Examples of what we are preventing**
+    - Capsules reading or writing the host app's `localStorage`, cookies, or other same-origin data.
+    - Service workers or timing side channels spanning both host and runtime.
+  - **How we enforce it**
+    - Serve runtime HTML and bundles from a separate origin (for example, `runtime.vibecodr.com`) and embed them with `sandbox="allow-scripts"`.
+    - Use `postMessage` as the only communication channel between host and runtime iframes, with explicit origin checks.
+
+---
+
+## 5) Cost & Billing Guardrails
+
+- **[INV-API-0400] Assume hostile automation exists**
+  - **Goal**: Design as if bots will hit every public endpoint.
+  - **Examples of what we are preventing**
+    - Relying on "security by obscurity" like unlinked routes or weird paths.
+  - **How we enforce it**
+    - Run threat modeling when adding new endpoints:
+      - "What if someone hits this 10k times per day?"
+      - "What if they run this on every post/capsule?"
+    - Answer with: **rate limits + auth + quotas + bounded work**.
+
+- **[INV-API-0401] Billing alerts & caps configured in Cloudflare**
+  - **Goal**: A config/ops-level circuit breaker in case dev-level invariants fail.
+  - **Examples of what we are preventing**
+    - Discovering a surprise multi-thousand-dollar bill after a weekend.
+  - **How we enforce it**
+    - Configure available billing alerts / caps for Workers, D1, and R2.
+    - Periodically review usage dashboards and adjust limits/quotas.
+
+---
+
+## 6) UI-to-API Expectations
+
+- **[INV-API-0500] UI calls only approved endpoints**
+  - **Goal**: Frontend only hits a constrained set of routes with known cost profiles.
+  - **Examples of what we are preventing**
+    - Ad-hoc `fetch("/api/*")` from UI components to experimental endpoints without safeguards.
+  - **How we enforce it**
+    - Centralize API client helpers in a small module.
+    - Avoid inlining random `/api/...` URLs deep inside components; route them through typed helpers when possible.
+
+- **[INV-API-0501] No client-side secrets in API usage**
+  - **Goal**: Never expose privileged keys or credentials in the browser.
+  - **Examples of what we are preventing**
+    - Putting GitHub personal access tokens or other API keys directly into frontend code.
+  - **How we enforce it**
+    - All secrets stay in server-side env vars or Workers bindings.
+    - Frontend talks to our Worker, and the Worker talks to third-party APIs using secure bindings.
+- **[INV-API-0502] Client must validate manifests before using capabilities**
+  - **Goal**: UI should never trust unvalidated manifest JSON for capability flags or param shapes.
+  - **Examples of what we are preventing**
+    - A malformed or malicious manifest crashing a new UI surface that reads `capabilities`/`params` directly.
+    - Rendering network/storage/worker badges from raw JSON without schema checks.
+  - **How we enforce it**
+    - Run `safeParseCapsuleManifest` (apps/web/lib/manifest.ts) on any manifest pulled in the browser before using its fields; fall back to `{ id, artifactId }` only if validation fails.
+    - Server-side paths already run `validateManifest`/`requireCapsuleManifest`; keep parity in new client routes.
+
+---
+
+## 7) Examples: What We Are Specifically Guarding Against
+
+This section collects concrete abuse scenarios and maps them to invariants above.
+
+- **Scenario A: Import spam from GitHub**
+  - Attacker writes a script that calls `POST /api/import/github` thousands of times using free accounts.
+  - **Impact**: High CPU, external bandwidth, possible D1/R2 usage, unexpected bills.
+  - **Mitigations**
+    - Auth required for `import/github` and associated publish/build endpoints. (**INV-API-0100**)
+    - Per-user `import` quota per day/plan. (**INV-API-0201**)
+    - WAF rate limits per IP and per route. (**INV-API-0200**)
+
+- **Scenario B: Capsule/run exhaustion**
+  - Automated tools repeatedly hit `GET /api/capsules/:id/bundle` and any future run endpoints.
+  - **Impact**: R2 egress, Workers CPU, possible D1 churn.
+  - **Mitigations**
+    - Rate limits on `/api/capsules/*`. (**INV-API-0200**)
+    - If we later introduce a "run" endpoint, enforce auth + per-user run quotas. (**INV-API-0100**, **INV-API-0201**)
+
+- **Scenario C: Social spam (likes/comments/follows)**
+  - A script uses valid auth tokens to mass-like, follow, or comment across many posts.
+  - **Impact**: DB growth, noise, potential moderation burden.
+  - **Mitigations**
+    - Auth required for all social write endpoints. (**INV-API-0100**)
+    - Per-user daily limits on likes/follows/comments. (**INV-API-0201**)
+    - Potentially CAPTCHAs/Turnstile for suspicious traffic patterns.
+
+- **Scenario D: Proxy abuse**
+  - Attackers try to use our `/api/proxy` as a general-purpose HTTP proxy.
+  - **Impact**: Bandwidth abuse, potential legal/abuse complaints.
+  - **Mitigations**
+    - Strict host allowlist from manifest/vars. (**INV-API-0300**)
+    - Per-route rate limits. (**INV-API-0200**)
+    - Auth + per-owner scoping for `/api/proxy` so manifests cannot be borrowed across users.
+
+- **Scenario E: Auto-run miner in the feed**
+  - Auto-run in the feed starts capsules when cards enter the viewport. An attacker attempts to ship a capsule that mines cryptocurrency or wastes CPU while users scroll past.
+  - **Impact**: Elevated CPU on client devices, possible battery drain, and wasted bandwidth if left unchecked.
+  - **Mitigations**
+    - Runtime iframes are cross-origin and sandboxed; capsules cannot access host storage or cookies. (**INV-API-0302**)
+    - CSP and network allowlists on `/api/proxy` block calls to mining pool hosts and other unapproved endpoints. (**INV-API-0300**)
+    - Feed auto-run is bounded by an engagement window: if the user never interacts (no hover/click/param changes), the host kills the iframe after a short period (for example, ~10 seconds) and unloads it when far outside the viewport.
+    - Global concurrency caps on auto-run iframes ensure only a small number of runtimes execute simultaneously, keeping CPU/memory usage within budget.
+    - Low-engagement capsules are de-ranked by feed algorithms and can be quarantined or removed via moderation flows.
+
+---
+
+## 8) How to Use This Checklist When Coding
+
+When adding or changing an endpoint:
+
+1. **Classify it**
+   - Is it read-only or write?
+   - Does it touch external services? Is it heavy?
+
+2. **Apply invariants**
+   - For writes: ensure auth. (**INV-API-0100**)
+   - For admin/mod: ensure role checks. (**INV-API-0101**)
+   - For external/proxy: enforce allowlists. (**INV-API-0300**)
+   - For heavy actions: think about quotas & rate limits. (**INV-API-0200/0201**)
+
+3. **Document assumptions**
+   - If an endpoint is intentionally cheap and public, note that.
+   - If it relies on WAF/rate limits, ensure those rules exist in Cloudflare.
+
+This doc should evolve as we learn more. Any time we discover a new class of abuse or unexpected cost, add it as a scenario and tighten the relevant invariants.
+
+## 9) Runtime Error Code Contract (E-VIBECODR-####)
+
+Runtime, compile, and policy failures that affect users **must** surface structured error codes:
+
+- **Single source of truth**
+  - Canonical definitions live in `packages/shared/src/errors.ts` and are re-exported from the shared package index.
+  - Workers, Next.js, and any iframe/runtime loaders import from the shared module rather than hardcoding codes.
+
+- **Ranges (partial list)**
+  - `E-VIBECODR-11xx`: compile/manifest/runtime setup issues (schema, imports, limits).
+  - `E-VIBECODR-21xx`: runtime execution and sandbox policy violations.
+  - `E-VIBECODR-0xxx/01xx`: core platform, auth, and moderation helpers.
+
+- **API behavior**
+  - When a request fails due to manifest validation, compile limits, or runtime/sandbox enforcement, responses SHOULD include:
+    - `errorCode: "E-VIBECODR-####"`
+    - A concise `message` suitable for UI display.
+    - Optional `details` for logs or developer tooling.
+  - Heavy or abuse-adjacent failures (e.g., quota exceeded, policy block) should prefer a specific E-code over ad-hoc strings.
+
+- **UI expectations**
+  - Player, Feed, and moderation UIs surface the error code and a short explanation, but never stack traces or sensitive payloads.
+  - Error codes are stable; if semantics change, update `errors.ts` and this doc together.
+
+This contract keeps safety and runtime behavior debuggable while aligning with social-app norms (stable public-ish error identifiers, internal detail in logs).
+
+## 10) Client Error Telemetry (Cloudflare Analytics Engine)
+
+Client-side failures in Feed, Player, comments, and moderation must be observable in analytics, not just in browser consoles.
+
+  - **Event shape**
+    - All client error telemetry is sent via `trackClientError(code, props)` in `apps/web/lib/analytics.ts`.
+  - This emits a `client_error` analytics engine datapoint with:
+    - `code`: an `E-VIBECODR-####` string.
+    - `type: "client_error"`.
+    - Additional fields in `props` describing the area and context.
+
+- **Key client error codes (frontend)**
+  - **Feed / Home**
+    - `E-VIBECODR-0507` — Feed error JSON parse failed.
+      - `area: "feed"`, `stage: "error_json_parse"`, plus `status`, `mode`, `tagCount`.
+    - `E-VIBECODR-0508` — Feed network error; request failed before response.
+      - `area: "feed"`, `stage: "network"`, plus `mode`, `tagCount`.
+  - **FeedCard / sharing / moderation**
+    - `E-VIBECODR-0206` — Feed manifest preload failed (runtime manifest fetch).
+      - `area: "feed.manifestPreload"`, plus `artifactId`, `postId`.
+    - `E-VIBECODR-0107` — Feed moderation action error body JSON parse failed.
+      - `area: "feed.moderationAction"`, plus `action`, `postId`, `status`.
+    - `E-VIBECODR-0502` — Feed share via `navigator.share` failed or was cancelled.
+      - `area: "feed.share"`, plus `postId`.
+    - `E-VIBECODR-0503` — Feed clipboard write for share link failed.
+      - `area: "feed.shareClipboard"`, plus `postId`.
+  - **Player / runs / moderation / sharing**
+    - `E-VIBECODR-0515` — Player `runsApi.appendLogs` call failed.
+      - `area: "player.appendLogs"`, plus `runId`, `capsuleId`, `postId`.
+    - `E-VIBECODR-0516` — Player `runsApi.complete` call failed.
+      - `area: "player.completeRun"`, plus `runId`, `capsuleId`, `postId`, `status`.
+    - `E-VIBECODR-0509` — Player moderation status JSON parse failed.
+      - `area: "player.moderationStatus"`, `stage: "json_parse"`, plus `postId`, `status`.
+    - `E-VIBECODR-0510` — Player moderation status fetch failed.
+      - `area: "player.moderationStatus"`, `stage: "fetch"`, plus `postId`.
+    - `E-VIBECODR-0511` — Player share via `navigator.share` failed or was cancelled.
+      - `area: "player.share"`, plus `postId`.
+    - `E-VIBECODR-0512` — Player clipboard write for share link failed.
+      - `area: "player.shareClipboard"`, plus `postId`.
+  - **Comments & reporting**
+    - `E-VIBECODR-0504` — Comment create error JSON parse failed.
+      - `area: "comments.create"`, plus `postId`, `status`.
+    - `E-VIBECODR-0505` — Comment delete error JSON parse failed.
+      - `area: "comments.delete"`, plus `postId`, `status`.
+    - `E-VIBECODR-0506` — Report submit error JSON parse failed.
+      - `area: "report.submit"`, plus `targetType`, `targetId`, `status`.
+    - `E-VIBECODR-0514` — Admin moderation resolve error JSON parse failed.
+      - `area: "admin.moderationResolve"`, plus `reportId`, `action`, `status`.
+    - `E-VIBECODR-0513` — Flagged-post quarantine error JSON parse failed.
+      - `area: "moderation.flagged.quarantine"`, plus `postId`, `status`.
+
+- **Server-side vs client-side observability**
+  - Worker and Next.js routes log with `console.error` and structured `E-*` codes to Workers Analytics and platform logs.
+  - Client-only paths (React components, browser-only flows) **must** use `trackClientError` in addition to local `console.error` so we can:
+    - Measure error rate and cohort impact.
+    - Correlate with usage events like `feed_results_loaded`, `player_run_started`, or `composer_*`.
+
+- **Querying and dashboards**
+    - In the Cloudflare Analytics Engine:
+    - Filter events where `event = "client_error"` and group by `code` and `area`.
+    - Join with `feed_results_*` and `player_*` events on session or user to see how often errors affect core journeys.
+  - For Workers Analytics:
+    - Use the same `E-VIBECODR-####` codes to correlate backend failures (e.g., proxy, manifest, quotas) with client-side error events.

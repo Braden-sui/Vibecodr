@@ -20,10 +20,12 @@ Measure what matters to ensure the runnable feed is sticky and sustainable.
 - Weekly “Vibe Pack”: most remixed capsules; email + in-app.
 
 ## Stack
-- Product analytics: PostHog or Umami (privacy-friendly).
-- Backend: Workers Analytics Engine + D1 summaries.
+- Product analytics: Cloudflare Workers Analytics Engine (frontend events and pursed dashboards).
+- Backend: Workers Analytics Engine + D1 summaries for aggregations.
+
+## Runtime telemetry
+- Runtime-specific signals (`runtime_manifest_*`, `runtime_frame_loaded`, `runtime_error`, `runtime_policy_violation`, etc.) are sent via `POST /runtime-events`. They land in both the Analytics Engine and the `runtime_events` D1 table, so dashboards/alerts can slice by capsule, artifact, runtime type, or error code. Ingestion returns HTTP 500 with `E-VIBECODR-2130` and `retryable: true` if persistence fails; clients should retry once and treat non-2xx responses as failures (no more best-effort 202s).
+- An administrator dashboard at `/admin/analytics` queries `/runtime-analytics/summary` and is the home for monitoring traces, plus it drives the Cloudflare dashboards and alert rules you'll add in staging.
 
 ## Sources
-- PostHog: https://posthog.com/
 - Cloudflare Analytics Engine: https://developers.cloudflare.com/analytics/analytics-engine/
-

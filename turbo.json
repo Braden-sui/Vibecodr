@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test:unit": {
+      "dependsOn": ["^test:unit"]
+    },
+    "runtime-assets:check": {
+      "dependsOn": ["^runtime-assets:check"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

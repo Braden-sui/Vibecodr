@@ -5,193 +5,231 @@ description: End-to-end checklist to ship the runnable feed MVP on Cloudflare
 
 # Vibecodr Website Build Checklist
 
-Use this start-to-finish checklist to ship the MVP described in mvp-plan.md and the supporting research docs. Organized by lifecycle and mapped to Phases 1–4. Check items in order; defer any “Later” items until post-MVP.
+This checklist tracks the current state of the Vibecodr MVP and the standards we operate against.
+
+- `[x]` = implemented and considered baseline.
+- `[ ]` = not done or intentionally deferred; treat as active or future work.
 
 ## 0) Project Foundations (Phase 1)
-- [ ] Monorepo skeleton ready (e.g., Turborepo) with `apps/web` and `packages/*` if needed
-- [ ] Next.js (App Router) initialized with TypeScript strict mode
-- [ ] TailwindCSS configured and working in `apps/web`
-- [ ] shadcn/ui installed and baseline theme tokens established
-- [ ] Lucide icons installed and integrated
-- [ ] ESLint + Prettier + strict TS config; CI treats lints as errors
-- [ ] Git hooks (lint-staged + pretty-quick) or equivalent
-- [ ] .env example committed with all required variables (no secrets)
-- [ ] Basic README with local dev and deploy steps
+
+- [x] Monorepo skeleton ready (Turborepo) with `apps/web`, `workers/*`, and `packages/*`.
+- [x] Next.js App Router initialized with strict TypeScript.
+- [x] TailwindCSS configured and working in `apps/web`.
+- [x] shadcn/ui installed with baseline theme tokens.
+- [x] Lucide icons installed and integrated.
+- [x] ESLint + Prettier + strict TS config in repo; lint errors are treated as errors in local scripts and should be enforced in CI.
+- [x] Git hooks (lint-staged) wired to format and lint staged files.
+- [x] `.env.example` committed with all required variables (no secrets).
+- [x] README with local dev and Cloudflare Pages build instructions (`cf:build`).
 
 ## 1) Cloudflare Platform Setup (Phase 1)
-- [ ] Cloudflare account and project created
-- [ ] Cloudflare Pages project for Next.js set up (production + preview deployments)
-- [ ] Workers project configured for API routes (wrangler.toml checked in)
-- [ ] D1 database created and bound (wrangler bindings)
-- [ ] R2 bucket created and bound for capsule bundles/assets
-- [ ] Durable Objects namespace created and bound (BuildCoordinator)
-- [ ] Workers Analytics Engine enabled and bound
-- [ ] Domain + SSL configured; custom domain routed to Pages
-- [ ] Secrets configured in Cloudflare (auth provider keys, PostHog, etc.)
+
+- [x] Workers project configured for API routes (`workers/api/wrangler.toml` checked in).
+- [x] D1 database created and bound (`DB` binding with migrations under `drizzle/migrations`).
+- [x] R2 bucket created and bound for capsule bundles and runtime artifacts (`R2` binding).
+- [x] Durable Objects namespaces created and bound (`BuildCoordinator`, `ArtifactCompiler`).
+- [x] Workers Analytics Engine dataset bound (`vibecodr_analytics_engine`).
+- [x] Cloudflare Pages project for Next.js fully wired (production + preview deployments confirmed).
+- [x] Custom domain and SSL mapped to Pages (vibecodr.space) documented and periodically verified.
+- [x] Secrets configured and documented (Clerk, Cloudflare Analytics Engine, etc.) with rotation expectations.
 
 ## 2) Auth and Accounts (Phase 1)
-- [ ] Select provider (Clerk recommended for Workers)
-- [ ] OAuth (GitHub + Google) configured
-- [ ] Session handling verified on Workers/Pages
-- [ ] Basic user model integrated with D1
-- [ ] Protected routes, soft auth gating for create/publish/remix
+
+- [x] Clerk selected and integrated as auth provider.
+- [x] OAuth (GitHub + Google) configured.
+- [x] Basic user model integrated with D1.
+- [x] Protected routes and soft auth gating for create/publish/remix.
+- [x] Session handling and token propagation between Pages and Workers documented and validated end-to-end (`docs/cross-surface-auth.mdx`, `apps/web/lib/__tests__/crossSurfaceAuth.test.ts`).
 
 ## 3) Database & Schema (Phase 1)
-- [ ] Choose Drizzle or Kysely; migrations pipeline established
-- [ ] Tables created: users, capsules, posts, assets, runs, comments, follows, remixes
-- [ ] Indices for feed sorts and lookups (created_at, author_id, parent_id, type)
-- [ ] Seed script and fixtures for local/dev
-- [ ] Typed query layer + Zod schemas for API contracts
 
-## 4) Feed (Phase 1 → 3)
-- [ ] Card components: App and Report (Live shows “Coming Soon”)
-- [ ] Badges on cards: runner, net access, params count
-- [ ] Remix chip on card
-- [ ] Hover preview: preboot capsule in isolated iframe (perf budget 250–500ms)
-- [ ] Sorting: Latest (MVP) and Following
-- [ ] Preload manifests via IntersectionObserver
-- [ ] 60fps scroll maintained; heavy work deferred to Player
-- [ ] Empty/loading/error states
-- [ ] Inline preview click-to-run inside the card; instantiate runner on click
-- [ ] WebContainer preview: instantiate only on click; no hover preboot; show skeleton until ready
-- [ ] Concurrency cap for previews (e.g., max 1–2 active containers); queue additional clicks
-- [ ] If budgets exceeded, prompt to open full Player and preserve state
+- [x] Drizzle selected with migrations pipeline established.
+- [x] Core tables created: `users`, `capsules`, `posts`, `assets`, `runs`, `comments`, `follows`, `remixes`.
+- [x] Runtime artifact tables created: `artifacts`, `artifact_manifests` (schema + migrations).
+- [x] Indices for feed sorts and lookups (`created_at`, `author_id`, `parent_id`, `type`, policy/status fields).
+- [x] Seed script and fixtures for local/dev.
+- [x] Typed query layer and Zod schemas for API contracts.
 
-## 5) Player (Phase 1 → 2)
-- [ ] Iframe sandbox configured with strict `sandbox` attrs (deny-by-default)
-- [ ] Strict CSP aligned to runner constraints (default-src 'none', allowlists)
-- [ ] Right drawer tabs: Notes, Remix, Chat (Chat can be simplified MVP)
-- [ ] Bottom bar: restart, performance meter, params, share, report
-- [ ] postMessage bridge: ready → setParam(name,value) → logs/stats
-- [ ] Console proxy → analytics (sampled)
-- [ ] Restart without full reload when possible
-- [ ] Capability badges surfaced (net/storage/workers)
-- [ ] Micro-Player variant reused in feed cards to avoid duplicated logic
-- [ ] Preview-to-Player handoff preserves param state and logs
+## 4) Feed (Phase 1 + 3)
 
-## 6) Manifest & Runner (Phase 2)
-- [ ] Manifest schema defined (params, capabilities: net[], storage, workers)
-- [ ] `/api/manifest/validate` endpoint built and returns actionable errors
-- [ ] Client-static runner shim + service worker (if used) implemented
-- [ ] Param control components mapped to manifest descriptors
-- [ ] Technical budgets enforced (client-static boot ≤ 1s P95; CPU wall-time; memory heuristics)
-- [ ] WebContainer runner supported for selected templates; instantiate only on click (no hover boot)
-- [ ] WebContainer preview budget: boot ≤ 1.5s P95 in-card; show skeleton; failover to Player if exceeded
-- [ ] Concurrency cap and watchdog/kill for preview containers
-- [ ] Kill switch UI and safe termination path
+- [x] Card components for App and Report posts, with "Coming Soon" badges where appropriate.
+- [x] Badges on cards: runner type and params count (network/worker badges are disabled until those premium capabilities ship).
+- [x] Remix chip on cards.
+- [x] Hover/click preview: preboot capsule in isolated iframe with reasonable budget.
+- [x] Sorting: Latest (MVP) and Following.
+- [x] Empty, loading, and error states.
+- [x] Inline preview click-to-run inside the card; instantiate runner on click.
+- [x] WebContainer preview: instantiate only on click; no hover preboot; skeleton until ready.
+- [x] Concurrency cap for previews (e.g., max 1–2 active containers) with cleanup on unmount.
+- [x] Manifest preloading via IntersectionObserver for manifest-heavy flows.
+- [x] Explicit 60fps scroll budgets documented and enforced for hot paths.
+- [x] Preview-to-Player handoff that preserves param state and logs when budgets are exceeded.
 
-## 7) Studio (Phase 2)
-- [ ] Studio tabs: Import → Params → Files → Publish
-- [ ] Import adapters: GitHub URL + ZIP upload
-- [ ] Build pipeline: shallow download → analyze → esbuild-wasm (client-first) → fallback queue if heavy
-- [ ] Entry detection + size checks; SSR/server-only code flagged
-- [ ] Params designer with live preview bound to Player
-- [ ] Files editor for entry/assets/manifest.json with validation
-- [ ] Publish flow: title, tags, cover, visibility, capability prompts, dry-run check
-- [ ] Output immutable bundle to R2 with content hash keys
-- [ ] Manifest stored/linked in D1; integrity hash captured
-- [ ] License detection (SPDX) surfaced; warnings if missing
+## 5) Player (Phase 1 + 2)
+
+- [x] Iframe sandbox configured with strict `sandbox` attributes (deny-by-default aside from scripts/origin when required).
+- [x] CSP aligned to runner constraints (default-src 'none', allowlists for assets and APIs).
+- [x] Player layout with right-hand tabs (Notes, Remix, Chat as simplified MVP).
+- [x] Bottom bar with restart, performance meter, params, share, and report entrypoints.
+- [x] postMessage bridge implemented (`ready`, `setParams`, logs, stats).
+- [x] Capability badges surfaced (currently runner + storage only; net/workers reserved for premium tiers).
+- [x] Micro-player variant reused in Feed cards for inline runs.
+- [x] Console proxy + sampled analytics wired to Cloudflare Analytics Engine.
+- [x] Restart without full reload where possible (warm restarts).
+- [x] Preview-to-Player handoff preserves param state and logs.
+
+## 6) Manifest, Runner, and Runtime Artifacts (Phase 2)
+
+- [x] Manifest schema defined (params, capabilities: `storage` active today; `net[]`/`workers` fields reserved for premium runtimes), live, concurrency.
+- [x] `POST /manifest/validate` endpoint built; returns structured errors and warnings.
+- [x] Client-static runner shim implemented (`client-static-shim.js`) with console proxy, pause/resume, and restart wiring.
+- [x] Runtime artifact schema and shared error codes defined for compile/runtime failures (`E-VIBECODR-11xx`, `120x`, `21xx`).
+- [x] Artifact upload and completion endpoints implemented, backed by R2 and D1.
+- [x] `ArtifactCompiler` Durable Object created for compile telemetry and last-request state.
+- [x] Runtime manifest builder implemented and persisted to D1 (`artifact_manifests`) and R2/KV.
+- [x] `GET /artifacts/:id/manifest` endpoint returns normalized runtime manifests.
+- [x] Versioned runtime bundles (bridge, guard, React runtime, HTML runtime) published under `apps/web/public/runtime-assets/v0.1.0/` and indexed via `runtime-index.json`.
+- [x] Runtime asset checksum script and Turbo task added (`runtime-assets:check`, `check:runtime-assets`).
+- [x] Web runtime loader (`loadRuntimeManifest`) normalizes Worker manifest responses for the Player.
+- [ ] Param control components fully mapped to manifest descriptors and reused across Player/Studio.
+- [ ] Technical budgets enforced (client-static boot <= 1s P95; CPU wall-time and memory heuristics documented and enforced).
+- [ ] WebContainer runner support extended to artifact-style flows with clear budgets and kill paths.
+
+## 7) Studio and Creation Flows (Phase 2)
+
+- [x] Studio shell with tabs: Import, Params, Files, Publish.
+- [x] Import adapters: GitHub URL and ZIP upload wired to Worker endpoints.
+- [ ] Refactor `/import/zip` into an analyze + prebuild helper (manifest + warnings only) so `/capsules/publish` remains the single write path for capsule creation.
+- [x] Files editor for entry/assets/manifest.json with validation hooks.
+- [x] Publish flow with title, tags, cover upload, visibility, and capability prompts (backed by capsule publish endpoint).
+- [x] Immutable bundles written to R2 under `capsules/{contentHash}/...` with manifest and metadata.
+- [x] Manifest stored/linked in D1; integrity hash captured in metadata.
+- [x] Unified `VibesComposer` on the feed for status posts, image attachments, GitHub imports, ZIP uploads, and inline code.
+- [ ] Build pipeline inside Studio for shallow download + analysis + esbuild-wasm (client-first) with Worker fallback for heavy builds.
+- [ ] Entry detection + size checks surfaced directly in Studio UI (SSR/server-only code flagged to users).
+- [ ] License detection (SPDX) surfaced; warnings when missing.
 
 ## 8) Storage & Asset Policy (Phase 2)
-- [ ] R2 buckets and prefixes organized (capsules/{hash}/...)
-- [ ] Zero-egress paths confirmed for feed + player
-- [ ] Integrity verification on load (hash)
-- [ ] Bundle cap enforced by plan (25MB Free/Creator; 100MB Pro; 250MB Team)
+
+- [x] R2 buckets and prefixes organized (`capsules/{hash}/...`, metadata.json).
+- [x] Immutable capsule bundle pattern enforced (content-hash keys).
+- [x] Integrity verification helpers implemented for downloads (hash checks on read).
+- [x] Bundle caps enforced by plan (25MB Free/Creator; 100MB Pro; 250MB Team).
+- [ ] Zero-egress paths confirmed for Feed and Player; S3/R2 access patterns documented.
 
 ## 9) Networking & Security (Phase 4)
-- [ ] Network proxy with per-host allowlist (manifest `net: []`)
-- [ ] Rate limits per capsule/host; block cross-origin cookies
-- [ ] Permission Policy: deny sensors/camera/mic by default
-- [ ] CSP tightened; top-navigation disallowed in embeds
-- [ ] Quotas and plan enforcement middleware for runs and storage
+
+- [x] Network proxy implemented with per-host allowlist derived from manifest `capabilities.net`.
+- [x] Rate limits per capsule/host (100 requests/min window) and cross-origin cookies stripped in proxy responses.
+- [ ] Permission Policy (or equivalent headers) denies sensors/camera/mic by default in Player/embeds.
+- [ ] CSP hardened further for embeds and third-party scripts (no top-navigation, tightened script-src).
+- [ ] Quotas and plan enforcement middleware for runs and storage enforced and surfaced to users.
 
 ## 10) Social Layer (Phase 3)
-- [ ] Likes (optional MVP), Comments (MVP), Follows (MVP)
-- [ ] Notifications (lightweight MVP ok)
-- [ ] Remix graph (track parent/child capsule IDs)
-- [ ] Profiles: avatar, handle, bio, counts (Runs, Remixes), latest posts
+
+- [x] Likes, comments, and follows implemented (MVP).
+- [x] Notifications wired (lightweight MVP).
+- [x] Remix graph tracked via parent/child capsule IDs.
+- [ ] Profiles enriched with avatar, handle, bio, counts (Runs, Remixes), and latest posts.
 
 ## 11) Moderation & Safety (Phase 4)
-- [ ] Report flow on posts/comments
-- [ ] Quarantine flag + banner; appeal process stub
-- [ ] Rate limits on posting/comments/remixes; captcha on spikes
-- [ ] Basic keyword filters on titles/descriptions
-- [ ] Staff audit log entries (minimal MVP)
+
+- [x] Report flow on posts/comments with clear user messaging.
+- [x] Moderation queue UI with resolution actions and auth checks.
+- [ ] Quarantine flag + banner across Feed/Player with appeal stub.
+- [ ] Rate limits on posting/comments/remixes; captcha or equivalent on spikes.
+- [ ] Basic keyword filters on titles/descriptions for obvious abuse.
+- [ ] Staff audit log entries (minimal MVP) persisted for moderation actions.
 
 ## 12) Sharing, Embeds, and SEO (Phase 4)
-- [ ] Open Graph + X Cards tags for posts and profiles
-- [ ] oEmbed JSON endpoint returns iframe HTML, dimensions, thumbnail_url
-- [ ] One-line embed script `embed.js` with auto-resize and theme detection
-- [ ] Static iframe option `/e/{id}` with safe sandbox/allow attrs
-- [ ] Server-rendered OG image generator with branded frame
-- [ ] Snapshot links that freeze param state
 
-## 13) Analytics & Growth (Phase 1 → 4)
-- [ ] PostHog (or Umami) initialized
-- [ ] Player events instrumented: boot_start, boot_ready, set_param, restart, kill, error
-- [ ] Network proxy metrics: requests per capsule/host; rate-limit hits
-- [ ] Preview runner metrics segmented by runner type (client-static vs WebContainer); P95 boot times
-- [ ] Storage metrics: bundle sizes, plan usage
-- [ ] Weekly “Vibe Pack” generation hook and template
+- [ ] Open Graph + X Cards tags for posts and profiles fully wired.
+- [x] oEmbed JSON endpoint returns iframe HTML, dimensions, and thumbnail URL.
+- [x] Static iframe option (`/e/{id}`) with safe sandbox/allow attributes.
+- [x] Server-rendered OG image generator with branded frame.
+- [ ] One-line embed script (`embed.js`) with auto-resize and theme detection polished for public use.
+- [ ] Snapshot links that freeze param state for sharing.
+
+## 13) Analytics & Growth (Phase 1 + 4)
+
+- [x] Cloudflare Analytics Engine wired on the web; Workers Analytics Engine bound in API.
+- [ ] Player events instrumented with structured events: `boot_start`, `boot_ready`, `set_param`, `restart`, `kill`, `error`.
+- [ ] Network proxy metrics: requests per capsule/host, rate-limit hits, error codes.
+- [ ] Preview runner metrics segmented by runner type (client-static vs WebContainer); boot P95 tracked.
+- [ ] Storage metrics: bundle sizes, plan usage by tier.
+- [ ] Weekly or periodic "Vibe Pack" generation hook and template.
 
 ## 14) Plans, Pricing, and Quotas (Phase 4)
-- [ ] Plans created (Free, Creator, Pro, Team) with listed caps
-- [ ] Run quotas enforced server-side and surfaced in UI
-- [ ] Progress banners for usage (e.g., “Used 74% of your runs”)
-- [ ] Overage behavior decided (block/warn/upgrade CTA)
+
+- [x] Plans created (Free, Creator, Pro, Team) with documented caps.
+- [x] Bundle size and storage quotas enforced server-side and surfaced via quota API.
+- [ ] Run quotas enforced server-side and surfaced in UI (per month per user).
+- [ ] Progress banners for usage (e.g., "Used 74% of your runs") in Feed/Studio.
+- [ ] Overage behavior (block / warn / upgrade CTA) decided and implemented.
 
 ## 15) CI/CD and Quality Gates (All Phases)
-- [ ] CI: build, typecheck, lint, unit tests, integration tests
-- [ ] Preview deployments on PRs via Cloudflare Pages
-- [ ] Secret scan and dependency audits
-- [ ] Coverage floors enforced
-- [ ] E2E smoke for core flows (see 16)
+
+- [ ] CI pipeline runs build, typecheck, lint, and tests on each PR.
+- [ ] Preview deployments on PRs via Cloudflare Pages.
+- [ ] Secret scanning and dependency audits in CI.
+- [ ] Coverage thresholds defined and enforced for critical modules.
+- [x] API safety review doc in place (`docs/api-safety-and-abuse-invariants.mdx`) and referenced for new `/api/*` endpoints.
+- [x] E2E smoke tests for core flows (Feed, Player, Studio, Profile) via Playwright.
 
 ## 16) Tests and Performance (All Phases)
-- [ ] Unit tests for manifest validator, params mapping, utils
-- [ ] Integration tests for import/build/publish pipeline (GitHub + ZIP)
-- [ ] E2E flows:
-  - [ ] Sign in → Import → Publish → Run in Player
-  - [ ] Param change → Restart → Share snapshot
-  - [ ] Remix → Publish child → Appears in Feed + graph
-  - [ ] Comment/Report → Moderation queue
-- [ ] Performance budgets enforced (TTFF ≤ 1s P95 for client-static; ≤ 1.5s P95 for WebContainer preview)
-- [ ] Security checks for sandbox, CSP, permission policy
-- [ ] E2E: Feed card click-to-run (client-static and WebContainer) meets SLOs
-- [ ] Concurrency stress test across cards; ensure caps and preview-to-Player fallbacks
+
+- [x] Unit tests for manifest validator and shared runtime helpers (manifest, compileHtmlArtifact, compileReactArtifact, runtimeManifest, ArtifactCompiler, error codes).
+- [x] Unit/integration tests for quotas and artifact/capsule handlers (storage quotas, artifacts API, runtime manifest retrieval, capsule publish).
+- [x] Web runtime asset tests to ensure bridge and runtime globals register correctly in jsdom.
+- [ ] Scenario E2E flows:
+  - [ ] Sign in + Import + Publish + Run in Player.
+  - [ ] Param change + Restart + Share snapshot.
+  - [ ] Remix + Publish child + Appears in Feed + graph.
+  - [ ] Comment/Report + Moderation queue triage.
+- [ ] Performance budgets enforced (TTFF <= 1s P95 for client-static; <= 1.5s P95 for WebContainer preview).
+- [ ] Security checks for sandbox, CSP, and Permission Policy in automated tests.
+- [ ] E2E: Feed card click-to-run (client-static and WebContainer) meets SLOs under load.
+- [ ] Concurrency stress tests across cards; ensure caps and preview-to-Player fallbacks work under high interaction rates.
 
 ## 17) Launch Readiness (Final)
-- [ ] Legal docs: Terms, Privacy, Acceptable Use
-- [ ] Support channel and contact
-- [ ] Onboarding checklist and sample capsules gallery
-- [ ] Live streaming: “Coming Soon” badge + waitlist CTA (no infra)
-- [ ] Observability dashboards (runs, errors, TTFF, quota usage)
-- [ ] Alerts for error rate, latency, quota spikes
-- [ ] Runbook for incidents and moderation
+
+- [ ] Legal docs: Terms, Privacy, Acceptable Use finalized and linked.
+- [ ] Support channel and contact path documented (email/Discord/etc.).
+- [ ] Onboarding checklist and sample capsules gallery for new users.
+- [ ] Live streaming "Coming Soon" badge + waitlist CTA (no infra dependency).
+- [ ] Observability dashboards for runs, errors, TTFF, quota usage.
+- [ ] Alerts for error rate, latency, quota spikes, and abuse signals.
+- [ ] Runbook for incidents and moderation workflows.
 
 ## 18) Post-MVP Parking Lot (Do not ship now)
-- [ ] Live streaming (Daily/LiveKit) rooms + VOD chapters
-- [ ] Expanded WebContainer capabilities (full Node toolchains, hot reload, larger projects)
-- [ ] Worker-edge runner for tiny server logic per app
-- [ ] Full-text search (Postgres FTS)
-- [ ] Collaborative editing and inline annotations
+
+- [ ] Live streaming (Daily/LiveKit or similar) with rooms and VOD chapters.
+- [ ] Expanded WebContainer capabilities (larger projects, richer toolchains).
+- [ ] Worker-edge runner for tiny server logic per app.
+- [ ] Full-text search (Postgres FTS or equivalent).
+- [ ] Collaborative editing and inline annotations.
+- [ ] Feed ranking that favors runnable vibes while surfacing non-code vibes, with filters (All / Runnable / Links / Media).
+- [ ] Rich third-party embeds inside posts (YouTube, Vimeo, Twitch, etc.) with sandboxed iframes + CSP allowlists.
 
 ## Phase Mapping Reference (from MVP Plan)
-- [ ] Phase 1 (0–10): Foundation → Sections 0–3, parts of 4–5, 13, 15
-- [ ] Phase 2 (11–25): Capsules & Studio → Sections 5–8
-- [ ] Phase 3 (26–35): Social Layer → Sections 4 (sorts), 10
-- [ ] Phase 4 (36–45): Safety & Polish → Sections 9, 11, 12, 14, 15–17
+
+- [ ] Phase 1 (0–10): Foundation — Sections 0–3, parts of 4–5, 13, 15.
+- [ ] Phase 2 (11–25): Capsules & Studio — Sections 5–8.
+- [ ] Phase 3 (26–35): Social Layer — Sections 4 (sorts), 10.
+- [ ] Phase 4 (36–45): Safety & Polish — Sections 9, 11, 12, 14, 15–17.
 
 ## Architecture Reference (Cloudflare-First)
-- [ ] Next.js on Pages; API on Workers
-- [ ] D1 for relational data (users, posts, capsules, runs, comments, follows, remixes)
-- [ ] R2 for immutable capsule bundles (content-hash keyed, zero egress)
-- [ ] Durable Objects for presence and build coordination
-- [ ] Workers Analytics Engine + PostHog for observability
+
+- [x] Next.js on Cloudflare Pages; API on Cloudflare Workers.
+- [x] D1 for relational data (users, posts, capsules, runs, comments, follows, remixes, artifacts).
+- [x] R2 for immutable capsule bundles and runtime manifests (content-hash keyed).
+- [x] Durable Objects for build coordination and artifact compile telemetry.
+- [x] Workers Analytics Engine for observability.
 
 ## Guardrails Recap (Safety First)
-- [ ] Sandbox + CSP + Permission Policy default deny
-- [ ] Network via allowlisted proxy; rate-limited; no cross-origin cookies
-- [ ] CPU/memory/time budgets; kill switch in UI
-- [ ] Immutable bundles with integrity hash verification
-- [ ] Moderation/reporting + quarantine with clear user notices
+
+- [ ] Sandbox + CSP + Permission Policy default-deny documented and enforced as header baseline.
+- [x] Network via allowlisted proxy; rate-limited; no cross-origin cookies from proxied responses.
+- [ ] CPU/memory/time budgets and kill switch in Player/UI for abusive runtimes.
+- [x] Immutable bundles with integrity hash verification and content-hash keys.
+- [x] Moderation/reporting + quarantine flows implemented with clear user notices; policy docs to be expanded.

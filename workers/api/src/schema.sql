@@ -41,8 +41,16 @@ CREATE TABLE IF NOT EXISTS posts (
   author_id TEXT NOT NULL REFERENCES users(id),
   type TEXT NOT NULL CHECK (type IN ('app','report')),
   capsule_id TEXT REFERENCES capsules(id),
+  title TEXT,
+  description TEXT,
+  tags TEXT,
   report_md TEXT,
   cover_key TEXT,
+  quarantined INTEGER DEFAULT 0,
+  likes_count INTEGER DEFAULT 0,
+  comments_count INTEGER DEFAULT 0,
+  runs_count INTEGER DEFAULT 0,
+  remixes_count INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 
@@ -63,6 +71,8 @@ CREATE TABLE IF NOT EXISTS comments (
   body TEXT NOT NULL,
   at_ms INTEGER,
   bbox TEXT,
+   parent_comment_id TEXT REFERENCES comments(id),
+  quarantined INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 

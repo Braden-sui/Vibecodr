@@ -1,10 +1,24 @@
-// Minimal DB helper skeleton for D1 access. Replace with Drizzle/Kysely later.
+import { drizzle } from "drizzle-orm/d1";
+import * as schema from "./schema";
+import type { Env } from "./index";
 
-export type Env = { DB: D1Database };
+export function getDb(env: Env) {
+  return drizzle(env.DB, { schema });
+}
 
-export async function getPostById(env: Env, id: string) {
-  const { results } = await env.DB.prepare("SELECT * FROM posts WHERE id = ?").bind(id).all();
-  return results?.[0] || null;
+// Helper functions for common queries
+export async function getUserById(env: Env, id: string) {
+  const db = getDb(env);
+  return await db.query.users.findFirst({
+    where: (users, { eq }) => eq(users.id, id),
+  });
+}
+
+export async function getUserByHandle(env: Env, handle: string) {
+  const db = getDb(env);
+  return await db.query.users.findFirst({
+    where: (users, { eq }) => eq(users.handle, handle),
+  });
 }
 
 export async function upsertUser(env: Env, user: { id: string; email?: string; password_hash?: string }) {

@@ -1,16 +1,64 @@
 name = "vibecodr-api"
-main = "./dist/index.js"
+main = "./src/index.ts"
 compatibility_date = "2024-10-01"
+compatibility_flags = ["nodejs_compat"]
+ 
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
 
 [[d1_databases]]
 binding = "DB"
 database_name = "vibecodr-d1"
-database_id = "00000000-0000-0000-0000-000000000000" # TODO: replace with real ID
+database_id = "1d42e343-b1a3-4371-a4a3-516381599bc2"
+migrations_dir = "drizzle/migrations"
 
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "vibecodr-assets"
 
+[[kv_namespaces]]
+binding = "RUNTIME_MANIFEST_KV"
+id = "8f0dd0835dc44edd8acdbc1b96f6f394"
+
+[assets]
+# Keep assets directory local and minimal to avoid scanning unrelated paths
+directory = "./assets"
+
 [vars]
 ALLOWLIST_HOSTS = "[]" # JSON array of allowed network hosts per capsule is enforced per-request
+CLERK_JWT_ISSUER = "https://clerk.vibecodr.space"
+# Optional: comma-separated audiences (https origins or app identifiers) to require on Clerk tokens
+CLERK_JWT_AUDIENCE = ""
 
+# Durable Objects binding for BuildCoordinator
+[durable_objects]
+bindings = [
+  { name = "BUILD_COORDINATOR_DURABLE", class_name = "BuildCoordinator" },
+  { name = "ARTIFACT_COMPILER_DURABLE", class_name = "ArtifactCompiler" }
+]
+
+# Durable Objects migration tag
+[[migrations]]
+tag = "2025-11-12_build_coordinator"
+new_sqlite_classes = ["BuildCoordinator"]
+
+[[migrations]]
+tag = "2025-11-14_artifact_compiler"
+new_sqlite_classes = ["ArtifactCompiler"]
+
+# Workers Analytics Engine dataset binding
+[[analytics_engine_datasets]]
+binding = "vibecodr_analytics_engine"
+dataset = "vibecodr_analytics"

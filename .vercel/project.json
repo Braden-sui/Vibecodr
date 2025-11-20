@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_hsw0FhGKhRx1mbRNv5bOS110NDzl",
+  "orgId": "team_vFQB7fzmTGVSTo07fO9AZoqu",
+  "projectName": "vibecodr",
+  "settings": {
+    "createdAt": 1763359233753,
+    "framework": "nextjs",
+    "devCommand": "pnpm dev",
+    "installCommand": "pnpm install",
+    "buildCommand": "pnpm run build",
+    "outputDirectory": ".vercel/output",
+    "rootDirectory": "apps/web",
+    "directoryListing": false,
+    "nodeVersion": "22.x"
+  }
+}
