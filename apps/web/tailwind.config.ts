@@ -17,6 +17,11 @@ const config: Config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["Inter", "sans-serif"],
+        serif: ["Merriweather", "serif"],
+        mono: ["Fira Code", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -58,16 +63,8 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
-        "vc-soft": "0 10px 45px -25px rgba(15, 23, 42, 0.35)",
-        "vc-soft-lg": "0 18px 65px -30px rgba(8, 15, 35, 0.45)",
-      },
-      backgroundImage: {
-        "vc-shell":
-          "radial-gradient(100% 60% at 10% 10%, rgba(99, 102, 241, 0.08), transparent 45%), radial-gradient(120% 70% at 90% 0%, rgba(16, 185, 129, 0.08), transparent 50%), linear-gradient(180deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0.06))",
-        "vc-hero":
-          "radial-gradient(80% 60% at 20% 10%, rgba(59, 130, 246, 0.14), transparent 50%), radial-gradient(90% 70% at 80% 20%, rgba(236, 72, 153, 0.12), transparent 50%), linear-gradient(135deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.06))",
-        "vc-glow":
-          "radial-gradient(65% 65% at 50% 35%, rgba(125, 211, 252, 0.14), transparent 55%), radial-gradient(35% 35% at 80% 25%, rgba(167, 139, 250, 0.2), transparent 60%)",
+        "vc-soft": "0 4px 20px -2px rgba(44, 62, 80, 0.05)",
+        "vc-hover": "0 10px 25px -5px rgba(44, 62, 80, 0.1)",
       },
       keyframes: {
         "accordion-down": {

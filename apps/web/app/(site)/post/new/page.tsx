@@ -2,6 +2,8 @@
 
 import { Sparkles } from "lucide-react";
 import { VibesComposer } from "@/components/VibesComposer";
+import KineticHeader from "@/src/components/KineticHeader";
+import VibeCard from "@/src/components/VibeCard";
 
 export default function ShareVibePage() {
   return (
@@ -11,13 +13,15 @@ export default function ShareVibePage() {
           <Sparkles className="h-4 w-4 text-amber-500" />
           Create a vibe
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">Share a vibe</h1>
+        <KineticHeader text="Share a vibe" className="text-3xl font-bold tracking-tight" />
         <p className="text-muted-foreground">
           Publish runnable vibes, import from GitHub or ZIP, or write inline code in one composer.
         </p>
       </header>
 
-      <VibesComposer className="shadow-sm" />
+      <VibeCard className="shadow-sm p-0 overflow-visible border-0 bg-transparent shadow-none">
+        <VibesComposer className="shadow-none border-0" />
+      </VibeCard>
     </section>
   );
 }

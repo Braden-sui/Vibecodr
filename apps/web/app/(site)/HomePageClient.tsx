@@ -13,6 +13,7 @@ import { trackClientError, trackEvent } from "@/lib/analytics";
 import { postsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { ApiFeedResponseSchema } from "@vibecodr/shared";
 import { useReducedMotion } from "@/lib/useReducedMotion";
+import KineticHeader from "@/src/components/KineticHeader";
 
 type FeedMode = "latest" | "following" | "foryou";
 
@@ -38,7 +39,7 @@ const fallbackPosts: FeedPost[] = [
         storage: false,
         workers: false,
       },
-      params: [{ name: "count" }, { name: "speed" }],
+      params: [{ name: "count", type: "number", label: "Count", default: 100 }, { name: "speed", type: "slider", label: "Speed", default: 1 }],
       artifactId: null,
     },
     coverKey: null,
@@ -91,7 +92,7 @@ const fallbackPosts: FeedPost[] = [
         storage: true,
         workers: false,
       },
-      params: [{ name: "city" }, { name: "units" }],
+      params: [{ name: "city", type: "text", label: "City", default: "London" }, { name: "units", type: "select", label: "Units", default: "metric", options: ["metric", "imperial"] }],
       artifactId: null,
     },
     coverKey: null,
@@ -123,7 +124,7 @@ const fallbackPosts: FeedPost[] = [
         storage: true,
         workers: false,
       },
-      params: [{ name: "theme" }],
+      params: [{ name: "theme", type: "select", label: "Theme", default: "dark", options: ["light", "dark"] }],
       artifactId: null,
     },
     coverKey: null,
@@ -234,8 +235,8 @@ export default function FeedPage() {
             mode === "following" && response.status === 400
               ? "Sign in to see the creators you follow."
               : (payload && typeof payload.error === "string"
-                  ? payload.error
-                  : response.status >= 500
+                ? payload.error
+                : response.status >= 500
                   ? "Feed temporarily unavailable. Please try again."
                   : "Unable to load feed.");
           setFeedError(friendly);
@@ -438,7 +439,7 @@ export default function FeedPage() {
                 <Sparkles className="h-3.5 w-3.5" />
                 Featured vibe
               </div>
-              <h1 className="text-3xl font-bold leading-tight tracking-tight md:text-4xl">{heroPost.title}</h1>
+              <KineticHeader text={heroPost.title} className="text-3xl font-bold leading-tight tracking-tight md:text-4xl" />
               <p className="max-w-3xl text-lg text-muted-foreground">
                 {heroPost.description ?? "Run it inline, tweak params, and remix instantly."}
               </p>
@@ -500,7 +501,7 @@ export default function FeedPage() {
               Runnable vibes
             </div>
             <div className="space-y-1">
-              <h2 className="text-2xl font-bold tracking-tight">Run, remix, and publish</h2>
+              <KineticHeader text="Run, remix, and publish" className="text-2xl font-bold tracking-tight" />
               <p className="text-muted-foreground">
                 Click a vibe to run it inline, tweak params, then remix with the composer.
               </p>
@@ -513,9 +514,8 @@ export default function FeedPage() {
                 <button
                   key={tag}
                   onClick={() => toggleTag(tag)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition ${
-                    active ? "border-primary bg-primary/10 text-primary" : "hover:border-muted-foreground/50"
-                  }`}
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm transition ${active ? "border-primary bg-primary/10 text-primary" : "hover:border-muted-foreground/50"
+                    }`}
                 >
                   <TagIcon className="h-3 w-3" />
                   #{tag}
@@ -541,8 +541,8 @@ export default function FeedPage() {
               {lastUpdated
                 ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}`
                 : isLoading
-                ? "Loading recommendations..."
-                : "Waiting for fresh recommendations"}
+                  ? "Loading recommendations..."
+                  : "Waiting for fresh recommendations"}
             </div>
           </div>
         )}

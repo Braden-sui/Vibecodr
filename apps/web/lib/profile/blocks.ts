@@ -2,6 +2,7 @@ import * as React from "react";
 import type { ProfileBlock } from "./schema";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import VibeCard from "@/src/components/VibeCard";
 
 export type ProfilePageData = {
   user: {
@@ -53,7 +54,7 @@ export type BlockDefinition = {
 const renderAbout: BlockRenderer = ({ data }) => {
   if (!data.aboutMd) return null;
   return React.createElement(
-    Card,
+    VibeCard,
     {
       className:
         "prose prose-sm max-w-none bg-card text-card-foreground dark:prose-invert",
@@ -71,7 +72,7 @@ const renderProjects: BlockRenderer = ({ data }) => {
 
   const projectCards = data.projects.map((project) =>
     React.createElement(
-      Card,
+      VibeCard,
       { key: project.id, className: "flex flex-col gap-2 p-3" },
       React.createElement(
         "div",
@@ -83,30 +84,30 @@ const renderProjects: BlockRenderer = ({ data }) => {
         ),
         project.description
           ? React.createElement(
-              "p",
-              {
-                className:
-                  "text-xs text-muted-foreground line-clamp-3",
-              },
-              project.description,
-            )
+            "p",
+            {
+              className:
+                "text-xs text-muted-foreground line-clamp-3",
+            },
+            project.description,
+          )
           : null,
         project.tags && project.tags.length
           ? React.createElement(
-              "div",
-              { className: "mt-1 flex flex-wrap gap-1" },
-              project.tags.map((tag) =>
-                React.createElement(
-                  Badge,
-                  {
-                    key: tag,
-                    variant: "outline",
-                    className: "text-[10px]",
-                  },
-                  tag,
-                ),
+            "div",
+            { className: "mt-1 flex flex-wrap gap-1" },
+            project.tags.map((tag) =>
+              React.createElement(
+                Badge,
+                {
+                  key: tag,
+                  variant: "outline",
+                  className: "text-[10px]",
+                },
+                tag,
               ),
-            )
+            ),
+          )
           : null,
       ),
     ),
@@ -143,13 +144,13 @@ const renderBadges: BlockRenderer = ({ data }) => {
       { key: badge.id, variant: "secondary" },
       badge.icon
         ? React.createElement(
-            "span",
-            {
-              className: "mr-1",
-              "aria-hidden": "true",
-            },
-            badge.icon,
-          )
+          "span",
+          {
+            className: "mr-1",
+            "aria-hidden": "true",
+          },
+          badge.icon,
+        )
         : null,
       badge.label,
     ),

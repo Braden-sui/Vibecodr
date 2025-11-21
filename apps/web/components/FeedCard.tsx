@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router-dom";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import VibeCard from "@/src/components/VibeCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,7 +118,6 @@ export function FeedCard({ post }: FeedCardProps) {
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const previewLogsRef = useRef<PreviewLogEntry[]>([]);
   const prefersReducedMotion = useReducedMotion();
-  const [tilt, setTilt] = useState<{ x: number; y: number; active: boolean }>({ x: 0, y: 0, active: false });
 
   useEffect(() => {
     previewLogsRef.current = [];
@@ -493,22 +493,7 @@ export function FeedCard({ post }: FeedCardProps) {
     };
   }, [capsuleId, isApp, pushPreviewLog, runnerOrigins, warnMissingRunnerOrigins]);
 
-  const handleTiltMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (prefersReducedMotion) {
-      return;
-    }
-    const node = cardRef.current;
-    if (!node) return;
-    const rect = node.getBoundingClientRect();
-    const relX = (event.clientX - rect.left) / rect.width - 0.5;
-    const relY = (event.clientY - rect.top) / rect.height - 0.5;
-    const maxTilt = 6;
-    setTilt({ x: relX * maxTilt * 2, y: -relY * maxTilt * 2, active: true });
-  };
 
-  const resetTilt = () => {
-    setTilt({ x: 0, y: 0, active: false });
-  };
 
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
@@ -718,26 +703,14 @@ export function FeedCard({ post }: FeedCardProps) {
   };
 
   return (
-    <motion.div
+    <VibeCard
       ref={cardRef}
-      className="group relative"
-      onMouseMove={handleTiltMove}
-      onMouseLeave={resetTilt}
+      className="group relative overflow-hidden rounded-2xl vc-surface shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg p-0"
       initial={prefersReducedMotion ? undefined : { opacity: 0.98, y: 8 }}
       whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      style={
-        prefersReducedMotion
-          ? undefined
-          : {
-              transform: `perspective(1100px) rotateX(${tilt.y}deg) rotateY(${tilt.x}deg)`,
-              transformOrigin: "center",
-              willChange: "transform",
-            }
-      }
     >
-      <Card className="group relative overflow-hidden rounded-2xl vc-surface shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg">
       {/* Cover/Preview Area (apps only) */}
       {isApp && (
         <div
@@ -752,80 +725,80 @@ export function FeedCard({ post }: FeedCardProps) {
                 "from-blue-500/10 to-purple-500/10"
               )}
             >
-            {/* Preview iframe for running apps */}
-            {isRunning && capsuleId && (
-              <div className="absolute inset-0 z-10">
-                <iframe
-                  ref={iframeRef}
-                  src={capsulesApi.bundleSrc(capsuleId)}
-                  className="h-full w-full border-0"
-                  sandbox="allow-scripts allow-same-origin"
-                  style={{
-                    colorScheme: "normal",
-                  }}
-                  onLoad={() => {
-                    const bootTime = Date.now() - (prebootStartRef.current || Date.now());
-                    if (bootTime > (isWebContainer ? 1500 : 1000)) {
-                      console.warn(
-                        `Preview exceeded ${isWebContainer ? "WebContainer" : "client-static"} budget: ${bootTime}ms`
-                      );
-                    }
-                    if (clickRunIncrementRef.current) {
-                      activePreviewCount = Math.max(0, activePreviewCount - 1);
-                      clickRunIncrementRef.current = false;
-                    }
-                    if (!previewLoaded) {
-                      setPreviewLoaded(true);
-                    }
-                  }}
-                  onError={() => {
-                    setPreviewError(true);
-                    if (clickRunIncrementRef.current) {
-                      activePreviewCount = Math.max(0, activePreviewCount - 1);
-                      clickRunIncrementRef.current = false;
-                    }
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Preview canvas or cover image */}
-            {!isRunning && (
-              <div className="flex h-full items-center justify-center">
-                <Button
-                  onClick={handleClickToRun}
-                  variant="secondary"
-                  size="lg"
-                  className="gap-2"
-                >
-                  <Play className="h-5 w-5" />
-                  Run Preview
-                </Button>
-                {previewError && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/5">
-                    <p className="text-sm text-destructive">Preview unavailable</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Hover overlay */}
-            {!isRunning && (
-              <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
-            )}
-
-            {/* WebContainer skeleton during boot */}
-            {isWebContainer && isRunning && !previewLoaded && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/95">
-                <div className="text-center">
-                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                  <p className="mt-2 text-sm text-muted-foreground">Booting WebContainer...</p>
+              {/* Preview iframe for running apps */}
+              {isRunning && capsuleId && (
+                <div className="absolute inset-0 z-10">
+                  <iframe
+                    ref={iframeRef}
+                    src={capsulesApi.bundleSrc(capsuleId)}
+                    className="h-full w-full border-0"
+                    sandbox="allow-scripts allow-same-origin"
+                    style={{
+                      colorScheme: "normal",
+                    }}
+                    onLoad={() => {
+                      const bootTime = Date.now() - (prebootStartRef.current || Date.now());
+                      if (bootTime > (isWebContainer ? 1500 : 1000)) {
+                        console.warn(
+                          `Preview exceeded ${isWebContainer ? "WebContainer" : "client-static"} budget: ${bootTime}ms`
+                        );
+                      }
+                      if (clickRunIncrementRef.current) {
+                        activePreviewCount = Math.max(0, activePreviewCount - 1);
+                        clickRunIncrementRef.current = false;
+                      }
+                      if (!previewLoaded) {
+                        setPreviewLoaded(true);
+                      }
+                    }}
+                    onError={() => {
+                      setPreviewError(true);
+                      if (clickRunIncrementRef.current) {
+                        activePreviewCount = Math.max(0, activePreviewCount - 1);
+                        clickRunIncrementRef.current = false;
+                      }
+                    }}
+                  />
                 </div>
-              </div>
-            )}
-          </div>
-        </Link>
-      </div>
+              )}
+
+              {/* Preview canvas or cover image */}
+              {!isRunning && (
+                <div className="flex h-full items-center justify-center">
+                  <Button
+                    onClick={handleClickToRun}
+                    variant="secondary"
+                    size="lg"
+                    className="gap-2"
+                  >
+                    <Play className="h-5 w-5" />
+                    Run Preview
+                  </Button>
+                  {previewError && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/5">
+                      <p className="text-sm text-destructive">Preview unavailable</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Hover overlay */}
+              {!isRunning && (
+                <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
+              )}
+
+              {/* WebContainer skeleton during boot */}
+              {isWebContainer && isRunning && !previewLoaded && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/95">
+                  <div className="text-center">
+                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                    <p className="mt-2 text-sm text-muted-foreground">Booting WebContainer...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Link>
+        </div>
       )}
 
       <CardHeader className="pb-3">
@@ -996,7 +969,6 @@ export function FeedCard({ post }: FeedCardProps) {
           )}
         </div>
       </CardFooter>
-    </Card>
-  </motion.div>
+    </VibeCard>
   );
 }

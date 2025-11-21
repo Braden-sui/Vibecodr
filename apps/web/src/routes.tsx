@@ -1,4 +1,5 @@
-import { Routes, Route, useNavigate, useParams, Navigate } from "react-router-dom";
+```typescript
+import { Routes, Route, useNavigate, useParams, Navigate, Outlet } from "react-router-dom";
 import { Suspense, useEffect, useState } from "react";
 import HomePageClient from "@/app/(site)/HomePageClient";
 import ShareVibePage from "@/app/(site)/post/new/page";
@@ -19,6 +20,10 @@ import { ApiPostResponseSchema } from "@vibecodr/shared";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileBlocks } from "@/components/profile/ProfileBlocks";
 import { themeToInlineStyle } from "@/lib/profile/theme";
+import { themeToInlineStyle } from "@/lib/profile/theme";
+import Layout from "@/src/components/Layout";
+import KineticHeader from "@/src/components/KineticHeader";
+import VibeCard from "@/src/components/VibeCard";
 
 function PlayerRouteWrapper() {
   const params = useParams();
@@ -52,7 +57,7 @@ function PostDetailRoute() {
           return;
         }
         if (!res.ok) {
-          throw new Error(`E-VIBECODR-0501 failed to load post: ${res.status}`);
+          throw new Error(`E - VIBECODR-0501 failed to load post: ${ res.status } `);
         }
         const json = await res.json();
         const parsed = ApiPostResponseSchema.parse(json);
@@ -63,7 +68,7 @@ function PostDetailRoute() {
         }
 
         if (mapped.type === "app") {
-          navigate(`/player/${id}`, { replace: true });
+          navigate(`/ player / ${ id } `, { replace: true });
           return;
         }
 
@@ -91,7 +96,7 @@ function PostDetailRoute() {
   }
 
   if (loading) {
-    return <div className="py-10 text-center text-muted-foreground">Loading post</div>;
+    return <div className="py-10 text-center text-muted-foreground">Loading post  </div>;
   }
 
   if (error === "not_found") {
@@ -109,19 +114,32 @@ function PostDetailRoute() {
   });
 
   return (
-    <section className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-6">
-      <header className="border-b pb-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
-        <h1 className="mt-1 text-xl font-semibold">{post.title}</h1>
-        <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
-          <div>
-            <span className="font-medium">@{post.author.handle}</span>
+    <section className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8">
+      <VibeCard className="p-8">
+        <header className="border-b pb-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
+            <time dateTime={post.createdAt} className="text-sm text-muted-foreground">{createdLabel}</time>
           </div>
-          <time dateTime={post.createdAt}>{createdLabel}</time>
-        </div>
-      </header>
+          <KineticHeader text={post.title} className="text-3xl font-bold leading-tight tracking-tight md:text-4xl mb-4" />
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500" />
+            <div>
+              <span className="font-medium text-lg">@{post.author.handle}</span>
+            </div>
+          </div>
+        </header>
 
-      <div className="mt-2 border-t pt-4">
+        <div className="mt-6">
+           {/* Post content would go here if we had it separate from title/desc, for now just comments */}
+           <div className="prose dark:prose-invert max-w-none">
+             {post.description && <p className="text-lg text-muted-foreground">{post.description}</p>}
+           </div>
+        </div>
+      </VibeCard>
+
+      <div className="mt-4">
+        <h3 className="text-xl font-semibold mb-4 px-2">Comments</h3>
         <Comments postId={post.id} />
       </div>
     </section>
@@ -154,7 +172,7 @@ function ProfileRouteWrapper() {
           return;
         }
         if (!res.ok) {
-          throw new Error(`E-VIBECODR-2001 failed to load profile: ${res.status}`);
+          throw new Error(`E - VIBECODR - 2001 failed to load profile: ${ res.status } `);
         }
         const json = await res.json();
         if (!cancelled) {
@@ -183,7 +201,7 @@ function ProfileRouteWrapper() {
   }
 
   if (loading) {
-    return <div className="py-10 text-center text-muted-foreground">Loading profile</div>;
+    return <div className="py-10 text-center text-muted-foreground">Loading profile  </div>;
   }
 
   if (error === "not_found") {
@@ -214,7 +232,7 @@ function LegacyProfileRouteWrapper() {
     if (!handle) {
       return;
     }
-    navigate(`/u/${encodeURIComponent(handle)}`, { replace: true });
+    navigate(`/ u / ${ encodeURIComponent(handle) } `, { replace: true });
   }, [handle, navigate]);
 
   return null;
@@ -223,47 +241,49 @@ function LegacyProfileRouteWrapper() {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <Suspense fallback={<div className="py-10 text-center text-muted-foreground">Loading feed</div>}>
-            <HomePageClient />
-          </Suspense>
-        }
-      />
+      {/* Main Layout Routes */}
+      <Route element={<Layout />}>
+        <Route
+          path="/"
+          element={
+            <Suspense fallback={<div className="py-10 text-center text-muted-foreground">Loading feed</div>}>
+              <HomePageClient />
+            </Suspense>
+          }
+        />
 
-      {/* Posts */}
-      <Route path="/post/new" element={<ShareVibePage />} />
-      <Route path="/post/:id" element={<PostDetailRoute />} />
+        {/* Posts */}
+        <Route path="/post/new" element={<ShareVibePage />} />
+        <Route path="/post/:id" element={<PostDetailRoute />} />
 
-      {/* Player */}
+        {/* Marketing / static */}
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/live" element={<LivePage />} />
+
+        {/* Profiles */}
+        <Route path="/u/:handle" element={<ProfileRouteWrapper />} />
+        <Route path="/profile/:handle" element={<LegacyProfileRouteWrapper />} />
+
+        {/* Reports */}
+        <Route path="/report/new" element={<NewReport />} />
+
+        {/* Settings */}
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/profile" element={<ProfileSettingsPage />} />
+
+        {/* Studio - single-page shell handles internal tabs */}
+        <Route path="/studio/*" element={<Navigate to="/post/new" replace />} />
+
+        {/* Moderation */}
+        <Route path="/moderation/flagged" element={<FlaggedPostsPage />} />
+        <Route path="/moderation/audit" element={<ModerationAuditPage />} />
+        <Route path="/admin/moderation" element={<ModerationQueue />} />
+        <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+      </Route>
+
+      {/* Full Screen / Auth Routes (Outside Layout) */}
       <Route path="/player/:postId" element={<PlayerRouteWrapper />} />
-
-      {/* Marketing / static */}
-      <Route path="/pricing" element={<PricingPage />} />
-      <Route path="/live" element={<LivePage />} />
-
-      {/* Profiles */}
-      <Route path="/u/:handle" element={<ProfileRouteWrapper />} />
-      <Route path="/profile/:handle" element={<LegacyProfileRouteWrapper />} />
-
-      {/* Reports */}
-      <Route path="/report/new" element={<NewReport />} />
-
-      {/* Settings */}
-      <Route path="/settings" element={<SettingsPage />} />
-      <Route path="/settings/profile" element={<ProfileSettingsPage />} />
-
-      {/* Studio - single-page shell handles internal tabs */}
-      <Route path="/studio/*" element={<Navigate to="/post/new" replace />} />
-
-      {/* Moderation */}
-      <Route path="/moderation/flagged" element={<FlaggedPostsPage />} />
-      <Route path="/moderation/audit" element={<ModerationAuditPage />} />
-      <Route path="/admin/moderation" element={<ModerationQueue />} />
-      <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
-
-      {/* Auth - wildcard segments */}
+      
       <Route
         path="/sign-in/*"
         element={
@@ -283,3 +303,4 @@ export function AppRoutes() {
     </Routes>
   );
 }
+```

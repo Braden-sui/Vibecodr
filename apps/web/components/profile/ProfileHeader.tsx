@@ -1,6 +1,7 @@
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import type { ProfileTheme } from "@/lib/profile/schema";
+import KineticHeader from "@/src/components/KineticHeader";
 
 export type ProfileHeaderProps = {
   profile: {
@@ -41,9 +42,7 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
           <Avatar src={user.avatarUrl ?? undefined} alt={user.name || `@${user.handle}`} />
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">
-                {user.name || `@${user.handle}`}
-              </h1>
+              <KineticHeader text={user.name || `@${user.handle}`} className="text-2xl font-bold" />
               {user.plan && user.plan !== "free" ? (
                 <Badge className="bg-gradient-to-r from-yellow-500 to-orange-500 text-xs font-semibold text-white">
                   {user.plan.toUpperCase()}
