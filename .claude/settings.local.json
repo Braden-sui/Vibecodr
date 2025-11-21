@@ -7,7 +7,9 @@
       "Bash(pnpm list:*)",
       "WebFetch(domain:developers.cloudflare.com)",
       "WebFetch(domain:opennext.js.org)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(dir /b \"c:\\Users\\brade\\Desktop\\vibecodr\" 2)",
+      "Bash(nul)"
     ],
     "deny": [],
     "ask": []

@@ -13,6 +13,7 @@ import {
   ERROR_RUNTIME_MANIFEST_LOAD_FAILED,
   ERROR_RUNTIME_MANIFEST_PARSE_FAILED,
 } from "@vibecodr/shared";
+import { invalidateLatestArtifactCache } from "../feed-artifacts";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -136,6 +137,8 @@ const createArtifactUploadHandler: AuthedHandler = async (req, env, _ctx, _param
     )
     .run();
 
+  await invalidateLatestArtifactCache(env, capsuleId);
+
   return json(
     {
       ok: true,
@@ -158,12 +161,12 @@ const uploadArtifactSourcesHandler: AuthedHandler = async (req, env, _ctx, param
   }
 
   const { results } = await env.DB.prepare(
-    "SELECT id, owner_id FROM artifacts WHERE id = ? LIMIT 1"
+    "SELECT id, owner_id, capsule_id FROM artifacts WHERE id = ? LIMIT 1"
   )
     .bind(artifactId)
     .all();
 
-  const artifact = (results && results[0]) as { id: string; owner_id: string } | undefined;
+  const artifact = (results && results[0]) as { id: string; owner_id: string; capsule_id?: string | null } | undefined;
 
   if (!artifact) {
     return json({ error: "Artifact not found" }, 404);
@@ -286,6 +289,10 @@ const completeArtifactHandler: AuthedHandler = async (req, env, _ctx, params, us
         },
         502
       );
+    }
+
+    if (artifact.capsule_id) {
+      await invalidateLatestArtifactCache(env, artifact.capsule_id);
     }
 
     return json(

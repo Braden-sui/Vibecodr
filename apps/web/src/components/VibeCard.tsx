@@ -16,8 +16,8 @@ const VibeCard = forwardRef<HTMLDivElement, VibeCardProps>(({ children, classNam
   const x = useMotionValue(0);
   const y = useMotionValue(0);
 
-  // Smooth spring physics for the magnetic pull
-  const springConfig = { damping: 15, stiffness: 150, mass: 0.1 };
+  // Smooth spring physics for the magnetic pull; higher damping keeps micro-movements from jittering
+  const springConfig = { damping: 22, stiffness: 150, mass: 0.1 };
   const springX = useSpring(x, springConfig);
   const springY = useSpring(y, springConfig);
 
@@ -32,9 +32,9 @@ const VibeCard = forwardRef<HTMLDivElement, VibeCardProps>(({ children, classNam
     const distanceX = e.clientX - centerX;
     const distanceY = e.clientY - centerY;
 
-    // Magnetic pull strength (10% of distance)
-    x.set(distanceX * 0.1);
-    y.set(distanceY * 0.1);
+    // Magnetic pull strength (gentle to avoid jitter)
+    x.set(distanceX * 0.08);
+    y.set(distanceY * 0.08);
   };
 
   const handleMouseLeave = () => {

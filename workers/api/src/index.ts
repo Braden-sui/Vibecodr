@@ -68,7 +68,7 @@ import { syncUser } from "./handlers/users";
 import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
 import { ApiFeedResponseSchema, ApiFeedPostSchema, type ApiFeedPost } from "./contracts";
 import { buildCapsuleSummary } from "./capsule-manifest";
-import { buildLatestArtifactMap, type CapsuleArtifactRow } from "./feed-artifacts";
+import { getLatestArtifactsWithCache } from "./feed-artifacts";
 import { createPostSchema } from "./schema";
 import { incrementUserCounters } from "./handlers/counters";
 
@@ -391,20 +391,10 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         GROUP BY parent_capsule_id
       `;
 
-      const artifactsQuery = `
-        SELECT capsule_id, id, created_at
-        FROM artifacts
-        WHERE capsule_id IN (${placeholders})
-          AND status = 'active'
-          AND policy_status = 'active'
-          AND visibility IN ('public','unlisted')
-        ORDER BY created_at DESC
-      `;
-
-      const [runsResult, remixesResult, artifactsResult] = await Promise.all([
+      const [runsResult, remixesResult, latestArtifactMap] = await Promise.all([
         env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
         env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
-        env.DB.prepare(artifactsQuery).bind(...capsuleIds).all(),
+        getLatestArtifactsWithCache(env, capsuleIds),
       ]);
 
       for (const row of runsResult.results || []) {
@@ -414,9 +404,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
       }
 
-      const latestArtifacts = buildLatestArtifactMap((artifactsResult.results || []) as CapsuleArtifactRow[]);
-      for (const [capsuleId, artifactId] of latestArtifacts.entries()) {
-        artifactIdsByCapsule.set(capsuleId, artifactId);
+      for (const [capsuleId, info] of latestArtifactMap.entries()) {
+        artifactIdsByCapsule.set(capsuleId, info.artifactId);
       }
     }
 
@@ -638,14 +627,10 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
 
     let artifactIdForCapsule: string | null = null;
     if (row.capsule_id) {
-      const artifactRow = await env.DB.prepare(
-        "SELECT id FROM artifacts WHERE capsule_id = ? AND status = 'active' AND policy_status = 'active' AND visibility IN ('public','unlisted') ORDER BY created_at DESC LIMIT 1"
-      )
-        .bind(row.capsule_id)
-        .first();
-
-      if (artifactRow && (artifactRow as any).id) {
-        artifactIdForCapsule = String((artifactRow as any).id);
+      const latestArtifacts = await getLatestArtifactsWithCache(env, [row.capsule_id]);
+      const latest = latestArtifacts.get(row.capsule_id);
+      if (latest) {
+        artifactIdForCapsule = latest.artifactId;
       }
     }
 

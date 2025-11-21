@@ -5,9 +5,20 @@ import { motion } from "framer-motion";
 import { Home, Zap, Radio, Settings, User, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const Sidebar = () => {
+interface SidebarProps {
+    open: boolean;
+    onClose?: () => void;
+}
+
+const Sidebar = ({ open, onClose }: SidebarProps) => {
     const { user, isLoaded } = useUser();
     const location = useLocation();
+
+    const maybeClose = () => {
+        if (typeof window !== "undefined" && window.innerWidth < 768) {
+            onClose?.();
+        }
+    };
 
     const navItems = [
         { icon: Home, label: "Home", path: "/" },
@@ -20,13 +31,18 @@ const Sidebar = () => {
 
     return (
         <motion.aside
-            initial={{ x: -20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border/50 z-50 hidden md:flex flex-col shadow-vc-soft"
+            initial={false}
+            animate={open ? { x: 0, opacity: 1 } : { x: -280, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            className={cn(
+                "fixed left-0 top-0 z-50 h-screen w-64 bg-card/95 backdrop-blur-xl border-r border-border/50 shadow-vc-soft flex flex-col",
+                open ? "pointer-events-auto" : "pointer-events-none"
+            )}
+            aria-hidden={!open}
         >
             {/* Logo Area */}
-            <div className="p-8">
-                <Link to="/" className="flex items-center gap-2 group">
+            <div className="p-6 flex items-center justify-between gap-2">
+                <Link to="/" className="flex items-center gap-2 group" onClick={maybeClose}>
                     <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md group-hover:scale-105 transition-transform">
                         V
                     </div>
@@ -34,6 +50,14 @@ const Sidebar = () => {
                         vibecodr
                     </span>
                 </Link>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="ml-auto rounded-lg border border-border/60 px-3 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+                    aria-label="Close navigation"
+                >
+                    Hide
+                </button>
             </div>
 
             {/* Navigation */}
@@ -47,6 +71,7 @@ const Sidebar = () => {
                             key={item.path}
                             to={item.path}
                             className="relative block"
+                            onClick={maybeClose}
                         >
                             <div
                                 className={cn(
