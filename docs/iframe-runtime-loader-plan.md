@@ -141,6 +141,7 @@ Use the following waves to parallelize safely. Each *STOP* marks a hard dependen
 - Dashboard widgets: compile success %, average runtime bootstrap latency, top violation codes.
 - Admin UX: internal page to view artifact manifests, revoke, trigger recompile with new runtime version.
 - Runtime telemetry pipeline: runtime events are posted to the Worker (`/runtime-events`), persisted to `runtime_events`, and surfaced in `/admin/analytics` so the admin dashboards/alerts you build can rely on the same dataset before broader rollout. Ingestion now returns HTTP 500 with `E-VIBECODR-2130` and `retryable: true` when D1 writes fail; clients must treat non-2xx as failures and perform a bounded retry instead of assuming 202.
+- Inline JS apps now go through the same JS runtime path (webcontainer/react-jsx) as full artifacts: we bundle with esbuild, store `artifacts/<artifactId>/bundle.js`, and feed the existing runtime manifest/loader. A Bedrock safety gate (GPT-OSS 120B) runs on all submitted files before bundle upload and logs verdict metadata; HTML inline remains JS-free and sanitized via the `client-static` runner.
 
 ### Testing & Validation
 - **Unit:** schema validation, import allowlist, guard script functions, registry behavior.

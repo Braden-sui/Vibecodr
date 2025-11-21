@@ -248,6 +248,29 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       viewerFollowsAuthor = !!followRow;
     }
 
+    const authorProfile = {
+      displayName: (user as any).profile_display_name ?? null,
+      avatarUrl: (user as any).profile_avatar_url ?? null,
+      bio: (user as any).profile_bio ?? null,
+    };
+    const authorName = authorProfile.displayName ?? (user as any).name ?? null;
+    const authorAvatar = authorProfile.avatarUrl ?? (user as any).avatar_url ?? null;
+    const authorBio = authorProfile.bio ?? (user as any).bio ?? null;
+    const authorPlan = (user as any).plan ?? "free";
+    const author = {
+      id: (user as any).id,
+      handle: (user as any).handle,
+      name: authorName,
+      avatarUrl: authorAvatar,
+      bio: authorBio,
+      followersCount: Number((user as any).followers_count ?? 0),
+      runsCount: Number((user as any).runs_count ?? 0),
+      remixesCount: Number((user as any).remixes_count ?? 0),
+      isFeatured: Number((user as any).is_featured ?? 0) === 1,
+      plan: authorPlan,
+      profile: authorProfile,
+    };
+
     const posts = rows.map((row: any) => {
       const likeCount = likesByPost.get(row.id) ?? 0;
       const commentCount = commentsByPost.get(row.id) ?? 0;
@@ -278,6 +301,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         title: row.title,
         description: row.description,
         tags: row.tags ? JSON.parse(row.tags) : [],
+        author,
         capsule: capsuleSummary,
         coverKey: row.cover_key ?? null,
         createdAt: row.created_at,

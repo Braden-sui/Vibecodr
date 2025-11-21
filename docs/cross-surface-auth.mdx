@@ -10,7 +10,7 @@ Clerk issues the primary session cookies, and the SPA requests scoped JWTs via `
 ## Request Path: Feed → Studio → Worker
 
 1. **Feed** `postsApi.list` asks `useAuth().getToken({ template: "workers" })`, then calls `${getWorkerApiBase()}/posts?...` with `Authorization: Bearer <worker-token>`.
-2. **Studio entry** mounts `EnsureUserSynced`, which uses Clerk client hooks to call `ensureUserSynced({ user, token })`. That helper POSTs directly to `${getWorkerApiBase()}/users/sync` with the normalized profile.
+2. **Studio entry** mounts `EnsureUserSynced`, which uses Clerk client hooks to call `ensureUserSynced({ user, token })`. That helper POSTs directly to `${getWorkerApiBase()}/users/sync` with the normalized **user** payload (id, handle, name, avatarUrl, bio). Profile cosmetics are edited via `/profile`; ownership stays on `users`.
 3. **Worker API** handlers such as `syncUser` and `capsules/publish` use `requireUser` to verify the JWT via Clerk JWKS, enforce that the `sub` matches the body payload, and reject mismatches with `E-VIBECODR-0404`.
 4. **Publish / heavy actions** like `capsulesApi.publish` submit `FormData` straight to `${getWorkerApiBase()}/capsules/publish`, so the Worker receives the same signed bearer token and can audit/authorize the action against plan + quota state.
 
@@ -27,7 +27,7 @@ sequenceDiagram
   Browser->>WorkerAPI: GET /posts (Authorization: Bearer <token>)
   WorkerAPI->>Clerk: Verify JWT via JWKS
   WorkerAPI-->>Browser: Feed response
-  Browser->>WorkerAPI: POST /users/sync (Bearer token + Clerk profile)
+  Browser->>WorkerAPI: POST /users/sync (Bearer token + user payload)
   WorkerAPI->>Clerk: Verify JWT via JWKS
   WorkerAPI-->>Browser: Sync OK / errors
   Browser->>WorkerAPI: POST /capsules/publish (FormData + Bearer token)

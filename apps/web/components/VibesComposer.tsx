@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, FormEvent, ChangeEvent } from "react";
+import { motion } from "motion/react";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
   formatBytes,
   type ZipManifestIssue,
 } from "@/lib/zipBundle";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 
 type ComposerMode = "status" | "image" | "github" | "zip" | "code";
 
@@ -101,6 +103,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   const isImporting = importStatus === "importing";
   const hasImportedCapsule = !!capsuleId;
+  const prefersReducedMotion = useReducedMotion();
 
   // Auto-detect GitHub URLs in text input
   const handleTextChange = (value: string) => {
@@ -361,13 +364,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       let effectiveCapsuleId = capsuleId;
 
       if (mode === "code") {
-        // Build a minimal client-static capsule around the inline code.
-        const inlineHtmlSource = code.trim();
-        const hasHtmlShell = /<html[\s>]/i.test(inlineHtmlSource);
-        const html = hasHtmlShell
-          ? inlineHtmlSource
-          : `<!doctype html><html><head><meta charset="utf-8"><title>Vibecodr App</title></head><body>${inlineHtmlSource}</body></html>`;
-
+        const userSource = code.trim();
         // Derive capabilities from Advanced controls (network disabled until premium tiers)
         const capabilities = allowStorage ? ({ storage: true } as { storage?: boolean }) : undefined;
 
@@ -403,8 +400,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
         const manifest = {
           version: "1.0",
-          runner: "client-static" as const,
-          entry: "index.html",
+          runner: "webcontainer" as const,
+          entry: "entry.tsx",
           title: trimmedTitle,
           description: trimmedDescription || undefined,
           ...(capabilities && Object.keys(capabilities).length > 0 ? { capabilities } : {}),
@@ -416,8 +413,20 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
         const manifestFile = new File([manifestBlob], "manifest.json", { type: "application/json" });
         formData.append("manifest", manifestFile);
 
-        const htmlFile = new File([html], "index.html", { type: "text/html" });
-        formData.append("index.html", htmlFile);
+        const entryShim = `
+import React from "react";
+import ReactDOM from "react-dom/client";
+import UserApp from "./user-code";
+
+const root = document.getElementById("root") || document.body.appendChild(document.createElement("div"));
+const mount = ReactDOM.createRoot(root);
+mount.render(React.createElement(UserApp));
+`;
+        const entryFile = new File([entryShim], "entry.tsx", { type: "text/tsx" });
+        formData.append("entry.tsx", entryFile);
+
+        const userFile = new File([userSource], "user-code.tsx", { type: "text/tsx" });
+        formData.append("user-code.tsx", userFile);
 
         const init = await buildAuthInit();
         const publishResponse = await capsulesApi.publish(formData, init);
@@ -438,7 +447,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
           const message = publishData.error || "Failed to publish app. Please check your code and try again.";
           console.error("Inline code publish failed:", message);
           setError(message);
-          trackEvent("composer_code_publish_failed", { mode: "code" });
+          trackEvent("composer_code_publish_failed", { mode: "code", runner: "webcontainer" });
           return;
         }
 
@@ -559,14 +568,6 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     }
   };
 
-  const handleOpenInStudio = () => {
-    if (capsuleId) {
-      window.location.href = `/studio?capsuleId=${capsuleId}`;
-    } else {
-      window.location.href = "/studio";
-    }
-  };
-
   const clearImage = () => {
     setImagePreview(null);
     setCoverKey(null);
@@ -636,19 +637,33 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   if (!isSignedIn) {
     return (
-      <Card className={cn("mb-6", className)}>
-        <CardContent className="flex items-center justify-center py-8 text-center">
-          <div className="space-y-2">
-            <p className="text-muted-foreground">Sign in to share vibes</p>
-            <Button onClick={() => redirectToSignIn()}>Sign In</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <motion.section
+        initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
+        animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className={className}
+      >
+        <Card className={cn("mb-6", className)}>
+          <CardContent className="flex items-center justify-center py-8 text-center">
+            <div className="space-y-2">
+              <p className="text-muted-foreground">Sign in to share vibes</p>
+              <Button onClick={() => redirectToSignIn()}>Sign In</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.section>
     );
   }
 
   return (
-    <Card className={cn("mb-6", className)}>
+    <motion.section
+      layout
+      initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
+      animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className={className}
+    >
+      <Card className={cn("mb-6 overflow-hidden rounded-2xl shadow-vc-soft", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" />
@@ -744,7 +759,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
                       <span className="text-sm font-medium">Inline App Code</span>
                     </div>
                     <Textarea
-                      placeholder="Write your app markup (HTML) here. It will run in a sandboxed iframe."
+                      placeholder="Write your app code here. HTML stays client-static; JS/TSX runs in the sandboxed runtime."
                       value={code}
                       onChange={(e) => setCode(e.target.value)}
                       rows={10}
@@ -1076,59 +1091,46 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
           {/* Action Buttons */}
           {isExpanded && (
-            <div className="flex items-center justify-between">
-              <div className="flex gap-2">
-                {hasImportedCapsule && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleOpenInStudio}
-                  >
-                    Open in Studio
-                  </Button>
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetComposer}
+                disabled={isSubmitting || isImporting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={
+                  isSubmitting ||
+                  isImporting ||
+                  isUploadingCover ||
+                  !title.trim() ||
+                  (mode === "github" && !hasImportedCapsule && !!githubUrl.trim()) ||
+                  (mode === "zip" && !!zipFile && !hasImportedCapsule)
+                }
+                className="gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sharing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Share Vibe
+                  </>
                 )}
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetComposer}
-                  disabled={isSubmitting || isImporting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={
-                    isSubmitting ||
-                    isImporting ||
-                    isUploadingCover ||
-                    !title.trim() ||
-                    (mode === "github" && !hasImportedCapsule && !!githubUrl.trim()) ||
-                    (mode === "zip" && !!zipFile && !hasImportedCapsule)
-                  }
-                  className="gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Sharing...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4" />
-                      Share Vibe
-                    </>
-                  )}
-                </Button>
-              </div>
+              </Button>
             </div>
           )}
         </form>
       </CardContent>
     </Card>
+    </motion.section>
   );
 }

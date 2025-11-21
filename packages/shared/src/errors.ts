@@ -167,6 +167,16 @@ const definitions: Record<string, ErrorDefinition> = {
     logMessage: "Required capsule manifest missing for source view",
   },
 
+  // 06xx: capsule access control
+  "E-VIBECODR-0601": {
+    code: "E-VIBECODR-0601",
+    category: "capsule",
+    httpStatus: 404,
+    severity: "error",
+    userMessage: "This capsule is not available.",
+    logMessage: "Capsule access blocked by policy or visibility",
+  },
+
   // 11xx: compile/manifest/runtime setup
   "E-VIBECODR-1100": {
     code: "E-VIBECODR-1100",
@@ -318,6 +328,7 @@ export const ERROR_AUTH_AUDIENCE_MISMATCH: ErrorCode = "E-VIBECODR-0005";
 export const ERROR_AUTH_SIGNATURE_INVALID: ErrorCode = "E-VIBECODR-0006";
 export const ERROR_AUTH_JWKS_FETCH_FAILED: ErrorCode = "E-VIBECODR-0007";
 export const ERROR_AUTH_JWKS_PARSE_FAILED: ErrorCode = "E-VIBECODR-0008";
+export const ERROR_CAPSULE_ACCESS_BLOCKED: ErrorCode = "E-VIBECODR-0601";
 export const ERROR_MANIFEST_INVALID: ErrorCode = "E-VIBECODR-1100";
 export const ERROR_MANIFEST_TOO_LARGE: ErrorCode = "E-VIBECODR-1110";
 export const ERROR_ARTIFACT_COMPILER_STATE_WRITE_FAILED: ErrorCode = "E-VIBECODR-1104";

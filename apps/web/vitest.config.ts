@@ -13,7 +13,6 @@ export default defineConfig({
       reporter: ["text", "json", "html"],
       exclude: [
         "node_modules/",
-        ".next/",
         "**/*.config.ts",
         "**/*.d.ts",
         "**/__tests__/**",

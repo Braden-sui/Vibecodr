@@ -53,5 +53,5 @@ The proxy helper (`getWorkerApiBase`) reads `WORKER_API_BASE`, `NEXT_PUBLIC_API_
 
 - To target your production Worker from local dev, set `WORKER_API_BASE=https://<your-worker>.workers.dev` in `apps/web/.env.local`. All SPA fetches will point there automatically.
 - The SPA calls `workerUrl(...)` directly using the host you configured above. There is no `/api/*` proxy layer anymore, so browsers always talk straight to the Worker origin.
-- The Studio publish workflow uploads bundles via `/api/capsules/publish`, so keep the Worker dev server running when testing publish/post creation flows.
+- The Studio publish workflow uploads bundles via `/capsules/publish`, so keep the Worker dev server running when testing publish/post creation flows.
 - If you see `401 Unauthorized` responses during local dev, confirm you are signed into Clerk and that `WORKER_API_BASE` matches the host where you also configured your Clerk JWT issuer.

@@ -13,7 +13,7 @@ import {
   sanitizeHtmlEntryIfNeeded,
   type PublishWarning,
   PublishCapsuleError,
-  enforceEntrySafety,
+  enforceSafetyForFiles,
 } from "./capsules";
 import { getUserRunQuotaState } from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
@@ -156,7 +156,7 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
 
     let publishResult;
     try {
-      await enforceEntrySafety(env, manifest, files);
+      await enforceSafetyForFiles(env, manifest, files);
       const sanitized = sanitizeHtmlEntryIfNeeded(files, manifest);
       publishResult = await persistCapsuleBundle({
         env,
@@ -327,7 +327,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
 
     let publishResult;
     try {
-      await enforceEntrySafety(env, manifest, files);
+      await enforceSafetyForFiles(env, manifest, files);
       const sanitized = sanitizeHtmlEntryIfNeeded(files, manifest);
       publishResult = await persistCapsuleBundle({
         env,

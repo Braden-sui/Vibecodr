@@ -3,6 +3,11 @@ VALUES
   ('user_demo', 'demo', 'Demo User', NULL, 'Seed demo user', 'creator', strftime('%s','now')),
   ('user_creator', 'creator', 'Creator User', NULL, 'Second seed user', 'free', strftime('%s','now'));
 
+INSERT OR IGNORE INTO profiles (user_id, display_name, avatar_url, bio, tagline, about_md, created_at, updated_at)
+VALUES
+  ('user_demo', 'Demo User', NULL, 'Seed demo user', 'Building the vibe.', NULL, strftime('%s','now'), strftime('%s','now')),
+  ('user_creator', 'Creator User', NULL, 'Second seed user', 'Creator at work.', NULL, strftime('%s','now'), strftime('%s','now'));
+
 INSERT OR IGNORE INTO capsules (id, owner_id, manifest_json, hash, created_at)
 VALUES
   (

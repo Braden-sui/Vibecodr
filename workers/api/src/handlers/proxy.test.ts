@@ -31,7 +31,7 @@ const createKv = () => {
   } as any;
 };
 
-const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]; ownerId?: string }) => {
+const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]; ownerId?: string; runtimeKv?: boolean }) => {
   const manifest = {
     ...baseManifest,
     capabilities: options?.manifestHosts ? { net: options.manifestHosts } : undefined,
@@ -50,7 +50,7 @@ const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]
       prepare: vi.fn().mockReturnValue(stmt),
     },
     R2: {} as any,
-    RUNTIME_MANIFEST_KV: createKv(),
+    RUNTIME_MANIFEST_KV: options?.runtimeKv === false ? undefined : createKv(),
     ALLOWLIST_HOSTS: JSON.stringify(options?.envAllowlist ?? []),
   } as unknown as Env;
 };
@@ -132,5 +132,44 @@ describe("netProxy integration", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: "Forbidden" });
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("enforces rate limits with in-memory fallback when KV binding is missing", async () => {
+    const env = createEnv({ manifestHosts: ["api.github.com"], runtimeKv: false });
+    const fetchMock = vi.fn(async () => new Response("ok", {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const makeRequest = () =>
+      new Request("https://worker.test/proxy?url=https://api.github.com/repos&capsuleId=caps1");
+
+    try {
+      const firstResponse = await netProxy(makeRequest(), env as Env, {} as any, {} as any);
+      expect(firstResponse.status).toBe(200);
+
+      const limitHeader = firstResponse.headers.get("X-RateLimit-Limit");
+      const limit = Number(limitHeader || 0);
+      expect(Number.isFinite(limit)).toBe(true);
+      expect(limit).toBeGreaterThan(0);
+
+      for (let i = 1; i < limit; i++) {
+        const response = await netProxy(makeRequest(), env as Env, {} as any, {} as any);
+        expect(response.status).toBe(200);
+      }
+
+      const blockedResponse = await netProxy(makeRequest(), env as Env, {} as any, {} as any);
+      expect(blockedResponse.status).toBe(429);
+      expect(fetchMock).toHaveBeenCalledTimes(limit);
+
+      const misconfigLog = consoleErrorSpy.mock.calls.find(
+        ([message]) => typeof message === "string" && message.includes("E-VIBECODR-0304")
+      );
+      expect(misconfigLog).toBeTruthy();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });

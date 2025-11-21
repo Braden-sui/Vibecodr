@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vibecodr — React UI Mock (Iteration 2)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f3f4f6;
+        --card: #fcfdff;
+        --ink: #0f172a;
+        --muted: #5d6a7c;
+        --accent: #e1783c;
+        --accent-2: #8fd3f4;
+        --line: #d8dee9;
+        --shadow: 0 16px 60px rgba(15, 23, 42, 0.16);
+        --shadow-soft: 0 10px 36px rgba(15, 23, 42, 0.12);
+        --glass: rgba(255, 255, 255, 0.7);
+        --radius: 18px;
+        --radius-sm: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        line-height: 1.5;
+      }
+
+      .page {
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 22% 18%, rgba(225, 120, 60, 0.14), transparent 26%),
+          radial-gradient(circle at 75% 10%, rgba(15, 23, 42, 0.12), transparent 24%),
+          radial-gradient(circle at 85% 55%, rgba(143, 211, 244, 0.18), transparent 32%),
+          var(--bg);
+      }
+
+      /* Animations */
+      @keyframes floaty {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-6px); }
+        100% { transform: translateY(0px); }
+      }
+
+      @keyframes fadeUp {
+        0% { opacity: 0; transform: translateY(20px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+
+      .fade {
+        animation: fadeUp 0.5s ease-out forwards;
+        opacity: 0;
+      }
+      .fade.d1 { animation-delay: 0.05s; }
+      .fade.d2 { animation-delay: 0.1s; }
+      .fade.d3 { animation-delay: 0.15s; }
+      .fade.d4 { animation-delay: 0.2s; }
+
+      /* Nav */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 8;
+        backdrop-filter: blur(14px);
+        background: rgba(243, 244, 246, 0.8);
+        border-bottom: 1px solid var(--line);
+      }
+      .nav-inner {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .wordmark {
+        font-family: "Space Grotesk", "Inter", sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .crest {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background:
+          conic-gradient(from 300deg, #0f172a 0 105deg, #fff 105deg 170deg, var(--accent) 170deg 220deg, #0f172a 220deg 360deg);
+      }
+      .nav-links {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .nav-link {
+        padding: 9px 12px;
+        border-radius: 999px;
+        color: var(--muted);
+        font-weight: 600;
+        transition: all 0.16s ease;
+      }
+      .nav-link:hover {
+        color: var(--ink);
+        background: rgba(15, 23, 42, 0.06);
+      }
+      .icon-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--card);
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        transition: all 0.16s ease;
+        cursor: pointer;
+      }
+      .icon-btn:hover {
+        border-color: var(--ink);
+        color: var(--ink);
+        box-shadow: var(--shadow-soft);
+      }
+      .cta {
+        padding: 9px 16px;
+        border-radius: 999px;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        transition: transform 0.16s ease, box-shadow 0.24s ease, background 0.16s ease;
+      }
+      .cta.primary {
+        background: linear-gradient(120deg, var(--accent), #f09d5d);
+        color: #0b0c0f;
+        box-shadow: 0 12px 36px rgba(225, 120, 60, 0.32);
+      }
+      .cta.primary:hover { transform: translateY(-1px) scale(1.01); }
+      .cta.ghost {
+        background: rgba(255,255,255,0.6);
+        border: 1px solid var(--line);
+        color: var(--ink);
+      }
+
+      /* Hero */
+      .hero {
+        max-width: 1180px;
+        margin: 32px auto 14px;
+        padding: 0 24px;
+      }
+      .hero-card {
+        position: relative;
+        overflow: hidden;
+        border-radius: 26px;
+        padding: 28px;
+        background:
+          linear-gradient(135deg, rgba(225, 120, 60, 0.1), rgba(15, 23, 42, 0.08)),
+          var(--card);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 24px;
+        align-items: center;
+      }
+      .hero h1 {
+        margin: 0 0 10px;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 38px;
+        letter-spacing: -0.02em;
+      }
+      .hero p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .orb {
+        width: 160px;
+        height: 160px;
+        border-radius: 50%;
+        background:
+          conic-gradient(from 300deg, #0f172a 0 105deg, #fff 105deg 170deg, var(--accent) 170deg 220deg, #0f172a 220deg 360deg);
+        border: 1px solid var(--line);
+        box-shadow: inset 0 0 0 12px rgba(255, 255, 255, 0.4);
+        animation: floaty 5s ease-in-out infinite;
+        margin: 0 auto;
+      }
+      .shimmer {
+        background: linear-gradient(120deg, rgba(255,255,255,0.1), rgba(255,255,255,0.7), rgba(255,255,255,0.1));
+        background-size: 200% 100%;
+        animation: shimmer 2.6s ease infinite;
+      }
+
+      /* Layout */
+      .main {
+        max-width: 1180px;
+        margin: 0 auto 60px;
+        padding: 0 24px;
+        display: grid;
+        grid-template-columns: minmax(0, 720px) minmax(240px, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      /* Composer */
+      .composer {
+        position: sticky;
+        top: 90px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 18px;
+        box-shadow: var(--shadow-soft);
+        z-index: 2;
+      }
+      .composer-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+      .composer-title {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-weight: 700;
+        font-family: "Space Grotesk", sans-serif;
+      }
+      .pill {
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-weight: 600;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.16s ease;
+      }
+      .pill.active {
+        border-color: var(--accent);
+        color: var(--ink);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 8px 18px rgba(225,120,60,0.18);
+      }
+      .field {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        font-size: 15px;
+        background: #fff;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease;
+      }
+      .field:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(225,120,60,0.18);
+      }
+      .textarea { min-height: 120px; resize: vertical; }
+      .composer-footer {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: space-between;
+        margin-top: 12px;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(225,120,60,0.14); }
+
+      /* Feed */
+      .feed {
+        display: grid;
+        gap: 16px;
+        margin-top: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-soft);
+        overflow: hidden;
+        transition: transform 0.16s ease, box-shadow 0.2s ease;
+      }
+      .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+      .card-media {
+        background: linear-gradient(135deg, rgba(15,23,42,0.9), rgba(225,120,60,0.7));
+        color: #fff;
+        padding: 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .card-media .preview {
+        width: 78px;
+        height: 78px;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,0.25);
+        background:
+          conic-gradient(from 300deg, #0f172a 0 105deg, #fff 105deg 170deg, var(--accent) 170deg 220deg, #0f172a 220deg 360deg);
+        box-shadow: inset 0 0 0 8px rgba(255,255,255,0.15);
+      }
+      .card-body { padding: 14px 14px 12px; display: grid; gap: 8px; }
+      .author { display: flex; align-items: center; gap: 10px; }
+      .avatar {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: linear-gradient(135deg, #0f172a, var(--accent));
+        border: 2px solid #fff;
+      }
+      .title-row { display: flex; justify-content: space-between; gap: 10px; }
+      .title { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+      .desc { margin: 0; color: var(--muted); font-size: 14px; }
+      .badge-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .badge {
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .badge.accent { border-color: var(--accent); color: var(--ink); background: rgba(225,120,60,0.14); }
+      .actions { display: flex; gap: 12px; align-items: center; color: var(--muted); font-weight: 600; }
+
+      /* Right rail */
+      .rail {
+        position: sticky;
+        top: 90px;
+        display: grid;
+        gap: 12px;
+      }
+      .mini {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 14px;
+        box-shadow: var(--shadow-soft);
+      }
+      .mini h4 { margin: 0 0 8px; font-size: 15px; letter-spacing: -0.01em; }
+      .mini .item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
+      .mini .item:last-child { border-bottom: none; }
+      .pill-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+        box-shadow: 0 0 0 4px rgba(225,120,60,0.14);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page" id="root"></div>
+
+    <!-- React via CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useState } = React;
+
+      const feedData = [
+        {
+          id: "1",
+          type: "app",
+          title: "Aurora particle field that reacts to cursor velocity",
+          description: "Param sliders tweak emission rate, hue shift, and turbulence. Built inline with WebContainer runtime.",
+          tags: ["visualization", "canvas", "realtime"],
+          author: { handle: "@braden-founder", meta: "Pro · 12.2k runs" },
+          stats: { likes: 128, comments: 42, remixes: 18 },
+          age: "2h ago",
+        },
+        {
+          id: "2",
+          type: "status",
+          title: "Shipping a new param schema today",
+          description: "Simplifying param definitions so remixes stay plug-and-play. Docs and snippets landing soon.",
+          tags: ["update", "params"],
+          author: { handle: "@synth-dev", meta: "Team · 4.8k runs" },
+          stats: { likes: 32, comments: 6 },
+          age: "4h ago",
+        },
+      ];
+
+      function Nav() {
+        return (
+          <header className="nav fade">
+            <div className="nav-inner">
+              <div className="wordmark">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 100 100"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                  className="crest"
+                  style={{ background: "none", border: "none" }}
+                >
+                  <circle cx="50" cy="50" r="49" fill="#f3f4f6" stroke="#d8dee9" strokeWidth="2" />
+                  <path d="M50 98 A48 48 0 0 1 5 50 A48 48 0 0 1 50 2 Z" fill="#0f172a" />
+                  <path d="M50 2 A48 48 0 0 1 95 50 L50 50 Z" fill="#ffffff" />
+                  <path d="M95 50 A48 48 0 0 1 69 92 L50 50 Z" fill="#0f172a" />
+                  <path d="M69 92 A48 48 0 0 1 31 92 L50 50 Z" fill="#e1783c" />
+                  <path d="M31 92 A48 48 0 0 1 5 50 A48 48 0 0 1 50 50 Z" fill="#ffffff" />
+                </svg>
+                Vibecodr
+              </div>
+              <div className="nav-links">
+                <a className="nav-link" href="#">Feed</a>
+                <a className="nav-link" href="#">Live</a>
+                <a className="nav-link" href="#">Discover</a>
+                <a className="nav-link" href="#">Docs</a>
+              </div>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "10px" }}>
+                <button className="icon-btn" aria-label="Search">⌕</button>
+                <button className="icon-btn" aria-label="Notifications">⏺</button>
+                <button className="cta primary">Share a vibe</button>
+              </div>
+            </div>
+          </header>
+        );
+      }
+
+      function Hero() {
+        return (
+          <section className="hero fade d1">
+            <div className="hero-card">
+              <div className="hero-grid">
+                <div>
+                  <h1>Runnable vibes, remixed live.</h1>
+                  <p>Create apps inline, import from GitHub or ZIP, and share instantly.</p>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button className="cta primary">Start a vibe</button>
+              <button className="cta ghost">View templates</button>
+            </div>
+          </div>
+                <div style={{ display: "grid", justifyItems: "center" }}>
+                  <div className="orb" />
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      }
+
+      function Composer() {
+        const [mode, setMode] = useState("status");
+        return (
+          <div className="composer fade d2" style={{ marginBottom: "18px" }}>
+            <div className="composer-top">
+              <div className="composer-title">
+                <span className="pill-dot" />
+                Share a Vibe
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {["status", "github", "zip", "code"].map((m) => (
+                  <span
+                    key={m}
+                    className={`pill ${mode === m ? "active" : ""}`}
+                    onClick={() => setMode(m)}
+                  >
+                    {m === "status" ? "Status" : m === "github" ? "GitHub" : m === "zip" ? "ZIP" : "Code"}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: "10px", marginTop: "10px" }}>
+              <input className="field" placeholder={mode === "github" ? "https://github.com/user/repo" : "What's your vibe?"} />
+              <textarea className="field textarea" placeholder="Add details or instructions (optional)" />
+              {mode === "code" && (
+                <textarea className="field textarea" placeholder="// Write inline code here..." style={{ minHeight: 140 }} />
+              )}
+              {mode === "zip" && (
+                <div className="field" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "var(--muted)" }}>Drop ZIP or click to select</span>
+                  <span style={{ color: "var(--accent)", fontWeight: 700 }}>Upload</span>
+                </div>
+              )}
+            </div>
+            <div className="composer-footer">
+              <div className="meta">
+                <div className="dot" />
+                Auto-save · Live preview on share
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button className="cta ghost">Preview</button>
+                <button className="cta primary">Share vibe</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function FeedCard({ item, index }) {
+        const delayClass = index === 0 ? "d2" : "d3";
+        const isApp = item.type === "app";
+        return (
+          <article className={`card fade ${delayClass}`}>
+            {isApp && (
+              <div className="card-media">
+                <div>
+                  <div style={{ fontWeight: 800, letterSpacing: "-0.01em" }}>{item.title}</div>
+                  <div style={{ opacity: 0.88 }}>WebContainer · Live params</div>
+                </div>
+                <div className="preview" />
+              </div>
+            )}
+            <div className="card-body">
+              <div className="author">
+                <div className="avatar" />
+                <div>
+                  <div style={{ fontWeight: 700 }}>{item.author.handle}</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13 }}>{item.author.meta}</div>
+                </div>
+              </div>
+              <div className="badge-row">
+                <span className={`badge ${isApp ? "accent" : "accent"}`}>{isApp ? "App" : "Status"}</span>
+                {item.tags.map((t) => (
+                  <span className="badge" key={t}>#{t}</span>
+                ))}
+              </div>
+              {!isApp && (
+                <div className="title-row">
+                  <h3 className="title">{item.title}</h3>
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>{item.age}</span>
+                </div>
+              )}
+              {item.description && <p className="desc">{item.description}</p>}
+              <div className="actions">
+                <span>Like {item.stats.likes}</span>
+                <span>Comments {item.stats.comments}</span>
+                {isApp && <span>Remixes {item.stats.remixes}</span>}
+                <span>Share</span>
+              </div>
+            </div>
+          </article>
+        );
+      }
+
+      function RightRail() {
+        return (
+          <div className="rail fade d3">
+            <div className="mini">
+              <h4>Featured creators</h4>
+              <div className="item"><span>tenderbyte</span><span style={{ color: "var(--muted)" }}>+412 runs</span></div>
+              <div className="item"><span>neoncanvas</span><span style={{ color: "var(--muted)" }}>+285 runs</span></div>
+              <div className="item"><span>lofi-labs</span><span style={{ color: "var(--muted)" }}>+179 runs</span></div>
+            </div>
+            <div className="mini">
+              <h4>Now running</h4>
+              <div className="item"><span>AI sketch pad</span><span style={{ color: "var(--muted)" }}>19 viewers</span></div>
+              <div className="item"><span>Granular synth</span><span style={{ color: "var(--muted)" }}>11 viewers</span></div>
+              <div className="item"><span>Raymarch demo</span><span style={{ color: "var(--muted)" }}>8 viewers</span></div>
+            </div>
+            <div className="mini">
+              <h4>Import pipeline</h4>
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                GitHub → build → preview → publish — inline logs + warnings.
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        return (
+          <>
+            <Nav />
+            <Hero />
+            <div className="main">
+              <div>
+                <Composer />
+                <div className="feed">
+                  {feedData.map((item, idx) => (
+                    <FeedCard key={item.id} item={item} index={idx} />
+                  ))}
+                </div>
+              </div>
+              <RightRail />
+            </div>
+          </>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>

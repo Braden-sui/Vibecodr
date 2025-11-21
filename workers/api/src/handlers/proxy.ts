@@ -14,6 +14,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 100;
 const RATE_LIMIT_KEY_PREFIX = "proxy:rate:";
 let rateLimitStorageMisconfiguredWarned = false;
+const inMemoryRateLimitStore = new Map<string, RateLimitState>();
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 const DEFAULT_ALLOWED_PORTS = new Set([80, 443]);
@@ -38,6 +39,7 @@ interface AllowlistRule {
 const ERROR_PROXY_ALLOWLIST_PARSE = "E-VIBECODR-0301";
 const ERROR_PROXY_HOST_BLOCKED = "E-VIBECODR-0302";
 const ERROR_PROXY_RATE_LIMIT_STORAGE = "E-VIBECODR-0303";
+const ERROR_PROXY_RATE_LIMIT_STORAGE_MISCONFIG = "E-VIBECODR-0304";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -430,9 +432,11 @@ function ipToNumber(parts: number[]): number {
 }
 
 async function readRateLimitState(env: Env, key: string): Promise<RateLimitState | null> {
+  const now = Date.now();
+
   if (!env.RUNTIME_MANIFEST_KV) {
     warnRateLimitStorageMisconfigured();
-    return null;
+    return readInMemoryRateLimitState(key, now);
   }
 
   try {
@@ -449,6 +453,8 @@ async function readRateLimitState(env: Env, key: string): Promise<RateLimitState
     console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit read failed`, {
       error: error instanceof Error ? error.message : String(error),
     });
+    warnRateLimitStorageMisconfigured();
+    return readInMemoryRateLimitState(key, now);
   }
 
   return null;
@@ -457,7 +463,8 @@ async function readRateLimitState(env: Env, key: string): Promise<RateLimitState
 async function writeRateLimitState(env: Env, key: string, state: RateLimitState): Promise<void> {
   if (!env.RUNTIME_MANIFEST_KV) {
     warnRateLimitStorageMisconfigured();
-    throw new Error("E-VIBECODR-0304 rate limit storage misconfigured: RUNTIME_MANIFEST_KV binding is required");
+    writeInMemoryRateLimitState(key, state);
+    return;
   }
 
   try {
@@ -467,15 +474,34 @@ async function writeRateLimitState(env: Env, key: string, state: RateLimitState)
     console.error(`${ERROR_PROXY_RATE_LIMIT_STORAGE} rate limit write failed`, {
       error: error instanceof Error ? error.message : String(error),
     });
-    throw error instanceof Error ? error : new Error(String(error));
+    warnRateLimitStorageMisconfigured();
+    writeInMemoryRateLimitState(key, state);
   }
 }
 
 function warnRateLimitStorageMisconfigured() {
   if (!rateLimitStorageMisconfiguredWarned) {
     console.error(
-      "E-VIBECODR-0304 proxy rate limit storage misconfigured; RUNTIME_MANIFEST_KV binding is required for net proxy"
+      `${ERROR_PROXY_RATE_LIMIT_STORAGE_MISCONFIG} proxy rate limit storage misconfigured; RUNTIME_MANIFEST_KV binding is required for net proxy. Falling back to in-memory store.`
     );
     rateLimitStorageMisconfiguredWarned = true;
   }
+}
+
+function readInMemoryRateLimitState(key: string, now: number): RateLimitState | null {
+  const state = inMemoryRateLimitStore.get(key);
+  if (!state) {
+    return null;
+  }
+
+  if (now >= state.resetAt) {
+    inMemoryRateLimitStore.delete(key);
+    return null;
+  }
+
+  return state;
+}
+
+function writeInMemoryRateLimitState(key: string, state: RateLimitState): void {
+  inMemoryRateLimitStore.set(key, state);
 }

@@ -145,13 +145,18 @@ describe("PlayerPageClient", () => {
       playerShellPropsRef.current?.onError?.("runtime_crash");
     });
 
-    await waitFor(() =>
-      expect(mockRunsComplete).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: "failed",
-          errorMessage: "runtime_crash",
-        })
-      )
+    await waitFor(() => expect(mockRunsComplete).toHaveBeenCalled());
+    const [payload, init] = mockRunsComplete.mock.calls[mockRunsComplete.mock.calls.length - 1];
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: "failed",
+        errorMessage: "runtime_crash",
+      })
+    );
+    expect(init).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+      })
     );
     expect(playerShellPropsRef.current?.isRunning).toBe(false);
 

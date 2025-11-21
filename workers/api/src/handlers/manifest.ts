@@ -1,4 +1,6 @@
+import { ERROR_CAPSULE_ACCESS_BLOCKED } from "@vibecodr/shared";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
+import { verifyAuth, isModeratorOrAdmin } from "../auth";
 import type { Env } from "../index";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { getCapsuleKey } from "../storage/r2";
@@ -16,6 +18,112 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
     headers: { "content-type": "application/json" },
     ...init,
   });
+}
+
+type CapsuleRow = {
+  id: string;
+  owner_id: string;
+  manifest_json: string;
+  hash: string;
+};
+
+type ArtifactAccessRow = {
+  id: string;
+  status: string;
+  policy_status: string;
+  visibility: string;
+};
+
+type PostAccessRow = {
+  author_id: string;
+  visibility: string;
+  quarantined: number | null;
+};
+
+function capsuleUnavailable(reason: string): Response {
+  console.warn(`${ERROR_CAPSULE_ACCESS_BLOCKED} capsule access blocked`, { reason });
+  return json({ error: "Capsule not available", code: ERROR_CAPSULE_ACCESS_BLOCKED }, 404);
+}
+
+async function authorizeCapsuleRequest(
+  req: Request,
+  env: Env,
+  capsuleId: string
+): Promise<
+  | Response
+  | {
+      capsule: CapsuleRow;
+      viewerIsOwner: boolean;
+      viewerIsMod: boolean;
+    }
+> {
+  const capsule = (await env.DB.prepare(
+    "SELECT id, owner_id, manifest_json, hash FROM capsules WHERE id = ? LIMIT 1"
+  )
+    .bind(capsuleId)
+    .first()) as CapsuleRow | null;
+
+  if (!capsule) {
+    return json({ error: "Capsule not found" }, 404);
+  }
+
+  const authedUser = await verifyAuth(req, env);
+  const viewerId = authedUser?.userId ?? null;
+  const viewerIsOwner = viewerId === capsule.owner_id;
+  const viewerIsMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+
+  const artifact = (await env.DB.prepare(
+    "SELECT id, status, policy_status, visibility FROM artifacts WHERE capsule_id = ? ORDER BY created_at DESC LIMIT 1"
+  )
+    .bind(capsuleId)
+    .first()) as ArtifactAccessRow | null;
+
+  if (artifact) {
+    if (artifact.status !== "active" || artifact.policy_status !== "active") {
+      return capsuleUnavailable("artifact_policy_blocked");
+    }
+
+    if (artifact.visibility === "private" && !viewerIsOwner && !viewerIsMod) {
+      return capsuleUnavailable("artifact_private_blocked");
+    }
+  }
+
+  const postResults = await env.DB.prepare(
+    "SELECT author_id, visibility, quarantined FROM posts WHERE capsule_id = ? ORDER BY created_at DESC LIMIT 25"
+  )
+    .bind(capsuleId)
+    .all();
+
+  const posts = (postResults.results || []) as PostAccessRow[];
+
+  const hasVisiblePost = posts.some((row) => {
+    const quarantined = (row.quarantined ?? 0) === 1;
+    if (quarantined) {
+      return viewerIsMod;
+    }
+
+    if (row.visibility === "public") {
+      return true;
+    }
+
+    if (!viewerId) {
+      return false;
+    }
+
+    return viewerIsOwner || viewerIsMod || row.author_id === viewerId;
+  });
+
+  if (!hasVisiblePost) {
+    if (posts.length === 0) {
+      if (!viewerIsOwner && !viewerIsMod) {
+        return capsuleUnavailable("no_visible_post");
+      }
+    } else if (!viewerIsMod) {
+      return capsuleUnavailable("no_visible_post");
+    }
+  }
+
+  return { capsule, viewerIsOwner, viewerIsMod };
 }
 
 /**
@@ -65,23 +173,16 @@ export const validateManifestHandler: Handler = async (req) => {
  * GET /capsules/:id/manifest
  * Retrieves the manifest for a published capsule
  */
-export const getManifest: Handler = async (_req, env, _ctx, params) => {
+export const getManifest: Handler = async (req, env, _ctx, params) => {
   const capsuleId = params.p1;
 
   try {
-    // Look up capsule to get content hash and stored manifest
-    const { results } = await env.DB.prepare(
-      "SELECT manifest_json, hash FROM capsules WHERE id = ? LIMIT 1"
-    )
-      .bind(capsuleId)
-      .all();
-
-    if (!results || results.length === 0) {
-      return json({ error: "Capsule not found" }, 404);
+    const access = await authorizeCapsuleRequest(req, env, capsuleId);
+    if (access instanceof Response) {
+      return access;
     }
 
-    const row = results[0];
-    const contentHash = row.hash as string;
+    const contentHash = access.capsule.hash as string;
 
     // Try to get manifest from R2 using content hash (fast path)
     const manifestKey = getCapsuleKey(contentHash, "manifest.json");
@@ -93,7 +194,7 @@ export const getManifest: Handler = async (_req, env, _ctx, params) => {
     }
 
     // Fallback to manifest stored in D1
-    const manifest = requireCapsuleManifest(row.manifest_json, {
+    const manifest = requireCapsuleManifest(access.capsule.manifest_json, {
       source: "manifestFallback",
       capsuleId,
     });
@@ -114,23 +215,16 @@ export const getManifest: Handler = async (_req, env, _ctx, params) => {
  * Retrieves the complete capsule bundle from R2
  * Returns the main entry file with proper headers
  */
-export const getCapsuleBundle: Handler = async (_req, env, _ctx, params) => {
+export const getCapsuleBundle: Handler = async (req, env, _ctx, params) => {
   const capsuleId = params.p1;
 
   try {
-    // Look up capsule to get content hash and stored manifest
-    const { results } = await env.DB.prepare(
-      "SELECT manifest_json, hash FROM capsules WHERE id = ? LIMIT 1"
-    )
-      .bind(capsuleId)
-      .all();
-
-    if (!results || results.length === 0) {
-      return json({ error: "Capsule not found" }, 404);
+    const access = await authorizeCapsuleRequest(req, env, capsuleId);
+    if (access instanceof Response) {
+      return access;
     }
 
-    const row = results[0];
-    const contentHash = row.hash as string;
+    const contentHash = access.capsule.hash as string;
 
     // Get manifest first to know the entry point
     const manifestKey = getCapsuleKey(contentHash, "manifest.json");
@@ -140,7 +234,7 @@ export const getCapsuleBundle: Handler = async (_req, env, _ctx, params) => {
     if (manifestObj) {
       manifest = await manifestObj.json<Manifest>();
     } else {
-      manifest = requireCapsuleManifest(row.manifest_json, {
+      manifest = requireCapsuleManifest(access.capsule.manifest_json, {
         source: "bundleFallback",
         capsuleId,
       });

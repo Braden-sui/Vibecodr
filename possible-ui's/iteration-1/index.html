@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vibecodr — Geometric Mock (Iteration 1)</title>
+    <style>
+      /* Theme variables */
+      :root {
+        --bg: #f2f3f5;
+        --card: #f9fbfc;
+        --ink: #121820;
+        --muted: #516072;
+        --accent: #e1783c;
+        --accent-soft: #f3c4a4;
+        --line: #d8dde4;
+        --radius-lg: 18px;
+        --radius: 12px;
+        --shadow: 0 10px 40px rgba(18, 24, 32, 0.12);
+        --shadow-soft: 0 6px 24px rgba(18, 24, 32, 0.08);
+        --font-head: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+        --font-body: "Inter", system-ui, -apple-system, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font-body);
+        line-height: 1.5;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(225, 120, 60, 0.12), transparent 32%),
+          radial-gradient(circle at 80% 10%, rgba(18, 24, 32, 0.12), transparent 30%),
+          var(--bg);
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 8;
+        backdrop-filter: blur(10px);
+        background: rgba(242, 243, 245, 0.85);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .nav-inner {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .wordmark {
+        font-family: var(--font-head);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .nav-link {
+        padding: 8px 12px;
+        border-radius: 999px;
+        transition: all 0.18s ease;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .nav-link:hover {
+        color: var(--ink);
+        background: rgba(18, 24, 32, 0.06);
+      }
+
+      .nav-main-cta {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .icon-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--card);
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        transition: all 0.18s ease;
+      }
+
+      .icon-btn:hover {
+        border-color: var(--ink);
+        color: var(--ink);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .cta {
+        padding: 9px 16px;
+        border-radius: 999px;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        transition: transform 0.16s ease, box-shadow 0.24s ease, background 0.16s ease;
+      }
+
+      .cta.primary {
+        background: linear-gradient(135deg, var(--accent), #f09d5d);
+        color: #0b0c0f;
+        box-shadow: 0 10px 30px rgba(225, 120, 60, 0.25);
+      }
+
+      .cta.primary:hover {
+        transform: translateY(-1px) scale(1.01);
+        box-shadow: 0 14px 34px rgba(225, 120, 60, 0.3);
+      }
+
+      .cta.ghost {
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--ink);
+      }
+
+      .hero {
+        max-width: 1180px;
+        margin: 32px auto 18px;
+        padding: 24px 24px 16px;
+      }
+
+      .hero-card {
+        background: radial-gradient(circle at 22% 28%, rgba(225, 120, 60, 0.08), transparent 40%),
+          radial-gradient(circle at 75% 25%, rgba(18, 24, 32, 0.1), transparent 36%),
+          var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-soft);
+        padding: 28px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-crest {
+        width: 84px;
+        height: 84px;
+        margin: 0 auto 12px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background:
+          conic-gradient(from 310deg, #fff 0 110deg, var(--accent) 110deg 170deg, var(--ink) 170deg 270deg, #fff 270deg 360deg),
+          var(--card);
+        position: relative;
+        box-shadow: inset 0 0 0 8px rgba(249, 251, 252, 0.8);
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-family: var(--font-head);
+        font-size: 36px;
+        letter-spacing: -0.02em;
+      }
+
+      .hero p {
+        margin: 10px 0 16px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .filter-bar {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 24px 2px;
+        flex-wrap: wrap;
+      }
+
+      .tag-chip {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--muted);
+        font-weight: 600;
+        transition: all 0.16s ease;
+      }
+
+      .tag-chip.active {
+        border-color: var(--accent);
+        color: var(--ink);
+        background: rgba(225, 120, 60, 0.12);
+        box-shadow: 0 6px 16px rgba(225, 120, 60, 0.16);
+      }
+
+      .tabs {
+        max-width: 1180px;
+        margin: 10px auto 0;
+        display: flex;
+        gap: 10px;
+        padding: 0 24px;
+      }
+
+      .tab {
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.16s ease;
+      }
+
+      .tab.active {
+        color: var(--ink);
+        border-color: var(--accent);
+        background: rgba(225, 120, 60, 0.12);
+      }
+
+      .main-grid {
+        max-width: 1180px;
+        margin: 16px auto 36px;
+        padding: 0 24px 48px;
+        display: grid;
+        grid-template-columns: minmax(0, 720px) minmax(260px, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      .composer {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        padding: 18px;
+        position: sticky;
+        top: 86px;
+      }
+
+      .composer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .composer-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-head);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .mode-pills {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .pill {
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-weight: 600;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.16s ease;
+      }
+
+      .pill.active {
+        border-color: var(--accent);
+        color: var(--ink);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 8px 20px rgba(225, 120, 60, 0.2);
+      }
+
+      .input {
+        width: 100%;
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 14px;
+        padding: 14px 16px;
+        font-size: 15px;
+        color: var(--ink);
+        transition: border-color 0.16s ease, box-shadow 0.16s ease;
+      }
+
+      .input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(225, 120, 60, 0.18);
+      }
+
+      .textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .composer-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .meta {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .meta-dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent);
+        border-radius: 50%;
+      }
+
+      .feed {
+        display: grid;
+        gap: 14px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-soft);
+        overflow: hidden;
+        transition: transform 0.16s ease, box-shadow 0.24s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+
+      .card-media {
+        background: linear-gradient(135deg, rgba(18, 24, 32, 0.9), rgba(225, 120, 60, 0.65));
+        color: #fff;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .card-media .preview {
+        width: 82px;
+        height: 82px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        background:
+          conic-gradient(from 300deg, #0f1219 0 105deg, #f9fbfc 105deg 170deg, var(--accent) 170deg 215deg, #0f1219 215deg 360deg);
+        box-shadow: inset 0 0 0 8px rgba(255, 255, 255, 0.12);
+      }
+
+      .card-body {
+        padding: 16px 16px 14px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .title-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .title {
+        margin: 0;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .desc {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .author {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #0f1219, var(--accent));
+        border: 2px solid #fff;
+      }
+
+      .badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      .badge.accent {
+        border-color: var(--accent);
+        color: var(--ink);
+        background: rgba(225, 120, 60, 0.14);
+      }
+
+      .card-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .right-rail {
+        position: sticky;
+        top: 90px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .mini-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 14px;
+        box-shadow: var(--shadow-soft);
+      }
+
+      .mini-card h4 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+
+      .list-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        font-weight: 600;
+        color: var(--ink);
+      }
+
+      .list-item:last-child {
+        border-bottom: none;
+      }
+
+      .pill-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(225, 120, 60, 0.12);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <!-- Top Navigation -->
+      <header class="nav">
+        <div class="nav-inner">
+          <div class="wordmark">
+            <span style="width: 32px; height: 32px; border-radius: 50%; background: conic-gradient(from 300deg, #0f1219 0 105deg, #fff 105deg 170deg, var(--accent) 170deg 215deg, #0f1219 215deg 360deg); border: 1px solid var(--line);"></span>
+            Vibecodr
+          </div>
+          <div class="nav-links">
+            <a class="nav-link" href="#">Feed</a>
+            <a class="nav-link" href="#">Live</a>
+            <a class="nav-link" href="#">Discover</a>
+            <a class="nav-link" href="#">Docs</a>
+          </div>
+          <div class="nav-main-cta">
+            <button class="icon-btn" aria-label="Search">⌕</button>
+            <button class="icon-btn" aria-label="Notifications">⏺</button>
+            <button class="cta primary">Share a vibe</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Hero -->
+      <section class="hero">
+        <div class="hero-card">
+          <div class="hero-crest"></div>
+          <h1>Runnable vibes, remixed live.</h1>
+          <p>Create apps inline, import from GitHub or ZIP, and share instantly.</p>
+          <div style="display: flex; gap: 10px; justify-content: center;">
+            <button class="cta primary">Start a vibe</button>
+            <button class="cta ghost">View templates</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Filters -->
+      <div class="filter-bar">
+        <span style="color: var(--muted); font-weight: 700;">Trending tags</span>
+        <span class="tag-chip active">#ai</span>
+        <span class="tag-chip">#visualization</span>
+        <span class="tag-chip">#canvas</span>
+        <span class="tag-chip">#cli</span>
+        <span class="tag-chip">#webcontainer</span>
+        <span class="tag-chip">#data</span>
+      </div>
+      <div class="tabs">
+        <button class="tab active">Latest</button>
+        <button class="tab">Following</button>
+        <button class="tab">For You</button>
+      </div>
+
+      <!-- Main layout -->
+      <div class="main-grid">
+        <!-- Left: Composer + Feed -->
+        <div class="left-col">
+          <!-- Composer -->
+          <div class="composer">
+            <div class="composer-header">
+              <div class="composer-title">
+                <span class="pill-dot"></span>
+                Share a Vibe
+              </div>
+              <div class="mode-pills">
+                <span class="pill active">Status</span>
+                <span class="pill">GitHub</span>
+                <span class="pill">ZIP</span>
+                <span class="pill">Code</span>
+              </div>
+            </div>
+            <div style="display: grid; gap: 10px;">
+              <input class="input" placeholder="What's your vibe?" />
+              <textarea class="input textarea" placeholder="Add details or instructions (optional)"></textarea>
+            </div>
+            <div class="composer-footer">
+              <div class="meta">
+                <div class="meta-dot"></div>
+                Auto-save drafts · Inline runtime preview
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="cta ghost">Preview</button>
+                <button class="cta primary">Share vibe</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feed -->
+          <div class="feed">
+            <!-- Card: App -->
+            <article class="card">
+              <div class="card-media">
+                <div>
+                  <div style="font-weight: 800; letter-spacing: -0.01em;">Aurora Particle Studio</div>
+                  <div style="opacity: 0.85;">WebContainer · Live params</div>
+                </div>
+                <div class="preview"></div>
+              </div>
+              <div class="card-body">
+                <div class="author">
+                  <div class="avatar"></div>
+                  <div>
+                    <div style="font-weight: 700;">@braden-founder</div>
+                    <div style="color: var(--muted); font-size: 13px;">Pro · 12.2k runs</div>
+                  </div>
+                </div>
+                <div class="badges">
+                  <span class="badge accent">App</span>
+                  <span class="badge">#visualization</span>
+                  <span class="badge">#canvas</span>
+                </div>
+                <div class="title-row">
+                  <h3 class="title">Aurora particle field that reacts to cursor velocity</h3>
+                  <span style="color: var(--muted); font-size: 13px;">2h ago</span>
+                </div>
+                <p class="desc">
+                  Param sliders tweak emission rate, hue shift, and turbulence. Built inline with WebContainer runtime.
+                </p>
+                <div class="card-actions">
+                  <span>❤️ 128</span>
+                  <span>💬 42</span>
+                  <span>🔀 18</span>
+                  <span>↗ Share</span>
+                </div>
+              </div>
+            </article>
+
+            <!-- Card: Status (no preview) -->
+            <article class="card">
+              <div class="card-body">
+                <div class="author">
+                  <div class="avatar"></div>
+                  <div>
+                    <div style="font-weight: 700;">@synth-dev</div>
+                    <div style="color: var(--muted); font-size: 13px;">Team · 4.8k runs</div>
+                  </div>
+                </div>
+                <div class="badges">
+                  <span class="badge accent">Status</span>
+                  <span class="badge">#update</span>
+                </div>
+                <div class="title-row">
+                  <h3 class="title">Shipping a new param schema today</h3>
+                  <span style="color: var(--muted); font-size: 13px;">4h ago</span>
+                </div>
+                <p class="desc">
+                  Simplifying param definitions so remixes stay plug-and-play. Docs and snippets will land shortly.
+                </p>
+                <div class="card-actions">
+                  <span>❤️ 32</span>
+                  <span>💬 6</span>
+                  <span>↗ Share</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- Right rail -->
+        <div class="right-rail">
+          <div class="mini-card">
+            <h4>Featured creators</h4>
+            <div class="list-item">
+              <span>tenderbyte</span>
+              <span style="color: var(--muted);">+412 runs</span>
+            </div>
+            <div class="list-item">
+              <span>neoncanvas</span>
+              <span style="color: var(--muted);">+285 runs</span>
+            </div>
+            <div class="list-item">
+              <span>lofi-labs</span>
+              <span style="color: var(--muted);">+179 runs</span>
+            </div>
+          </div>
+          <div class="mini-card">
+            <h4>Now running</h4>
+            <div class="list-item">
+              <span>AI sketch pad</span>
+              <span style="color: var(--muted);">19 viewers</span>
+            </div>
+            <div class="list-item">
+              <span>Granular synth</span>
+              <span style="color: var(--muted);">11 viewers</span>
+            </div>
+            <div class="list-item">
+              <span>Raymarch demo</span>
+              <span style="color: var(--muted);">8 viewers</span>
+            </div>
+          </div>
+          <div class="mini-card">
+            <h4>Import pipeline</h4>
+            <p style="margin: 0; color: var(--muted); font-size: 13px;">
+              GitHub → build → preview → publish — with inline logs and warnings.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const ApiAuthorProfileSchema = z.object({
+  displayName: z.string().nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
+  bio: z.string().nullable().optional(),
+});
+
 export const ApiAuthorSummarySchema = z.object({
   id: z.string(),
   handle: z.string(),
@@ -11,6 +17,7 @@ export const ApiAuthorSummarySchema = z.object({
   remixesCount: z.number(),
   isFeatured: z.boolean(),
   plan: z.string().optional(),
+  profile: ApiAuthorProfileSchema.optional(),
 });
 
 export const ApiPostStatsSchema = z.object({
@@ -89,3 +96,4 @@ export type ApiFeedResponse = z.infer<typeof ApiFeedResponseSchema>;
 export type ApiPostResponse = z.infer<typeof ApiPostResponseSchema>;
 export type ApiUserProfileResponse = z.infer<typeof ApiUserProfileResponseSchema>;
 export type ApiUserPostsResponse = z.infer<typeof ApiUserPostsResponseSchema>;
+export type ApiAuthorProfile = z.infer<typeof ApiAuthorProfileSchema>;

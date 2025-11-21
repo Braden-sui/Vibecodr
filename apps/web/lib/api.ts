@@ -187,6 +187,12 @@ export type FeedPost = {
     handle: string;
     name?: string | null;
     avatarUrl?: string | null;
+    bio?: string | null;
+    profile?: {
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      bio?: string | null;
+    };
   };
   capsule?: FeedCapsule | null;
   coverKey?: string | null;
@@ -253,6 +259,11 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
       }
     : undefined;
 
+  const profile = apiPost.author.profile ?? null;
+  const profileName = profile?.displayName ?? null;
+  const profileAvatar = profile?.avatarUrl ?? null;
+  const profileBio = profile?.bio ?? null;
+
   return {
     id: String(apiPost.id),
     type: apiPost.type === "app" ? "app" : "report",
@@ -261,8 +272,16 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
     author: {
       id: String(apiPost.author.id),
       handle: apiPost.author.handle,
-      name: apiPost.author.name ?? null,
-      avatarUrl: apiPost.author.avatarUrl ?? null,
+      name: profileName ?? apiPost.author.name ?? null,
+      avatarUrl: profileAvatar ?? apiPost.author.avatarUrl ?? null,
+      bio: profileBio ?? apiPost.author.bio ?? null,
+      profile: profile
+        ? {
+            displayName: profile.displayName ?? null,
+            avatarUrl: profile.avatarUrl ?? null,
+            bio: profile.bio ?? null,
+          }
+        : undefined,
     },
     capsule,
     coverKey: apiPost.coverKey ?? null,

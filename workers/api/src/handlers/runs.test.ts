@@ -1,22 +1,213 @@
 /// <reference types="vitest" />
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "../index";
-import { appendRunLogs } from "./runs";
+import { appendRunLogs, completeRun } from "./runs";
+import { Plan, PLAN_LIMITS } from "../storage/quotas";
 
-const createEnv = (): Env => ({
-  DB: {} as any,
-  R2: {} as any,
-  vibecodr_analytics_engine: {
-    writeDataPoint: vi.fn(),
-  } as any,
-  ALLOWLIST_HOSTS: "[]",
-  BUILD_COORDINATOR_DURABLE: {} as any,
-  ARTIFACT_COMPILER_DURABLE: {} as any,
-} as any);
+const mockGetUserRunQuotaState = vi.fn();
+
+vi.mock("../auth", () => ({
+  requireAuth:
+    (handler: any) =>
+    (req: any, env: Env, ctx: any, params: any) =>
+      handler(req, env, ctx, params, {
+        userId: "user-auth-1",
+        sessionId: "sess1",
+        claims: {} as any,
+      }),
+}));
+
+vi.mock("../storage/quotas", async () => {
+  const actual = await vi.importActual<typeof import("../storage/quotas")>("../storage/quotas");
+  return {
+    ...actual,
+    getUserRunQuotaState: (...args: Parameters<typeof actual.getUserRunQuotaState>) =>
+      mockGetUserRunQuotaState(...args),
+  };
+});
+
+type RunRow = {
+  id: string;
+  capsule_id: string;
+  post_id: string | null;
+  user_id: string;
+  started_at?: number;
+  duration_ms?: number | null;
+  status?: string | null;
+};
+
+type TestEnv = Env & { __state: { runs: Map<string, RunRow> } };
+
+function createEnv(runs: RunRow[] = []): TestEnv {
+  const state = { runs: new Map<string, RunRow>() };
+  runs.forEach((run) => state.runs.set(run.id, { ...run }));
+  const prepare = vi.fn((sql: string) => {
+    const stmt: any = {
+      sql,
+      bindArgs: [] as any[],
+      bind(...args: any[]) {
+        this.bindArgs = args;
+        return this;
+      },
+      async all() {
+        if (sql.includes("SELECT id, capsule_id, post_id, user_id FROM runs WHERE id = ?")) {
+          const runId = this.bindArgs[0];
+          const run = state.runs.get(runId);
+          return { results: run ? [run] : [] };
+        }
+        return { results: [] };
+      },
+      async run() {
+        if (sql.startsWith("INSERT INTO runs")) {
+          const [id, capsuleId, postId, userId, durationMs, status, errorMessage] = this.bindArgs;
+          if (state.runs.has(id)) {
+            const err: any = new Error("UNIQUE constraint failed: runs.id");
+            throw err;
+          }
+          state.runs.set(id, {
+            id,
+            capsule_id: capsuleId,
+            post_id: postId ?? null,
+            user_id: userId,
+            started_at: Math.floor(Date.now() / 1000),
+            duration_ms: durationMs ?? null,
+            status: status ?? errorMessage ?? null,
+          });
+        }
+        return { success: true };
+      },
+    };
+    return stmt;
+  });
+  return {
+    DB: { prepare } as any,
+    R2: {} as any,
+    vibecodr_analytics_engine: {
+      writeDataPoint: vi.fn(),
+    } as any,
+    ALLOWLIST_HOSTS: "[]",
+    BUILD_COORDINATOR_DURABLE: {} as any,
+    ARTIFACT_COMPILER_DURABLE: {} as any,
+    __state: state,
+  } as any;
+}
+
+beforeEach(() => {
+  mockGetUserRunQuotaState.mockReset();
+  mockGetUserRunQuotaState.mockResolvedValue({
+    plan: Plan.FREE,
+    runsThisMonth: 0,
+    result: { allowed: true, percentUsed: 0, limits: PLAN_LIMITS[Plan.FREE] },
+  });
+});
+
+describe("completeRun", () => {
+  it("rejects when run quota is exceeded", async () => {
+    const env = createEnv();
+    mockGetUserRunQuotaState.mockResolvedValueOnce({
+      plan: Plan.FREE,
+      runsThisMonth: 6000,
+      result: {
+        allowed: false,
+        reason: "Monthly run quota exceeded",
+        limits: PLAN_LIMITS[Plan.FREE],
+        usage: { bundleSize: 0, runs: 6000, storage: 0, liveMinutes: 0 },
+      },
+    });
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-limit", capsuleId: "cap-1" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Run quota exceeded");
+    expect(env.__state.runs.size).toBe(0);
+    expect(mockGetUserRunQuotaState).toHaveBeenCalledWith("user-auth-1", env);
+  });
+
+  it("stores runs using the authenticated user id", async () => {
+    const env = createEnv();
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        headers: { Authorization: "Bearer spoofed-user" },
+        body: JSON.stringify({ runId: "run-auth", capsuleId: "cap-1", postId: "post-1", durationMs: 10 }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(200);
+    const run = env.__state.runs.get("run-auth");
+    expect(run?.user_id).toBe("user-auth-1");
+  });
+
+  it("returns 403 when a run id is already owned by a different user", async () => {
+    const env = createEnv([
+      { id: "run-existing", capsule_id: "cap-1", post_id: "post-1", user_id: "other-user" },
+    ]);
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-existing", capsuleId: "cap-1" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(403);
+    expect(env.__state.runs.get("run-existing")?.user_id).toBe("other-user");
+  });
+});
 
 describe("appendRunLogs", () => {
-  it("rejects payloads without logs", async () => {
+  it("allows logging before the run record exists", async () => {
     const env = createEnv();
+    const res = await appendRunLogs(
+      new Request("https://example.com", {
+        method: "POST",
+        body: JSON.stringify({ logs: [{ level: "info", message: "test" }], capsuleId: "cap1", postId: "p1" }),
+      }),
+      env,
+      {} as any,
+      { p1: "missing-run" }
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accepted: number };
+    expect(body.accepted).toBe(1);
+    const writeSpy = env.vibecodr_analytics_engine.writeDataPoint as ReturnType<typeof vi.fn>;
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects when the run belongs to another user", async () => {
+    const env = createEnv([{ id: "run1", capsule_id: "cap1", post_id: "post1", user_id: "other-user" }]);
+    const res = await appendRunLogs(
+      new Request("https://example.com", {
+        method: "POST",
+        body: JSON.stringify({ logs: [{ level: "info", message: "test" }], capsuleId: "cap1", postId: "post1" }),
+      }),
+      env,
+      {} as any,
+      { p1: "run1" }
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects payloads without logs", async () => {
+    const env = createEnv([{ id: "run1", capsule_id: "cap1", post_id: "post1", user_id: "user-auth-1" }]);
     const res = await appendRunLogs(
       new Request("https://example.com", {
         method: "POST",
@@ -33,7 +224,7 @@ describe("appendRunLogs", () => {
   });
 
   it("writes sanitized logs to Analytics Engine", async () => {
-    const env = createEnv();
+    const env = createEnv([{ id: "run-log-1", capsule_id: "cap1", post_id: "post1", user_id: "user-auth-1" }]);
     const res = await appendRunLogs(
       new Request("https://example.com", {
         method: "POST",

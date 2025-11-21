@@ -92,7 +92,8 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
 
     const [profileRow, themeRow, blocksResult, projectsResult, badgesResult] = await Promise.all([
       env.DB.prepare(
-        "SELECT tagline, location, website_url, x_handle, github_handle, pronouns, about_md FROM profiles WHERE user_id = ?",
+        `SELECT display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md
+         FROM profiles WHERE user_id = ?`,
       )
         .bind(ownerId)
         .first(),
@@ -184,13 +185,17 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
 
     const theme = mapThemeRow(themeRow as any);
 
+    const resolvedName = profileRow?.display_name ?? (user as any).name ?? null;
+    const resolvedAvatar = profileRow?.avatar_url ?? (user as any).avatar_url ?? null;
+    const resolvedBio = profileRow?.bio ?? (user as any).bio ?? null;
+
     const payload = {
       user: {
         id: String(user.id),
         handle: String(user.handle),
-        name: (user as any).name ?? null,
-        avatarUrl: (user as any).avatar_url ?? null,
-        bio: (user as any).bio ?? null,
+        name: resolvedName,
+        avatarUrl: resolvedAvatar,
+        bio: resolvedBio,
         plan: (user as any).plan ?? "free",
         createdAt: (user as any).created_at,
       },
@@ -256,9 +261,12 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
   try {
     // Upsert profiles row
     await env.DB.prepare(
-      `INSERT INTO profiles (user_id, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO profiles (user_id, display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET
+         display_name = excluded.display_name,
+         avatar_url = excluded.avatar_url,
+         bio = excluded.bio,
          tagline = excluded.tagline,
          location = excluded.location,
          website_url = excluded.website_url,
@@ -270,6 +278,9 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
     )
       .bind(
         userId,
+        data.displayName ?? null,
+        data.avatarUrl ?? null,
+        data.bio ?? null,
         data.tagline ?? null,
         data.location ?? null,
         data.websiteUrl ?? null,

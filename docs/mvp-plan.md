@@ -50,7 +50,7 @@ Per-run COGS on Cloudflare (Workers + R2) stay under $0.0003, so gross margins r
 | Concern | Service | Notes |
 | ------- | ------- | ----- |
 | Web app & API | Cloudflare Pages + Workers | Next.js frontend built for Pages; API routes land in Workers for global low-latency. |
-| Data | Cloudflare D1 | Holds users, posts, capsules, runs, comments, follows, remixes. Use Drizzle or Kysely for migrations + query safety. |
+| Data | Cloudflare D1 | Holds users, posts, capsules, runs, comments, follows, remixes. **User is the SSOT** (auth + handle/avatar/bio); `profiles` is 1:1 metadata keyed by `user_id`. Posts/apps/sandboxes reference `user_id`, not `profile`. Use Drizzle or Kysely for migrations + query safety. |
 | Assets & Capsules | Cloudflare R2 | Store immutable capsule bundles keyed by content hash; zero-egress feeds Player & Feed previews cheaply. |
 | Realtime presence | Durable Objects | Track who’s viewing/remixing a capsule; global singleton per capsule for param sync. |
 | Queue / build throttle | Durable Object “BuildCoordinator” | Serializes heavy ZIP/GitHub imports, captures logs, emits status events. |

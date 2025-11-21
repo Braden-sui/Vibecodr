@@ -114,6 +114,7 @@ export const posts = sqliteTable("posts", {
   visibility: text("visibility", { enum: ["public", "unlisted", "private"] })
     .notNull()
     .default("public"),
+  quarantined: integer("quarantined").default(0),
   likesCount: integer("likes_count").default(0),
   commentsCount: integer("comments_count").default(0),
   runsCount: integer("runs_count").default(0),
@@ -333,6 +334,9 @@ export const createReportSchema = z.object({
 
 // Profiles table (1:1 with users)
 export const profiles = sqliteTable("profiles", {
+  displayName: text("display_name"),
+  avatarUrl: text("avatar_url"),
+  bio: text("bio"),
   userId: text("user_id")
     .primaryKey()
     .references(() => users.id),
@@ -531,6 +535,9 @@ export const customFieldDefinitionSchema = z.object({
 export type CustomFieldDefinition = z.infer<typeof customFieldDefinitionSchema>;
 
 export const updateProfileSchema = z.object({
+  displayName: z.string().max(80).nullable().optional(),
+  avatarUrl: z.string().url().max(500).nullable().optional(),
+  bio: z.string().max(500).nullable().optional(),
   tagline: z.string().max(160).nullable().optional(),
   location: z.string().max(80).nullable().optional(),
   websiteUrl: z.string().url().max(255).nullable().optional(),

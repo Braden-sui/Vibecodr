@@ -189,17 +189,33 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         flushLogsTimeoutRef.current = null;
       }
 
-      runsApi
-        .appendLogs(runId, {
-          capsuleId,
-          postId: post.id,
-          logs: payload.map((item) => ({
-            level: item.level,
-            message: item.message,
-            timestamp: item.timestamp,
-            source: item.source,
-            sampleRate: item.sampleRate,
-          })),
+      buildAuthInit()
+        .then((init) => {
+          if (!init) {
+            trackClientError("E-VIBECODR-0515", {
+              area: "player.appendLogs",
+              runId,
+              capsuleId,
+              postId: post?.id,
+              message: "Missing auth token for run logging",
+            });
+            return;
+          }
+          return runsApi.appendLogs(
+            runId,
+            {
+              capsuleId,
+              postId: post.id,
+              logs: payload.map((item) => ({
+                level: item.level,
+                message: item.message,
+                timestamp: item.timestamp,
+                source: item.source,
+                sampleRate: item.sampleRate,
+              })),
+            },
+            init
+          );
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
@@ -317,14 +333,30 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       }
       flushLogBatch(session.id);
       currentRunRef.current = null;
-      runsApi
-        .complete({
-          runId: session.id,
-          capsuleId: post.capsule.id,
-          postId: post.id,
-          durationMs: Math.max(0, Date.now() - session.startedAt),
-          status,
-          errorMessage,
+      buildAuthInit()
+        .then((init) => {
+          if (!init) {
+            trackClientError("E-VIBECODR-0516", {
+              area: "player.completeRun",
+              runId: session.id,
+              capsuleId: post?.capsule?.id,
+              postId: post?.id,
+              status,
+              message: "Missing auth token for run completion",
+            });
+            return;
+          }
+          return runsApi.complete(
+            {
+              runId: session.id,
+              capsuleId: post.capsule.id,
+              postId: post.id,
+              durationMs: Math.max(0, Date.now() - session.startedAt),
+              status,
+              errorMessage,
+            },
+            init
+          );
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);

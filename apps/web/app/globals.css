@@ -30,6 +30,12 @@
     --vc-accent: hsl(var(--accent));
     --vc-ring: hsl(var(--ring));
     --vc-radius: var(--radius);
+    --vc-surface: rgba(255, 255, 255, 0.82);
+    --vc-surface-muted: rgba(244, 247, 252, 0.7);
+    --vc-shell-border: rgba(15, 23, 42, 0.06);
+    --vc-hero-accent: radial-gradient(120% 120% at 20% 10%, rgba(79, 70, 229, 0.22), transparent 50%),
+      radial-gradient(120% 120% at 80% 0%, rgba(16, 185, 129, 0.2), transparent 55%);
+    --vc-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
   }
 
   .dark {
@@ -57,6 +63,11 @@
     --vc-muted: hsl(var(--muted));
     --vc-accent: hsl(var(--accent));
     --vc-ring: hsl(var(--ring));
+    --vc-surface: rgba(15, 23, 42, 0.75);
+    --vc-surface-muted: rgba(30, 41, 59, 0.6);
+    --vc-shell-border: rgba(148, 163, 184, 0.08);
+    --vc-hero-accent: radial-gradient(120% 120% at 10% 10%, rgba(129, 140, 248, 0.22), transparent 55%),
+      radial-gradient(120% 120% at 85% 5%, rgba(14, 165, 233, 0.18), transparent 55%);
   }
 }
 
@@ -65,6 +76,30 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: var(--vc-bg);
+    background-image: var(--vc-hero-accent), var(--vc-noise), radial-gradient(140% 100% at 50% -10%, rgba(15, 23, 42, 0.08), transparent 50%);
+    background-attachment: scroll;
+    background-size: cover, 320px 320px, cover;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(99, 102, 241, 0.25);
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer components {
+  .vc-surface {
+    background: var(--vc-surface);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--vc-shell-border);
+  }
+
+  .vc-surface-muted {
+    background: var(--vc-surface-muted);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--vc-shell-border);
   }
 }

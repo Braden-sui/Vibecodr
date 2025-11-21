@@ -88,7 +88,7 @@ export function PlayerDrawer({
             <div>
               <h3 className="text-sm font-semibold">Remix this vibe</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Fork this vibe to your studio and make your own changes
+                Fork this vibe in the composer and make your own changes
               </p>
             </div>
 
@@ -107,7 +107,7 @@ export function PlayerDrawer({
 
             <Button className="w-full gap-2">
               <GitFork className="h-4 w-4" />
-              Fork to Studio
+              Fork with composer
             </Button>
 
             <div className="space-y-2">

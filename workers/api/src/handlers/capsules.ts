@@ -22,6 +22,14 @@ import { buildRuntimeManifest, type RuntimeArtifactType } from "../runtime/runti
 import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
 import { recordBundleWarningMetrics } from "../runtime/bundleTelemetry";
 import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClient";
+import { bundleInlineJs } from "./inlineBundle";
+
+async function hashUint8(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 export type PublishWarning = { path: string; message: string };
 
@@ -121,7 +129,7 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     totalSize += manifestBytes.byteLength;
 
     try {
-      await enforceEntrySafety(env, manifest, files);
+      await enforceSafetyForFiles(env, manifest, files);
     } catch (err) {
       if (err instanceof PublishCapsuleError) {
         return json(err.body, err.status);
@@ -277,42 +285,39 @@ export function sanitizeHtmlEntryIfNeeded(
   return { files, totalSize };
 }
 
-export async function enforceEntrySafety(env: Env, manifest: Manifest, files: CapsuleFile[]): Promise<void> {
-  const entryPath = manifest.entry;
-  const entryFile = files.find((file) => file.path === entryPath);
-  if (!entryFile) {
-    // If entry is missing, let the later validation fail in its own path.
-    return;
-  }
-
-  const language = entryPath.toLowerCase().endsWith(".html") ? "html" : "javascript";
+export async function enforceSafetyForFiles(env: Env, manifest: Manifest, files: CapsuleFile[]): Promise<void> {
   const decoder = new TextDecoder();
-  const content =
-    typeof entryFile.content === "string"
-      ? entryFile.content
-      : decoder.decode(entryFile.content as ArrayBuffer);
+  for (const file of files) {
+    if (file.path === "manifest.json") continue;
+    const language = file.path.toLowerCase().endsWith(".html") || file.path.toLowerCase().endsWith(".htm") ? "html" : "javascript";
+    const content =
+      typeof file.content === "string"
+        ? file.content
+        : decoder.decode(file.content as ArrayBuffer);
 
-  const codeHash = await hashCode(content);
-  const verdict = await runSafetyCheck(env, {
-    code: content,
-    language,
-    environment: "capsule",
-  });
-
-  logSafetyVerdict(env, {
-    entryPath,
-    codeHash,
-    verdict,
-  });
-
-  if (!verdict.safe) {
-    throw new PublishCapsuleError(403, {
-      error: "Unsafe code detected",
-      code: "E-VIBECODR-SECURITY-BLOCK",
-      reasons: verdict.reasons,
-      risk: verdict.risk_level,
-      tags: verdict.tags,
+    const codeHash = await hashCode(content);
+    const verdict = await runSafetyCheck(env, {
+      code: content,
+      language,
+      environment: "capsule",
     });
+
+    logSafetyVerdict(env, {
+      entryPath: file.path,
+      codeHash,
+      verdict,
+    });
+
+    if (!verdict.safe) {
+      throw new PublishCapsuleError(403, {
+        error: "Unsafe code detected",
+        code: "E-VIBECODR-SECURITY-BLOCK",
+        reasons: verdict.reasons,
+        risk: verdict.risk_level,
+        tags: verdict.tags,
+        path: file.path,
+      });
+    }
   }
 }
 
@@ -482,25 +487,50 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
   if (
     env.RUNTIME_ARTIFACTS_ENABLED &&
     env.RUNTIME_ARTIFACTS_ENABLED !== "false" &&
-    manifest.runner === "client-static"
+    (manifest.runner === "client-static" || manifest.runner === "webcontainer")
   ) {
     try {
       const artifactId = crypto.randomUUID();
       const artifactType: RuntimeArtifactType =
-        manifest.entry.toLowerCase().endsWith(".html") || manifest.entry.toLowerCase().endsWith(".htm")
-          ? "html"
+        manifest.runner === "client-static"
+          ? manifest.entry.toLowerCase().endsWith(".html") || manifest.entry.toLowerCase().endsWith(".htm")
+            ? "html"
+            : "react-jsx"
           : "react-jsx";
       const runtimeVersion = "v0.1.0";
-      const bundleR2Key = `capsules/${uploadResult.contentHash}/${manifest.entry}`;
-      const entryFile = files.find((f) => f.path === manifest.entry);
-      const bundleSizeBytes = entryFile?.size ?? uploadResult.totalSize;
+
+      let bundleR2Key = `capsules/${uploadResult.contentHash}/${manifest.entry}`;
+      let bundleDigest = uploadResult.contentHash;
+      let bundleSizeBytes = uploadResult.totalSize;
+
+      if (manifest.runner === "webcontainer") {
+        const sourceFiles = new Map<string, Uint8Array>();
+        for (const file of files) {
+          if (file.path === "manifest.json") continue;
+          const content =
+            typeof file.content === "string" ? new TextEncoder().encode(file.content) : new Uint8Array(file.content as ArrayBuffer);
+          sourceFiles.set(file.path, content);
+        }
+
+        const bundled = await bundleInlineJs(sourceFiles, manifest.entry);
+        bundleR2Key = `artifacts/${artifactId}/bundle.js`;
+        bundleSizeBytes = bundled.content.byteLength;
+        bundleDigest = await hashUint8(bundled.content);
+
+        await env.R2.put(bundleR2Key, bundled.content, {
+          httpMetadata: { contentType: "application/javascript" },
+        });
+      } else {
+        const entryFile = files.find((f) => f.path === manifest.entry);
+        bundleSizeBytes = entryFile?.size ?? uploadResult.totalSize;
+      }
 
       const runtimeManifest = buildRuntimeManifest({
         artifactId,
         type: artifactType,
         bundleKey: bundleR2Key,
         bundleSizeBytes,
-        bundleDigest: uploadResult.contentHash,
+        bundleDigest,
         runtimeVersion,
       });
 

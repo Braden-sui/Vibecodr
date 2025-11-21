@@ -1,4 +1,4 @@
-import { Routes, Route, useNavigate, useParams } from "react-router-dom";
+import { Routes, Route, useNavigate, useParams, Navigate } from "react-router-dom";
 import { Suspense, useEffect, useState } from "react";
 import HomePageClient from "@/app/(site)/HomePageClient";
 import ShareVibePage from "@/app/(site)/post/new/page";
@@ -8,7 +8,6 @@ import LivePage from "@/app/(site)/live/page";
 import NewReport from "@/app/(site)/report/new/page";
 import SettingsPage from "@/app/(site)/settings/page";
 import ProfileSettingsPage from "@/app/(site)/settings/profile/page";
-import StudioIndex from "@/app/(site)/studio/page";
 import FlaggedPostsPage from "@/app/(site)/moderation/flagged/page";
 import ModerationAuditPage from "@/app/(site)/moderation/audit/page";
 import ModerationQueue from "@/app/(site)/admin/moderation/page";
@@ -256,11 +255,7 @@ export function AppRoutes() {
       <Route path="/settings/profile" element={<ProfileSettingsPage />} />
 
       {/* Studio - single-page shell handles internal tabs */}
-      <Route path="/studio" element={<StudioIndex />} />
-      <Route path="/studio/import" element={<StudioIndex />} />
-      <Route path="/studio/files" element={<StudioIndex />} />
-      <Route path="/studio/params" element={<StudioIndex />} />
-      <Route path="/studio/publish" element={<StudioIndex />} />
+      <Route path="/studio/*" element={<Navigate to="/post/new" replace />} />
 
       {/* Moderation */}
       <Route path="/moderation/flagged" element={<FlaggedPostsPage />} />

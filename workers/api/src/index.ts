@@ -150,11 +150,88 @@ export function computeForYouScore(input: ForYouScoreInput): number {
   );
 }
 
+const DEFAULT_FEED_LIMIT = 20;
+const MAX_FEED_LIMIT = 50;
+
+type PaginationValidationResult =
+  | { ok: true; limit: number; offset: number }
+  | { ok: false; response: Response };
+
+// WHY: Prevent unbounded feed queries that would explode downstream fan-out (likes/comments/runs).
+// INVARIANT: limit is clamped to MAX_FEED_LIMIT and >= 1; offset is a non-negative integer.
+function validateFeedPagination(url: URL): PaginationValidationResult {
+  const limitRaw = url.searchParams.get("limit");
+  const offsetRaw = url.searchParams.get("offset");
+
+  const parsedLimit = limitRaw && limitRaw.trim().length > 0 ? Number(limitRaw) : DEFAULT_FEED_LIMIT;
+  const parsedOffset = offsetRaw && offsetRaw.trim().length > 0 ? Number(offsetRaw) : 0;
+
+  if (!Number.isFinite(parsedLimit) || !Number.isInteger(parsedLimit)) {
+    return {
+      ok: false,
+      response: json(
+        {
+          error: "E-VIBECODR-0401 invalid pagination",
+          message: "limit must be an integer",
+        },
+        400
+      ),
+    };
+  }
+
+  if (parsedLimit <= 0) {
+    return {
+      ok: false,
+      response: json(
+        {
+          error: "E-VIBECODR-0402 invalid pagination",
+          message: "limit must be at least 1",
+        },
+        400
+      ),
+    };
+  }
+
+  if (!Number.isFinite(parsedOffset) || !Number.isInteger(parsedOffset)) {
+    return {
+      ok: false,
+      response: json(
+        {
+          error: "E-VIBECODR-0403 invalid pagination",
+          message: "offset must be an integer",
+        },
+        400
+      ),
+    };
+  }
+
+  if (parsedOffset < 0) {
+    return {
+      ok: false,
+      response: json(
+        {
+          error: "E-VIBECODR-0404 invalid pagination",
+          message: "offset cannot be negative",
+        },
+        400
+      ),
+    };
+  }
+
+  const limit = Math.min(parsedLimit, MAX_FEED_LIMIT);
+  const offset = parsedOffset;
+
+  return { ok: true, limit, offset };
+}
+
 async function getPosts(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const mode = url.searchParams.get("mode") || "latest";
-  const limit = parseInt(url.searchParams.get("limit") || "20");
-  const offset = parseInt(url.searchParams.get("offset") || "0");
+  const pagination = validateFeedPagination(url);
+  if (!pagination.ok) {
+    return pagination.response;
+  }
+  const { limit, offset } = pagination;
   const userIdParam = url.searchParams.get("userId");
   const tagsParam = url.searchParams.get("tags");
   const q = (url.searchParams.get("q") || "").trim().toLowerCase();
@@ -168,8 +245,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
     let query = `
       SELECT
-        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.created_at,
-        u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar,
+        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.visibility, p.created_at,
+        u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar, u.bio as author_bio,
         u.followers_count as author_followers_count,
         u.runs_count as author_runs_count,
         u.remixes_count as author_remixes_count,
@@ -177,9 +254,13 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         u.plan as author_plan,
         u.is_suspended as author_is_suspended,
         u.shadow_banned as author_shadow_banned,
+        pr.display_name as profile_display_name,
+        pr.avatar_url as profile_avatar,
+        pr.bio as profile_bio,
         c.id as capsule_id, c.manifest_json
       FROM posts p
       INNER JOIN users u ON p.author_id = u.id
+      LEFT JOIN profiles pr ON pr.user_id = u.id
       LEFT JOIN capsules c ON p.capsule_id = c.id
     `;
 
@@ -189,6 +270,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const where: string[] = [];
     // Safety: exclude suspended or shadow-banned authors from surfaced feeds
     where.push("(u.is_suspended = 0 AND u.shadow_banned = 0)");
+    // Only surface public posts in feeds; unlisted/private must stay hidden from timelines.
+    where.push("p.visibility = 'public'");
     // Hide quarantined posts from all surfaced feeds, including moderators/admins.
     where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
 
@@ -230,7 +313,12 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const { results } = await env.DB.prepare(query).bind(...bindings).all();
 
     // Filter any bad rows for safety (defense-in-depth)
-    const safeRows = (results || []).filter((row: any) => row.author_is_suspended === 0 && row.author_shadow_banned === 0);
+    const safeRows = (results || []).filter(
+      (row: any) =>
+        row.author_is_suspended === 0 &&
+        row.author_shadow_banned === 0 &&
+        row.visibility === "public"
+    );
 
     const postIds = safeRows.map((row: any) => row.id);
     const authorIds = Array.from(new Set(safeRows.map((row: any) => row.author_id))) as string[];
@@ -387,6 +475,16 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         }
       }
 
+      const authorProfile = {
+        displayName: row.profile_display_name ?? null,
+        avatarUrl: row.profile_avatar ?? null,
+        bio: row.profile_bio ?? null,
+      };
+
+      const authorName = row.profile_display_name ?? row.author_name ?? null;
+      const authorAvatar = row.profile_avatar ?? row.author_avatar ?? null;
+      const authorBio = row.profile_bio ?? row.author_bio ?? null;
+
       const post = {
         id: row.id,
         type: row.type,
@@ -396,13 +494,15 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         author: {
           id: row.author_id,
           handle: row.author_handle,
-          name: row.author_name,
-          avatarUrl: row.author_avatar,
+          name: authorName,
+          avatarUrl: authorAvatar,
+          bio: authorBio,
           followersCount: row.author_followers_count || 0,
           runsCount: row.author_runs_count || 0,
           remixesCount: row.author_remixes_count || 0,
           isFeatured: row.author_is_featured === 1,
           plan: row.author_plan || "free",
+          profile: authorProfile,
         },
         capsule: capsuleSummary,
         coverKey: row.cover_key ?? null,
@@ -468,8 +568,8 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
 
     let query = `
       SELECT
-        p.id, p.type, p.title, p.description, p.tags, p.created_at,
-        u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar,
+        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.visibility, p.created_at,
+        u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar, u.bio as author_bio,
         u.followers_count as author_followers_count,
         u.runs_count as author_runs_count,
         u.remixes_count as author_remixes_count,
@@ -477,9 +577,13 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         u.plan as author_plan,
         u.is_suspended as author_is_suspended,
         u.shadow_banned as author_shadow_banned,
+        pr.display_name as profile_display_name,
+        pr.avatar_url as profile_avatar,
+        pr.bio as profile_bio,
         c.id as capsule_id, c.manifest_json
       FROM posts p
       INNER JOIN users u ON p.author_id = u.id
+      LEFT JOIN profiles pr ON pr.user_id = u.id
       LEFT JOIN capsules c ON p.capsule_id = c.id
       WHERE p.id = ?
     `;
@@ -501,6 +605,14 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
     const row: any = results && results[0];
 
     if (!row) {
+      return json({ error: "Post not found" }, 404);
+    }
+
+    const viewerId = authedUser?.userId ?? null;
+    const viewerIsAuthor = viewerId === row.author_id;
+    const canBypassVisibility = isMod || viewerIsAuthor;
+    const isPublic = row.visibility === "public";
+    if (!isPublic && !canBypassVisibility) {
       return json({ error: "Post not found" }, 404);
     }
 
@@ -546,6 +658,16 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
       (capsuleSummary as any).artifactId = artifactIdForCapsule;
     }
 
+    const authorProfile = {
+      displayName: row.profile_display_name ?? null,
+      avatarUrl: row.profile_avatar ?? null,
+      bio: row.profile_bio ?? null,
+    };
+
+    const authorName = row.profile_display_name ?? row.author_name ?? null;
+    const authorAvatar = row.profile_avatar ?? row.author_avatar ?? null;
+    const authorBio = row.profile_bio ?? row.author_bio ?? null;
+
     const post: ApiFeedPost = {
       id: row.id,
       type: row.type,
@@ -555,13 +677,15 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
       author: {
         id: row.author_id,
         handle: row.author_handle,
-        name: row.author_name,
-        avatarUrl: row.author_avatar,
+        name: authorName,
+        avatarUrl: authorAvatar,
+        bio: authorBio,
         followersCount: row.author_followers_count || 0,
         runsCount: row.author_runs_count || 0,
         remixesCount: row.author_remixes_count || 0,
         isFeatured: row.author_is_featured === 1,
         plan: row.author_plan || "free",
+        profile: authorProfile,
       },
       capsule: capsuleSummary,
       coverKey: row.cover_key ?? null,
@@ -630,11 +754,12 @@ const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) 
   const parsed = parsedResult.data;
   const id = crypto.randomUUID();
   const tagsJson = parsed.tags && parsed.tags.length > 0 ? JSON.stringify(parsed.tags) : null;
+  const visibility = parsed.visibility ?? "public";
 
   try {
     await env.DB.prepare(
-      `INSERT INTO posts (id, author_id, type, capsule_id, title, description, tags, report_md, cover_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO posts (id, author_id, type, capsule_id, title, description, tags, visibility, report_md, cover_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         id,
@@ -644,6 +769,7 @@ const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) 
         parsed.title,
         parsed.description ?? null,
         tagsJson,
+        visibility,
         parsed.reportMd ?? null,
         parsed.coverKey ?? null
       )

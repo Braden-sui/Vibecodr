@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { enforceEntrySafety, PublishCapsuleError } from "./capsules";
+import { enforceSafetyForFiles, PublishCapsuleError } from "./capsules";
 import type { Manifest } from "@vibecodr/shared/manifest";
 
 vi.mock("../safety/safetyClient");
@@ -36,7 +36,7 @@ describe("enforceEntrySafety", () => {
     });
 
     await expect(
-      enforceEntrySafety(baseEnv, manifest, [
+      enforceSafetyForFiles(baseEnv, manifest, [
         {
           path: "index.html",
           content: new TextEncoder().encode("<div>ok</div>").buffer,
@@ -60,7 +60,7 @@ describe("enforceEntrySafety", () => {
     });
 
     await expect(
-      enforceEntrySafety(baseEnv, manifest, [
+      enforceSafetyForFiles(baseEnv, manifest, [
         {
           path: "index.html",
           content: new TextEncoder().encode("<div>script</div>").buffer,

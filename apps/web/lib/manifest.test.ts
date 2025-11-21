@@ -78,4 +78,28 @@ describe("mapApiFeedPostToFeedPost", () => {
     expect(mapped.capsule?.params).toEqual([]);
     expect(mapped.capsule?.artifactId).toBe("art-1");
   });
+
+  it("prefers profile metadata for author identity fields", () => {
+    const withProfile: ApiFeedPost = {
+      ...baseApiPost,
+      author: {
+        ...baseApiPost.author,
+        name: "User Name",
+        avatarUrl: "user-avatar.png",
+        bio: "User bio",
+        profile: {
+          displayName: "Profile Display",
+          avatarUrl: "profile-avatar.png",
+          bio: "Profile bio",
+        },
+      },
+    };
+
+    const mapped = mapApiFeedPostToFeedPost(withProfile);
+
+    expect(mapped.author.name).toBe("Profile Display");
+    expect(mapped.author.avatarUrl).toBe("profile-avatar.png");
+    expect(mapped.author.bio).toBe("Profile bio");
+    expect(mapped.author.profile?.displayName).toBe("Profile Display");
+  });
 });

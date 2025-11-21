@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vibecodr OS — Iteration 3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg1: #000000;
+        --bg2: #1a1b26;
+        --amber: #ffb86c;
+        --cyan: #8be9fd;
+        --glass: rgba(18, 18, 23, 0.75);
+        --border: rgba(255, 255, 255, 0.1);
+        --ink: #eef2fb;
+        --muted: #aab4cc;
+        --tertiary: #7c8497;
+        --shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at center, var(--bg2) 0%, var(--bg1) 100%);
+      }
+
+      /* Layers */
+      .layer-base {
+        position: fixed;
+        inset: 0;
+        background: radial-gradient(circle at center, #1a1b26 0%, #000 100%);
+        z-index: 0;
+      }
+      .layer-grid {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+        background-size: 120px 120px;
+        transform: perspective(900px) rotateX(78deg) scale(1.6);
+        transform-origin: center center;
+        opacity: 0.24;
+        filter: blur(0.2px);
+        z-index: 1;
+      }
+      .layer-scan {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.05),
+          rgba(255, 255, 255, 0.05) 1px,
+          transparent 2px,
+          transparent 4px
+        );
+        mix-blend-mode: screen;
+        opacity: 0.04;
+        z-index: 2;
+      }
+      .layer-vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+        z-index: 3;
+      }
+
+      /* Desktop */
+      .desktop {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        z-index: 4;
+      }
+
+      /* Top info bar (minimal) */
+      .top-info {
+        position: absolute;
+        top: 12px;
+        left: 16px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        letter-spacing: -0.02em;
+        text-transform: uppercase;
+      }
+
+      /* Desktop icons */
+      .icon-stack {
+        position: absolute;
+        top: 80px;
+        left: 18px;
+        display: grid;
+        gap: 16px;
+        color: var(--ink);
+        font-weight: 600;
+        text-align: center;
+      }
+      .desktop-icon {
+        width: 64px;
+        height: 72px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border);
+        box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+        transition: transform 0.16s ease, box-shadow 0.2s ease, border-color 0.12s ease;
+      }
+      .desktop-icon:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 255, 255, 0.25);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+      }
+      .icon-label {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* Dock */
+      .dock {
+        position: absolute;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        padding: 10px 14px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .dock-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: grid;
+        place-items: center;
+        color: var(--ink);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        cursor: pointer;
+        transition: transform 0.16s ease, width 0.16s ease, height 0.16s ease;
+        position: relative;
+      }
+      .dock-icon:hover {
+        transform: translateY(-4px) scale(1.2);
+      }
+      .dock-dot {
+        position: absolute;
+        bottom: -6px;
+        width: 10px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--amber);
+        box-shadow: 0 0 12px rgba(255, 184, 108, 0.7);
+      }
+
+      /* Windows */
+      .window {
+        position: absolute;
+        border-radius: 16px;
+        background: var(--glass);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        color: var(--ink);
+        overflow: hidden;
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+      }
+      .window.inactive {
+        filter: grayscale(30%) brightness(0.9);
+        opacity: 0.9;
+      }
+      .titlebar {
+        height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+        user-select: none;
+      }
+      .traffic {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .tl {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .tl.red { background: #f87171; }
+      .tl.yellow { background: #fbbf24; }
+      .tl.green { background: #34d399; }
+      .title {
+        flex: 1;
+        text-align: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--amber);
+      }
+      .window-body {
+        padding: 14px;
+        max-height: 70vh;
+        overflow: auto;
+      }
+
+      /* Widgets */
+      .h2 {
+        margin: 0 0 6px;
+        font-family: "JetBrains Mono", monospace;
+        letter-spacing: -0.02em;
+        color: var(--ink);
+      }
+      .body { margin: 0; color: var(--muted); }
+      .meta { color: var(--tertiary); font-size: 12px; font-family: "JetBrains Mono", monospace; }
+      .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+      .badge {
+        padding: 5px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 12px;
+      }
+
+      .field {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        padding: 11px 12px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+      }
+      .field:focus {
+        outline: none;
+        border-color: rgba(255, 255, 255, 0.2);
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+      }
+      .textarea { min-height: 120px; resize: vertical; }
+      .mode-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+      .mode {
+        padding: 7px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .mode.active {
+        color: var(--ink);
+        border-color: rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+      .btn {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--ink);
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn.primary {
+        border-color: rgba(255, 255, 255, 0.22);
+        background: linear-gradient(120deg, var(--amber), #ffd39a);
+        color: #13141a;
+        box-shadow: 0 12px 32px rgba(255, 184, 108, 0.28);
+      }
+      .btn.glitch:hover {
+        animation: glitch 0.2s steps(2, end);
+      }
+      @keyframes glitch {
+        0% { transform: translate(0); filter: hue-rotate(0deg); }
+        50% { transform: translate(-2px, 1px); filter: hue-rotate(20deg); }
+        100% { transform: translate(0); filter: hue-rotate(0deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layer-base"></div>
+    <div class="layer-grid"></div>
+    <div class="layer-scan"></div>
+    <div class="layer-vignette"></div>
+    <div id="root" class="desktop"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/framer-motion@11.0.0/dist/framer-motion.umd.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useState, useMemo } = React;
+      const fm = window["framer-motion"] || window.framerMotion || window.Motion || window.motion;
+      const baseMotion = fm && fm.motion ? fm.motion : {};
+      const shim = (tag) => React.forwardRef((props, ref) => React.createElement(tag, { ...props, ref }));
+      const motion = {
+        div: baseMotion.div || shim("div"),
+      };
+
+      const initialWindows = [
+        {
+          id: "composer",
+          title: "Composer",
+          zIndex: 11,
+          minimized: false,
+          position: { x: 200, y: 140 },
+          size: { width: 520, height: 380 },
+        },
+        {
+          id: "feed",
+          title: "Network Feed",
+          zIndex: 12,
+          minimized: false,
+          position: { x: 760, y: 120 },
+          size: { width: 520, height: 440 },
+        },
+        {
+          id: "timeline",
+          title: "System Timeline",
+          zIndex: 13,
+          minimized: false,
+          position: { x: 260, y: 520 },
+          size: { width: 520, height: 260 },
+        },
+      ];
+
+      const feedData = [
+        {
+          id: "1",
+          type: "App",
+          title: "Aurora particle field that reacts to cursor velocity",
+          description: "Param sliders tweak emission rate, hue shift, and turbulence. Built inline with WebContainer runtime.",
+          tags: ["visualization", "canvas", "realtime"],
+          age: "2h ago",
+          stats: { likes: 128, comments: 42, remixes: 18 },
+        },
+        {
+          id: "2",
+          type: "Status",
+          title: "Shipping a new param schema today",
+          description: "Simplifying param definitions so remixes stay plug-and-play. Docs and snippets landing soon.",
+          tags: ["update", "params"],
+          age: "4h ago",
+          stats: { likes: 32, comments: 6 },
+        },
+      ];
+
+      const timelineData = [
+        { id: "t1", title: "Imported repo: neon-particles", detail: "GitHub import succeeded", age: "2m ago" },
+        { id: "t2", title: "Published vibe: Aurora field", detail: "WebContainer bundle ready", age: "38m ago" },
+        { id: "t3", title: "Zip upload analyzed", detail: "Warnings: none", age: "1h ago" },
+      ];
+
+      function Logo() {
+        return (
+          <svg className="logo" viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="49" fill="#0b0f16" stroke="#1f2a3d" strokeWidth="2" />
+            <path d="M50 98 A48 48 0 0 1 5 50 A48 48 0 0 1 50 2 Z" fill="#0f172a" />
+            <path d="M50 2 A48 48 0 0 1 95 50 L50 50 Z" fill="#ffffff" />
+            <path d="M95 50 A48 48 0 0 1 69 92 L50 50 Z" fill="#0f172a" />
+            <path d="M69 92 A48 48 0 0 1 31 92 L50 50 Z" fill="#e1783c" />
+            <path d="M31 92 A48 48 0 0 1 5 50 A48 48 0 0 1 50 50 Z" fill="#ffffff" />
+          </svg>
+        );
+      }
+
+      function DesktopIcon({ label, onActivate }) {
+        return (
+          <div onDoubleClick={onActivate} style={{ cursor: "pointer" }}>
+            <div className="desktop-icon">
+              <span style={{ fontFamily: "JetBrains Mono", fontSize: 14 }}>{label[0].toUpperCase()}</span>
+            </div>
+            <div className="icon-label">{label}</div>
+          </div>
+        );
+      }
+
+      function DockIcon({ label, active, onActivate }) {
+        return (
+          <div className="dock-icon" onClick={onActivate}>
+            <span style={{ fontFamily: "JetBrains Mono", fontSize: 14 }}>{label[0].toUpperCase()}</span>
+            {active && <div className="dock-dot"></div>}
+          </div>
+        );
+      }
+
+      function WindowFrame({ win, active, onFocus, onClose, children }) {
+        const [pos, setPos] = useState(win.position);
+        const [sz] = useState(win.size);
+
+        return (
+          <motion.div
+            className={`window ${active ? "" : "inactive"}`}
+            style={{ left: pos.x, top: pos.y, width: sz.width, height: sz.height, zIndex: win.zIndex }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, ease: [0.34, 1.56, 0.64, 1] }}
+            drag
+            dragMomentum
+            dragElastic={0.1}
+            onMouseDown={() => onFocus(win.id)}
+            onDrag={(e, info) => {
+              setPos({ x: info.point.x - sz.width / 2, y: info.point.y - 16 });
+            }}
+            onDragEnd={(e, info) => {
+              setPos({ x: info.point.x - sz.width / 2, y: info.point.y - 16 });
+            }}
+          >
+            <div className="titlebar">
+              <div className="traffic">
+                <div className="tl red" onClick={() => onClose(win.id)} style={{ cursor: "pointer" }}></div>
+                <div className="tl yellow"></div>
+                <div className="tl green"></div>
+              </div>
+              <div className="title">{win.title}</div>
+              <div style={{ width: 40 }}></div>
+            </div>
+            <div className="window-body">{children}</div>
+          </motion.div>
+        );
+      }
+
+      function ComposerApp() {
+        const [mode, setMode] = useState("status");
+        return (
+          <div>
+            <div className="mode-row">
+              {["status", "github", "zip", "code"].map((m) => (
+                <button key={m} className={`mode ${mode === m ? "active" : ""}`} onClick={() => setMode(m)}>
+                  {m === "status" ? "Status" : m === "github" ? "GitHub" : m === "zip" ? "ZIP" : "Code"}
+                </button>
+              ))}
+            </div>
+            <input className="field" placeholder={mode === "github" ? "https://github.com/user/repo" : "What's your vibe?"} />
+            <textarea className="field textarea" placeholder="Add details or instructions (optional)" />
+            {mode === "code" && (
+              <textarea className="field textarea" placeholder="// write inline code here..." style={{ minHeight: 140 }} />
+            )}
+            <div className="btn-row">
+              <button className="btn">Preview</button>
+              <button className="btn primary glitch">Deploy</button>
+            </div>
+          </div>
+        );
+      }
+
+      function FeedApp() {
+        return (
+          <div>
+            {feedData.map((item) => (
+              <div key={item.id} style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div className="h2" style={{ fontSize: 16 }}>{item.title}</div>
+                  <div className="meta">{item.age}</div>
+                </div>
+                <div className="badge-row">
+                  <span className="badge">{item.type}</span>
+                  {item.tags.map((t) => (
+                    <span className="badge" key={t}>#{t}</span>
+                  ))}
+                </div>
+                <p className="body">{item.description}</p>
+                <div className="badge-row" style={{ color: "var(--muted)", fontWeight: 600 }}>
+                  <span>Like {item.stats.likes}</span>
+                  <span>Comments {item.stats.comments}</span>
+                  {item.type === "App" && <span>Remixes {item.stats.remixes}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      function TimelineApp() {
+        return (
+          <div>
+            {timelineData.map((item) => (
+              <div key={item.id} style={{ marginBottom: 10, padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span className="h2" style={{ fontSize: 14 }}>{item.title}</span>
+                  <span className="meta">{item.age}</span>
+                </div>
+                <div className="body">{item.detail}</div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      function App() {
+        const [windows, setWindows] = useState(initialWindows);
+
+        const activeIds = useMemo(() => new Set(windows.map((w) => w.id)), [windows]);
+
+        const bringToFront = (id) => {
+          setWindows((prev) => {
+            const maxZ = Math.max(...prev.map((w) => w.zIndex));
+            return prev.map((w) => (w.id === id ? { ...w, zIndex: maxZ + 1, minimized: false } : w));
+          });
+        };
+
+        const closeWindow = (id) => {
+          setWindows((prev) => prev.filter((w) => w.id !== id));
+        };
+
+        const ensureWindow = (id, defaults) => {
+          setWindows((prev) => {
+            const exists = prev.find((w) => w.id === id);
+            if (exists) {
+              const maxZ = Math.max(...prev.map((w) => w.zIndex));
+              return prev.map((w) => (w.id === id ? { ...w, zIndex: maxZ + 1, minimized: false } : w));
+            }
+            return [...prev, defaults];
+          });
+        };
+
+        const contentFor = (id) => {
+          if (id === "composer") return <ComposerApp />;
+          if (id === "feed") return <FeedApp />;
+          if (id === "timeline") return <TimelineApp />;
+          return <div className="body">Coming soon.</div>;
+        };
+
+        return (
+          <div className="desktop">
+            <div className="top-info">
+              <Logo />
+              <span>vibecodr os · synth-glass · 2099</span>
+            </div>
+
+            <div className="icon-stack">
+              <DesktopIcon
+                label="Composer"
+                onActivate={() =>
+                  ensureWindow("composer", {
+                    id: "composer",
+                    title: "Composer",
+                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
+                    minimized: false,
+                    position: { x: 200, y: 140 },
+                    size: { width: 520, height: 380 },
+                  })
+                }
+              />
+              <DesktopIcon
+                label="Feed"
+                onActivate={() =>
+                  ensureWindow("feed", {
+                    id: "feed",
+                    title: "Network Feed",
+                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
+                    minimized: false,
+                    position: { x: 760, y: 120 },
+                    size: { width: 520, height: 440 },
+                  })
+                }
+              />
+              <DesktopIcon
+                label="Timeline"
+                onActivate={() =>
+                  ensureWindow("timeline", {
+                    id: "timeline",
+                    title: "System Timeline",
+                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
+                    minimized: false,
+                    position: { x: 260, y: 520 },
+                    size: { width: 520, height: 260 },
+                  })
+                }
+              />
+            </div>
+
+            {windows.map((w) => (
+              <WindowFrame
+                key={w.id}
+                win={w}
+                active={w.zIndex === Math.max(...windows.map((x) => x.zIndex))}
+                onFocus={bringToFront}
+                onClose={closeWindow}
+              >
+                {contentFor(w.id)}
+              </WindowFrame>
+            ))}
+
+            <div className="dock">
+              <DockIcon
+                label="Composer"
+                active={activeIds.has("composer")}
+                onActivate={() =>
+                  ensureWindow("composer", {
+                    id: "composer",
+                    title: "Composer",
+                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
+                    minimized: false,
+                    position: { x: 200, y: 140 },
+                    size: { width: 520, height: 380 },
+                  })
+                }
+              />
+              <DockIcon
+                label="Feed"
+                active={activeIds.has("feed")}
+                onActivate={() =>
+                  ensureWindow("feed", {
+                    id: "feed",
+                    title: "Network Feed",
+                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
+                    minimized: false,
+                    position: { x: 760, y: 120 },
+                    size: { width: 520, height: 440 },
+                  })
+                }
+              />
+              <DockIcon
+                label="Timeline"
+                active={activeIds.has("timeline")}
+                onActivate={() =>
+                  ensureWindow("timeline", {
+                    id: "timeline",
+                    title: "System Timeline",
+                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
+                    minimized: false,
+                    position: { x: 260, y: 520 },
+                    size: { width: 520, height: 260 },
+                  })
+                }
+              />
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>

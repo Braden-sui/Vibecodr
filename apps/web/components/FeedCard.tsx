@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import {
   Trash2,
   Wifi,
   Database,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
@@ -39,6 +41,7 @@ import { budgetedAsync } from "@/lib/perf";
 import { writePreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import { trackClientError } from "@/lib/analytics";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 
 type PublicMetadata = {
   role?: string;
@@ -113,6 +116,8 @@ export function FeedCard({ post }: FeedCardProps) {
   const [isModerating, setIsModerating] = useState(false);
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const previewLogsRef = useRef<PreviewLogEntry[]>([]);
+  const prefersReducedMotion = useReducedMotion();
+  const [tilt, setTilt] = useState<{ x: number; y: number; active: boolean }>({ x: 0, y: 0, active: false });
 
   useEffect(() => {
     previewLogsRef.current = [];
@@ -488,6 +493,23 @@ export function FeedCard({ post }: FeedCardProps) {
     };
   }, [capsuleId, isApp, pushPreviewLog, runnerOrigins, warnMissingRunnerOrigins]);
 
+  const handleTiltMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (prefersReducedMotion) {
+      return;
+    }
+    const node = cardRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const relX = (event.clientX - rect.left) / rect.width - 0.5;
+    const relY = (event.clientY - rect.top) / rect.height - 0.5;
+    const maxTilt = 6;
+    setTilt({ x: relX * maxTilt * 2, y: -relY * maxTilt * 2, active: true });
+  };
+
+  const resetTilt = () => {
+    setTilt({ x: 0, y: 0, active: false });
+  };
+
   // Handle hover enter with debounce
   const handleMouseEnter = () => {
     hoverTimeoutRef.current = setTimeout(() => {
@@ -633,7 +655,7 @@ export function FeedCard({ post }: FeedCardProps) {
     e.preventDefault();
     e.stopPropagation();
     if (isApp && capsuleId) {
-      navigate(`/studio?remixFrom=${capsuleId}`);
+      navigate(`/post/new?remixFrom=${capsuleId}`);
     }
   };
 
@@ -696,22 +718,40 @@ export function FeedCard({ post }: FeedCardProps) {
   };
 
   return (
-    <Card ref={cardRef} className="group relative overflow-hidden transition-all hover:shadow-lg">
-      {/* Cover/Preview Area */}
-      <div
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        className="relative"
-      >
-        <Link to={detailHref} onClick={() => persistPreviewHandoff("cover")}>
-          <div
-            className={cn(
-              "relative aspect-video w-full overflow-hidden bg-gradient-to-br",
-              isApp
-                ? "from-blue-500/10 to-purple-500/10"
-                : "from-emerald-500/10 to-teal-500/10"
-            )}
-          >
+    <motion.div
+      ref={cardRef}
+      className="group relative"
+      onMouseMove={handleTiltMove}
+      onMouseLeave={resetTilt}
+      initial={prefersReducedMotion ? undefined : { opacity: 0.98, y: 8 }}
+      whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      style={
+        prefersReducedMotion
+          ? undefined
+          : {
+              transform: `perspective(1100px) rotateX(${tilt.y}deg) rotateY(${tilt.x}deg)`,
+              transformOrigin: "center",
+              willChange: "transform",
+            }
+      }
+    >
+      <Card className="group relative overflow-hidden rounded-2xl vc-surface shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg">
+      {/* Cover/Preview Area (apps only) */}
+      {isApp && (
+        <div
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          className="relative"
+        >
+          <Link to={detailHref} onClick={() => persistPreviewHandoff("cover")}>
+            <div
+              className={cn(
+                "relative aspect-video w-full overflow-hidden bg-gradient-to-br",
+                "from-blue-500/10 to-purple-500/10"
+              )}
+            >
             {/* Preview iframe for running apps */}
             {isRunning && capsuleId && (
               <div className="absolute inset-0 z-10">
@@ -752,23 +792,15 @@ export function FeedCard({ post }: FeedCardProps) {
             {/* Preview canvas or cover image */}
             {!isRunning && (
               <div className="flex h-full items-center justify-center">
-                {isApp ? (
-                  <>
-                    <Button
-                      onClick={handleClickToRun}
-                      variant="secondary"
-                      size="lg"
-                      className="gap-2"
-                    >
-                      <Play className="h-5 w-5" />
-                      Run Preview
-                    </Button>
-                  </>
-                ) : (
-                  <div className="px-8 text-center text-sm text-muted-foreground">
-                    📝 Report Preview
-                  </div>
-                )}
+                <Button
+                  onClick={handleClickToRun}
+                  variant="secondary"
+                  size="lg"
+                  className="gap-2"
+                >
+                  <Play className="h-5 w-5" />
+                  Run Preview
+                </Button>
                 {previewError && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/5">
                     <p className="text-sm text-destructive">Preview unavailable</p>
@@ -794,6 +826,7 @@ export function FeedCard({ post }: FeedCardProps) {
           </div>
         </Link>
       </div>
+      )}
 
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
@@ -876,7 +909,7 @@ export function FeedCard({ post }: FeedCardProps) {
         {/* Badges */}
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="gap-1">
-            {isApp ? <Cpu className="h-3 w-3" /> : <span>📝</span>}
+            {isApp ? <Cpu className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
             {isApp ? post.capsule?.runner || "client-static" : "Status"}
           </Badge>
 
@@ -964,5 +997,6 @@ export function FeedCard({ post }: FeedCardProps) {
         </div>
       </CardFooter>
     </Card>
+  </motion.div>
   );
 }

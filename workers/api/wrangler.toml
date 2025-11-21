@@ -41,6 +41,7 @@ ALLOWLIST_HOSTS = "[]" # JSON array of allowed network hosts per capsule is enfo
 CLERK_JWT_ISSUER = "https://clerk.vibecodr.space"
 # Optional: comma-separated audiences (https origins or app identifiers) to require on Clerk tokens
 CLERK_JWT_AUDIENCE = ""
+RUNTIME_ARTIFACTS_ENABLED = "true"
 
 # Durable Objects binding for BuildCoordinator
 [durable_objects]

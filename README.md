@@ -2,7 +2,7 @@
 
 This repository contains a minimal, navigable skeleton for the Vibecodr MVP:
 
-- apps/web - React Router SPA built with Vite. Route components live under `apps/web/app/(site)` for parity with the original Next skeleton, but everything now renders through the SPA entry in `apps/web/src`.
+- apps/web - React Router SPA built with Vite. Page components live under `apps/web/app/(site)` for organization but render exclusively through the SPA entry in `apps/web/src`.
 - apps/web/app/live - Placeholder Phase 5 live capsules hub route; UI experiments for waitlist and sample sessions, no live infra or backend wiring yet.
 - workers/api - Cloudflare Worker API backing feed, capsules, social, notifications, and moderation. Most endpoints are implemented; see `SITEMAP.md` and `workers/api/README.md`.
 - docs - Research and MVP planning documents.
@@ -21,7 +21,7 @@ Next steps:
 
 ## UI architecture cheat sheet
 
-- **Single-page client** - `apps/web/src/App.tsx` renders the entire UI via React Router. All feature routes live inside `AppRoutes`, which import the `"use client"` components stored under `apps/web/app/(site)` for reuse.
+- **Single-page client** - `apps/web/src/App.tsx` renders the entire UI via React Router. All feature routes live inside `AppRoutes`, which import the `"use client"` components stored under `apps/web/app/(site)` for reuse (no Next.js runtime).
 - **Clerk integration** - Components rely on `@clerk/clerk-react`. When privileged calls are needed, they request `useAuth().getToken({ template: "workers" })` and pass that bearer token directly to the Worker API.
 - **Worker access** - `apps/web/lib/api.ts` centralizes all fetch calls through `getWorkerApiBase()`, so the SPA always talks to `https://<worker>/...` and never needs an intermediate `/api/*` proxy.
 - **User sync** - `EnsureUserSynced` invokes `ensureUserSynced` on mount, which POSTs the normalized Clerk user profile to `${getWorkerApiBase()}/users/sync` one time per browser session.
