@@ -1,4 +1,4 @@
-```typescript
+
 import { Routes, Route, useNavigate, useParams, Navigate, Outlet } from "react-router-dom";
 import { Suspense, useEffect, useState } from "react";
 import HomePageClient from "@/app/(site)/HomePageClient";
@@ -20,7 +20,7 @@ import { ApiPostResponseSchema } from "@vibecodr/shared";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileBlocks } from "@/components/profile/ProfileBlocks";
 import { themeToInlineStyle } from "@/lib/profile/theme";
-import { themeToInlineStyle } from "@/lib/profile/theme";
+
 import Layout from "@/src/components/Layout";
 import KineticHeader from "@/src/components/KineticHeader";
 import VibeCard from "@/src/components/VibeCard";
@@ -49,7 +49,7 @@ function PostDetailRoute() {
       setLoading(true);
       setError(null);
       try {
-        const res = await postsApi.get(id);
+        const res = await postsApi.get(id!);
         if (res.status === 404) {
           if (!cancelled) {
             setError("not_found");
@@ -57,7 +57,7 @@ function PostDetailRoute() {
           return;
         }
         if (!res.ok) {
-          throw new Error(`E - VIBECODR-0501 failed to load post: ${ res.status } `);
+          throw new Error(`E - VIBECODR-0501 failed to load post: ${res.status} `);
         }
         const json = await res.json();
         const parsed = ApiPostResponseSchema.parse(json);
@@ -68,7 +68,7 @@ function PostDetailRoute() {
         }
 
         if (mapped.type === "app") {
-          navigate(`/ player / ${ id } `, { replace: true });
+          navigate(`/ player / ${id} `, { replace: true });
           return;
         }
 
@@ -131,10 +131,10 @@ function PostDetailRoute() {
         </header>
 
         <div className="mt-6">
-           {/* Post content would go here if we had it separate from title/desc, for now just comments */}
-           <div className="prose dark:prose-invert max-w-none">
-             {post.description && <p className="text-lg text-muted-foreground">{post.description}</p>}
-           </div>
+          {/* Post content would go here if we had it separate from title/desc, for now just comments */}
+          <div className="prose dark:prose-invert max-w-none">
+            {post.description && <p className="text-lg text-muted-foreground">{post.description}</p>}
+          </div>
         </div>
       </VibeCard>
 
@@ -163,7 +163,7 @@ function ProfileRouteWrapper() {
       setLoading(true);
       setError(null);
       try {
-        const decodedHandle = decodeURIComponent(handle);
+        const decodedHandle = decodeURIComponent(handle!);
         const res = await profileApi.get(decodedHandle);
         if (res.status === 404) {
           if (!cancelled) {
@@ -172,7 +172,7 @@ function ProfileRouteWrapper() {
           return;
         }
         if (!res.ok) {
-          throw new Error(`E - VIBECODR - 2001 failed to load profile: ${ res.status } `);
+          throw new Error(`E - VIBECODR - 2001 failed to load profile: ${res.status} `);
         }
         const json = await res.json();
         if (!cancelled) {
@@ -232,7 +232,7 @@ function LegacyProfileRouteWrapper() {
     if (!handle) {
       return;
     }
-    navigate(`/ u / ${ encodeURIComponent(handle) } `, { replace: true });
+    navigate(`/ u / ${encodeURIComponent(handle)} `, { replace: true });
   }, [handle, navigate]);
 
   return null;
@@ -283,7 +283,7 @@ export function AppRoutes() {
 
       {/* Full Screen / Auth Routes (Outside Layout) */}
       <Route path="/player/:postId" element={<PlayerRouteWrapper />} />
-      
+
       <Route
         path="/sign-in/*"
         element={
@@ -303,4 +303,4 @@ export function AppRoutes() {
     </Routes>
   );
 }
-```
+
