@@ -123,4 +123,33 @@ describe("HomePageClient feed data source", () => {
       screen.queryByText("Interactive Boids Simulation")
     ).not.toBeInTheDocument();
   });
+
+  it("does not render placeholder hero content when the feed is empty", async () => {
+    mockList.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        posts: [],
+        mode: "latest",
+        limit: 20,
+        offset: 0,
+      }),
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePageClient />
+      </MemoryRouter>
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("vibes-composer")).toBeInTheDocument()
+    );
+
+    expect(
+      screen.queryByText("Interactive Boids Simulation")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Run, remix, and publish")
+    ).toBeInTheDocument();
+  });
 });

@@ -19,126 +19,6 @@ type FeedMode = "latest" | "following" | "foryou";
 
 const availableTags = ["ai", "visualization", "canvas", "cli", "webcontainer", "data"];
 
-const fallbackPosts: FeedPost[] = [
-  {
-    id: "1",
-    type: "app",
-    title: "Interactive Boids Simulation",
-    description: "Watch flocking behavior emerge with adjustable parameters",
-    author: {
-      id: "user1",
-      handle: "marta",
-      name: "Marta Chen",
-      avatarUrl: "/avatars/marta.png",
-    },
-    capsule: {
-      id: "capsule1",
-      runner: "client-static",
-      capabilities: {
-        net: [],
-        storage: false,
-        workers: false,
-      },
-      params: [{ name: "count", type: "number", label: "Count", default: 100 }, { name: "speed", type: "slider", label: "Speed", default: 1 }],
-      artifactId: null,
-    },
-    coverKey: null,
-    tags: ["simulation", "canvas", "animation"],
-    stats: {
-      runs: 342,
-      comments: 12,
-      likes: 89,
-      remixes: 5,
-    },
-    createdAt: "2025-11-10T15:30:00Z",
-  },
-  {
-    id: "2",
-    type: "report",
-    title: "Building a Tiny Paint App",
-    description: "A walkthrough of creating a minimal canvas-based drawing tool",
-    author: {
-      id: "user2",
-      handle: "tom",
-      name: "Tom Anderson",
-      avatarUrl: "/avatars/tom.png",
-    },
-    coverKey: null,
-    tags: ["tutorial", "canvas", "beginner"],
-    stats: {
-      runs: 0,
-      comments: 8,
-      likes: 45,
-      remixes: 0,
-    },
-    createdAt: "2025-11-10T12:00:00Z",
-  },
-  {
-    id: "3",
-    type: "app",
-    title: "Weather Dashboard",
-    description: "Real-time weather data with beautiful visualizations",
-    author: {
-      id: "user3",
-      handle: "sarah_dev",
-      name: "Sarah Johnson",
-      avatarUrl: "/avatars/sarah.png",
-    },
-    capsule: {
-      id: "capsule3",
-      runner: "client-static",
-      capabilities: {
-        net: ["api.openweathermap.org"],
-        storage: true,
-        workers: false,
-      },
-      params: [{ name: "city", type: "text", label: "City", default: "London" }, { name: "units", type: "select", label: "Units", default: "metric", options: ["metric", "imperial"] }],
-      artifactId: null,
-    },
-    coverKey: null,
-    tags: ["weather", "api", "data-viz"],
-    stats: {
-      runs: 523,
-      comments: 24,
-      likes: 156,
-      remixes: 12,
-    },
-    createdAt: "2025-11-09T18:45:00Z",
-  },
-  {
-    id: "4",
-    type: "app",
-    title: "Markdown Preview Editor",
-    description: "Write and preview markdown in real-time with syntax highlighting",
-    author: {
-      id: "user4",
-      handle: "alex_codes",
-      name: "Alex Rivera",
-      avatarUrl: "/avatars/alex.png",
-    },
-    capsule: {
-      id: "capsule4",
-      runner: "webcontainer",
-      capabilities: {
-        net: ["cdn.jsdelivr.net"],
-        storage: true,
-        workers: false,
-      },
-      params: [{ name: "theme", type: "select", label: "Theme", default: "dark", options: ["light", "dark"] }],
-      artifactId: null,
-    },
-    coverKey: null,
-    tags: ["markdown", "editor", "productivity", "live"],
-    stats: {
-      runs: 789,
-      comments: 34,
-      likes: 234,
-      remixes: 18,
-    },
-    createdAt: "2025-11-09T10:20:00Z",
-  },
-];
-
 export default function FeedPage() {
   const [mode, setMode] = useState<FeedMode>("latest");
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -318,13 +198,13 @@ export default function FeedPage() {
     trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
   };
 
-  const heroPost = !feedError ? posts[0] ?? fallbackPosts[0] : null;
+  const heroPost = !feedError && posts.length > 0 ? posts[0] : null;
   const heroHref = heroPost
     ? heroPost.type === "app"
       ? `/player/${heroPost.id}`
       : `/post/${heroPost.id}`
     : "/post/new";
-  const heroTags = Array.isArray(heroPost?.tags) ? heroPost!.tags.slice(0, 3) : [];
+  const heroTags = heroPost && Array.isArray(heroPost.tags) ? heroPost.tags.slice(0, 3) : [];
 
   const composerSection = (
     <motion.div
