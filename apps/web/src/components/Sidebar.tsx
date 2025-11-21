@@ -1,10 +1,12 @@
 import React from "react";
+import { UserButton, useUser } from "@clerk/clerk-react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Home, Zap, Radio, Settings, User, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Sidebar = () => {
+    const { user, isLoaded } = useUser();
     const location = useLocation();
 
     const navItems = [
@@ -80,19 +82,39 @@ const Sidebar = () => {
 
             {/* User Profile / Footer */}
             <div className="p-6 border-t border-border/50">
-                <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/30 cursor-pointer transition-colors">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent to-pink-500 flex items-center justify-center text-white font-bold shadow-sm">
-                        B
+                {isLoaded && user ? (
+                    <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/30 transition-colors">
+                        <div className="flex items-center justify-center">
+                            <UserButton
+                                afterSignOutUrl="/"
+                                appearance={{
+                                    elements: {
+                                        avatarBox: "w-10 h-10"
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">
+                                {user.fullName || user.username}
+                            </p>
+                            <Link
+                                to={`/u/${user.username}`}
+                                className="text-xs text-muted-foreground truncate hover:text-primary hover:underline block"
+                            >
+                                @{user.username}
+                            </Link>
+                        </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                            Braden
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                            @vibecodr
-                        </p>
+                ) : (
+                    <div className="flex items-center gap-3 p-3">
+                        <div className="w-10 h-10 rounded-full bg-secondary animate-pulse" />
+                        <div className="flex-1 space-y-2">
+                            <div className="h-4 w-20 bg-secondary rounded animate-pulse" />
+                            <div className="h-3 w-16 bg-secondary rounded animate-pulse" />
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </motion.aside>
     );

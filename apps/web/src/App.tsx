@@ -9,7 +9,7 @@ import { ModerationNavLinks } from "@/components/ModerationNavLinks";
 import { AdminAnalyticsNavLink } from "@/components/AdminAnalyticsNavLink";
 import { NotificationBell } from "@/components/Notifications";
 import { TopbarSearch } from "@/components/TopbarSearch";
-import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/clerk-react";
+import { SignedIn, SignedOut, SignInButton, SignUpButton } from "@clerk/clerk-react";
 import { Highlight, HighlightItem } from "@/lib/animate-ui/highlight";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 
@@ -76,7 +76,6 @@ function PrimaryNav() {
           <TopbarSearch />
           <SignedIn>
             <NotificationBell />
-            <UserButton afterSignOutUrl="/" />
           </SignedIn>
           <SignedOut>
             <SignInButton>
