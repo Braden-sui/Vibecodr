@@ -39,7 +39,15 @@ const Layout = () => {
             )}
 
             {/* Main Content Area */}
-            <main className={cn("min-h-screen transition-[padding] duration-300 ease-in-out", sidebarOpen ? "md:pl-64" : "md:pl-0")}>
+            <main
+                className={cn(
+                    "min-h-screen transition-[padding] duration-300 ease-in-out",
+                    sidebarOpen ? "md:pl-64" : "md:pl-0"
+                )}
+                style={{
+                    transform: "translate3d(var(--water-parallax-x, 0), var(--water-parallax-y, 0), 0)",
+                }}
+            >
                 <div className="container mx-auto px-4 py-8 max-w-5xl">
                     {/* Shared Layout Context for smooth page transitions */}
                     <motion.div

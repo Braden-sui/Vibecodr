@@ -1,152 +1,182 @@
-import React, { useEffect } from "react";
-import { motion, useMotionValue, useSpring, useTransform, animate } from "framer-motion";
-import { interpolate } from "flubber";
+import React, { useEffect, useRef } from "react";
 
-// Pre-defined blob paths (normalized to 100x100 viewbox for simplicity, will scale)
-const blobPaths = [
-    "M44.7,-76.4C58.9,-69.2,71.8,-59.1,81.6,-46.6C91.4,-34.1,98.1,-19.2,95.8,-5.3C93.5,8.6,82.2,21.5,70.6,32.2C59,42.9,47.1,51.4,34.8,58.6C22.5,65.8,9.8,71.7,-2.3,75.7C-14.4,79.7,-25.9,81.8,-36.6,76.3C-47.3,70.8,-57.2,57.7,-65.3,43.8C-73.4,29.9,-79.7,15.2,-80.8,-0.1C-81.9,-15.4,-77.8,-31.3,-68.6,-44.1C-59.4,-56.9,-45.1,-66.6,-30.6,-73.5C-16.1,-80.4,-1.4,-84.5,12.4,-82.3C26.2,-80.1,30.5,-83.6,44.7,-76.4Z",
-    "M41.9,-73.4C54.6,-65.2,65.4,-54.3,73.4,-41.6C81.4,-28.9,86.6,-14.4,85.2,-0.5C83.8,13.4,75.8,26.8,66.1,38.2C56.4,49.6,45,59,32.5,65.4C20,71.8,6.4,75.2,-6.4,73.9C-19.2,72.6,-31.2,66.6,-42.3,59.1C-53.4,51.6,-63.6,42.6,-70.6,31.5C-77.6,20.4,-81.4,7.2,-79.6,-5.2C-77.8,-17.6,-70.4,-29.2,-61.2,-39.1C-52,-49,-41,-57.2,-29.3,-64.2C-17.6,-71.2,-5.2,-77,7.8,-75.4C20.8,-73.8,31.6,-64.8,41.9,-73.4Z",
-    "M36.6,-64.7C47.9,-57.1,57.9,-48.3,65.7,-37.8C73.5,-27.3,79.1,-15.1,78.4,-3.2C77.7,8.7,70.7,20.3,62.2,30.3C53.7,40.3,43.7,48.7,32.8,55.4C21.9,62.1,10.1,67.1,-1.4,69.5C-12.9,71.9,-24.1,71.7,-34.6,66.3C-45.1,60.9,-54.9,50.3,-62.4,38.2C-69.9,26.1,-75.1,12.5,-74.3,0.5C-73.5,-11.5,-66.7,-21.9,-58.1,-31.2C-49.5,-40.5,-39.1,-48.7,-28.4,-56.6C-17.7,-64.5,-6.7,-72.1,5.1,-72.9C16.9,-73.7,25.3,-72.3,36.6,-64.7Z"
-];
+// WHY: Provide a calm, interactive water-like background across the app with ripple response.
+// INVARIANT: Keep simulation resolution bounded; avoid work when canvas/context unavailable.
 
-const wrapIndex = (value: number, length: number) => ((value % length) + length) % length;
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-const mixHexColors = (from: string, to: string, progress: number) => {
-    const normalize = (input: string) => {
-        const hex = input.replace("#", "").trim();
-        const expanded = hex.length === 3 ? hex.split("").map((ch) => ch + ch).join("") : hex.padEnd(6, "0").slice(0, 6);
-        const r = parseInt(expanded.slice(0, 2), 16);
-        const g = parseInt(expanded.slice(2, 4), 16);
-        const b = parseInt(expanded.slice(4, 6), 16);
-        return [r, g, b] as const;
-    };
+function createRippleSim(width: number, height: number) {
+  const size = width * height;
+  let bufA = new Float32Array(size);
+  let bufB = new Float32Array(size);
+  const damping = 0.985;
 
-    const lerp = (start: number, end: number, t: number) => Math.round(start + (end - start) * t);
-    const clampProgress = Math.min(1, Math.max(0, progress));
-    const [r1, g1, b1] = normalize(from);
-    const [r2, g2, b2] = normalize(to);
-    const toHex = (value: number) => value.toString(16).padStart(2, "0");
+  const step = () => {
+    for (let y = 1; y < height - 1; y++) {
+      const yw = y * width;
+      for (let x = 1; x < width - 1; x++) {
+        const i = yw + x;
+        const val =
+          (bufA[i - 1] + bufA[i + 1] + bufA[i - width] + bufA[i + width]) / 2 - bufB[i];
+        bufB[i] = val * damping;
+      }
+    }
+    const tmp = bufA;
+    bufA = bufB;
+    bufB = tmp;
+  };
 
-    return `#${toHex(lerp(r1, r2, clampProgress))}${toHex(lerp(g1, g2, clampProgress))}${toHex(lerp(b1, b2, clampProgress))}`;
-};
+  const disturb = (x: number, y: number, radius = 4, power = 1) => {
+    const r2 = radius * radius;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const px = x + dx;
+        const py = y + dy;
+        if (px <= 1 || px >= width - 1 || py <= 1 || py >= height - 1) continue;
+        bufA[py * width + px] = power;
+      }
+    }
+  };
 
-const buildBlobPath = (value: number, offset: number) => {
-    const total = blobPaths.length;
-    const shifted = wrapIndex(value + offset, total);
-    const base = Math.floor(shifted);
-    const progress = shifted - base;
-    const next = (base + 1) % total;
-    return interpolate(blobPaths[base], blobPaths[next])(progress);
-};
-
-const filterId = "vc-liquid-gooey";
+  return { step, disturb, get buffer() { return bufA; }, width, height };
+}
 
 const LiquidBackground = () => {
-    const pathIndex = useMotionValue(0);
-    const colors = ["#E67E22", "#2C3E50", "#16A085"]; // Coral, Navy, Teal
-    const colorIndex = useMotionValue(0);
-    const pointerX = useSpring(0, { stiffness: 60, damping: 14 });
-    const pointerY = useSpring(0, { stiffness: 60, damping: 14 });
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const simRef = useRef<ReturnType<typeof createRippleSim> | null>(null);
+  const parallaxRef = useRef({ x: 0, y: 0 });
 
-    const path = useTransform(pathIndex, (latest) => buildBlobPath(latest, 0));
-    const secondaryPath = useTransform(pathIndex, (latest) => buildBlobPath(latest, 0.65));
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-    const color = useTransform(colorIndex, (latest) => {
-        const total = colors.length;
-        const wrapped = wrapIndex(latest, total);
-        const base = Math.floor(wrapped);
-        const progress = wrapped - base;
-        const next = (base + 1) % total;
-        return mixHexColors(colors[base], colors[next], progress);
-    });
+    const resize = () => {
+      const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
 
-    const secondaryColor = useTransform(colorIndex, (latest) => {
-        const total = colors.length;
-        const wrapped = wrapIndex(latest + 1, total);
-        const base = Math.floor(wrapped);
-        const progress = wrapped - base;
-        const next = (base + 1) % total;
-        return mixHexColors(colors[base], colors[next], progress);
-    });
+      const simW = Math.min(320, Math.max(160, Math.floor(canvas.width / 6)));
+      const simH = Math.min(200, Math.max(100, Math.floor(canvas.height / 6)));
+      simRef.current = createRippleSim(simW, simH);
+    };
 
-    const parallaxX = useTransform(pointerX, (v) => v * 52);
-    const parallaxY = useTransform(pointerY, (v) => v * 52);
-    const parallaxX2 = useTransform(pointerX, (v) => v * -46);
-    const parallaxY2 = useTransform(pointerY, (v) => v * -46);
-    const wobbleScale = useTransform(pathIndex, (latest) => 0.92 + 0.08 * Math.sin(latest * Math.PI * 0.7));
-    const wobbleScale2 = useTransform(pathIndex, (latest) => 0.9 + 0.1 * Math.cos(latest * Math.PI * 0.65));
+    resize();
+    window.addEventListener("resize", resize);
 
-    useEffect(() => {
-        const controls = animate(pathIndex, blobPaths.length, {
-            duration: 36,
-            repeat: Infinity,
-            repeatType: "loop",
-            ease: "easeInOut"
-        });
+    const base1 = "#0b1224";
+    const base2 = "#0f172a";
+    const accent = "#2dd4bf";
 
-        const colorControls = animate(colorIndex, colors.length, {
-            duration: 28,
-            repeat: Infinity,
-            repeatType: "loop",
-            ease: "linear"
-        });
+    const render = () => {
+      const sim = simRef.current;
+      if (!sim) return;
+      sim.step();
 
-        const handlePointer = (event: PointerEvent) => {
-            const { innerWidth, innerHeight } = window;
-            const x = (event.clientX / innerWidth - 0.5) * 2;
-            const y = (event.clientY / innerHeight - 0.5) * 2;
-            pointerX.set(x);
-            pointerY.set(y);
-        };
+      const { buffer, width: sw, height: sh } = sim;
+      const { width, height } = canvas;
+      ctx.clearRect(0, 0, width, height);
 
-        window.addEventListener("pointermove", handlePointer);
+      // Base gradient
+      const grad = ctx.createLinearGradient(0, 0, width, height);
+      grad.addColorStop(0, base1);
+      grad.addColorStop(1, base2);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
 
-        return () => {
-            controls.stop();
-            colorControls.stop();
-            window.removeEventListener("pointermove", handlePointer);
-        };
-    }, [pathIndex, colorIndex, pointerX, pointerY, colors.length]);
+      // Height-to-normal shading at sim resolution
+      const image = ctx.createImageData(sw, sh);
+      for (let y = 1; y < sh - 1; y++) {
+        for (let x = 1; x < sw - 1; x++) {
+          const i = y * sw + x;
+          const nx = buffer[i - 1] - buffer[i + 1];
+          const ny = buffer[i - sw] - buffer[i + sw];
+          const shade = clamp(128 + (nx + ny) * 180, 0, 255);
+          const o = i * 4;
+          image.data[o] = shade;
+          image.data[o + 1] = shade + 8;
+          image.data[o + 2] = shade + 18;
+          image.data[o + 3] = 64;
+        }
+      }
 
-    return (
-        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-            <motion.svg
-                viewBox="-120 -120 240 240"
-                className="absolute inset-0 h-[120vh] w-[120vw] -left-[10vw] -top-[10vh] opacity-[0.32] mix-blend-screen"
-            >
-                <defs>
-                    <filter id={filterId}>
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur" />
-                        <feColorMatrix
-                            in="blur"
-                            mode="matrix"
-                            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 38 -18"
-                            result="gooey"
-                        />
-                        <feBlend in="SourceGraphic" in2="gooey" />
-                    </filter>
-                </defs>
+      // Upscale
+      const off = document.createElement("canvas");
+      off.width = sw;
+      off.height = sh;
+      const octx = off.getContext("2d");
+      if (octx) {
+        octx.putImageData(image, 0, 0);
+        ctx.save();
+        ctx.scale(width / sw, height / sh);
+        ctx.drawImage(off, 0, 0);
+        ctx.restore();
+      }
 
-                <motion.g filter={`url(#${filterId})`}>
-                    <motion.path
-                        d={path}
-                        fill={color}
-                        style={{ translateX: parallaxX, translateY: parallaxY, scale: wobbleScale }}
-                    />
-                    <motion.path
-                        d={secondaryPath}
-                        fill={secondaryColor}
-                        style={{
-                            translateX: parallaxX2,
-                            translateY: parallaxY2,
-                            scale: wobbleScale2,
-                            rotate: 180,
-                        }}
-                    />
-                </motion.g>
-            </motion.svg>
-        </div>
-    );
+      // Highlight sheen
+      ctx.globalCompositeOperation = "screen";
+      const light = ctx.createRadialGradient(
+        width * (0.5 + parallaxRef.current.x * 0.06),
+        height * (0.4 + parallaxRef.current.y * 0.06),
+        Math.min(width, height) * 0.12,
+        width * 0.5,
+        height * 0.6,
+        Math.min(width, height) * 0.75
+      );
+      light.addColorStop(0, `${accent}25`);
+      light.addColorStop(1, "transparent");
+      ctx.fillStyle = light;
+      ctx.fillRect(0, 0, width, height);
+      ctx.globalCompositeOperation = "source-over";
+
+      rafRef.current = requestAnimationFrame(render);
+    };
+
+    rafRef.current = requestAnimationFrame(render);
+
+    const handlePointer = (event: PointerEvent) => {
+      const sim = simRef.current;
+      if (!sim) return;
+      const rect = canvas.getBoundingClientRect();
+      const xNorm = (event.clientX - rect.left) / rect.width;
+      const yNorm = (event.clientY - rect.top) / rect.height;
+      const sx = Math.floor(xNorm * sim.width);
+      const sy = Math.floor(yNorm * sim.height);
+      sim.disturb(sx, sy, 6, 1.2);
+      parallaxRef.current.x = (xNorm - 0.5) * 2;
+      parallaxRef.current.y = (yNorm - 0.5) * 2;
+      document.documentElement.style.setProperty("--water-parallax-x", `${parallaxRef.current.x * 4}px`);
+      document.documentElement.style.setProperty("--water-parallax-y", `${parallaxRef.current.y * 4}px`);
+    };
+
+    window.addEventListener("pointermove", handlePointer, { passive: true });
+    window.addEventListener("pointerdown", handlePointer, { passive: true });
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("pointermove", handlePointer);
+      window.removeEventListener("pointerdown", handlePointer);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 -z-10 overflow-hidden">
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-soft-light"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.9'/%3E%3C/svg%3E\")",
+        }}
+      />
+    </div>
+  );
 };
 
 export default LiquidBackground;
