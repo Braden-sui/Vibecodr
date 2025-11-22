@@ -1,4 +1,5 @@
-// Route: /studio/import — Import adapters
+// Route: /studio/import - Import adapters
+// NOTE: Studio screens are currently not linked from navigation; VibesComposer is the active entry point.
 // Responsibilities
 // - Accept GitHub repo URL or ZIP
 // - Validate, optionally build static bundle, upload to R2

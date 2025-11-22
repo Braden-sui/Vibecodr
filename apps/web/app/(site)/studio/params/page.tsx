@@ -1,4 +1,5 @@
-// Route: /studio/params — Param designer
+// Route: /studio/params - Param designer
+// NOTE: Studio screens are currently not linked from navigation; VibesComposer is the active entry point.
 // Responsibilities
 // - Define sliders/toggles/selects bound to manifest.params
 // - Live preview capsule with param changes

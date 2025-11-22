@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { motion } from "framer-motion";
 import LiquidBackground from "@/src/components/LiquidBackground";
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Layout = () => {
@@ -16,18 +16,17 @@ const Layout = () => {
             {/* Desktop Sidebar */}
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-            {/* Toggle button */}
-            <button
-                type="button"
-                onClick={() => setSidebarOpen((open) => !open)}
-                className="fixed left-4 top-4 z-50 inline-flex items-center gap-2 rounded-full bg-card/90 backdrop-blur border border-border px-4 py-2 text-sm font-semibold shadow-vc-soft hover:border-border/70 transition-colors md:left-6"
-                aria-pressed={sidebarOpen}
-                aria-label={sidebarOpen ? "Hide navigation" : "Show navigation"}
-            >
-                {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-                <span className="hidden sm:inline">{sidebarOpen ? "Hide menu" : "Show menu"}</span>
-                <span className="sm:hidden">Menu</span>
-            </button>
+            {/* Floating open button */}
+            {!sidebarOpen && (
+                <button
+                    type="button"
+                    onClick={() => setSidebarOpen(true)}
+                    className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-card/90 text-foreground backdrop-blur border border-border shadow-vc-soft hover:border-border/70 hover:bg-card transition-colors md:bottom-8 md:right-8"
+                    aria-label="Show navigation"
+                >
+                    <Menu className="h-5 w-5" />
+                </button>
+            )}
 
             {/* Overlay for small screens */}
             {sidebarOpen && (

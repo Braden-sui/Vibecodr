@@ -9,6 +9,8 @@ import { FilesTab } from "@/components/Studio/FilesTab";
 import { PublishTab } from "@/components/Studio/PublishTab";
 import type { CapsuleDraft } from "@/components/Studio/StudioShell";
 
+// NOTE: Studio UI remains in the codebase but is not currently linked from navigation; VibesComposer is the active path.
+
 /**
  * Studio Index - Main vibe creation workflow
  * Tabs: Import → Params → Files → Publish

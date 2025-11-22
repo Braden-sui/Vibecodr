@@ -42,6 +42,8 @@ CLERK_JWT_ISSUER = "https://clerk.vibecodr.space"
 # Optional: comma-separated audiences (https origins or app identifiers) to require on Clerk tokens
 CLERK_JWT_AUDIENCE = ""
 RUNTIME_ARTIFACTS_ENABLED = "true"
+CAPSULE_BUNDLE_NETWORK_MODE = "offline"
+SAFETY_BLOCKED_CODE_HASHES = "[\"a01194b6e7ef74996341fcaf2578a2487fb2170a5ce4e00f8667b91a34e6209d\",\"200b5b09099113e208a663fe2810cdad71a48617e30cc4bed13894c1117243e6\"]"
 
 # Durable Objects binding for BuildCoordinator
 [durable_objects]

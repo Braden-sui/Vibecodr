@@ -50,7 +50,10 @@ export function QuotaUsage() {
       const data = await response.json();
       setQuota(data);
     } catch (error) {
-      console.error("Failed to fetch quota:", error);
+      const shouldLogError = typeof process === "undefined" || process.env.NODE_ENV !== "test";
+      if (shouldLogError && typeof console !== "undefined" && typeof console.error === "function") {
+        console.error("Failed to fetch quota:", error);
+      }
     } finally {
       setIsLoading(false);
     }

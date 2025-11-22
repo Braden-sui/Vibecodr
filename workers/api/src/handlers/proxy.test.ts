@@ -31,7 +31,7 @@ const createKv = () => {
   } as any;
 };
 
-const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]; ownerId?: string; runtimeKv?: boolean }) => {
+const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]; ownerId?: string; runtimeKv?: boolean; proxyEnabled?: boolean }) => {
   const manifest = {
     ...baseManifest,
     capabilities: options?.manifestHosts ? { net: options.manifestHosts } : undefined,
@@ -52,6 +52,7 @@ const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]
     R2: {} as any,
     RUNTIME_MANIFEST_KV: options?.runtimeKv === false ? undefined : createKv(),
     ALLOWLIST_HOSTS: JSON.stringify(options?.envAllowlist ?? []),
+    NET_PROXY_ENABLED: options?.proxyEnabled ? "true" : undefined,
   } as unknown as Env;
 };
 
@@ -95,8 +96,20 @@ describe("proxy policy helpers", () => {
 });
 
 describe("netProxy integration", () => {
-  it("proxies requests for allowlisted hosts", async () => {
+  it("returns disabled response when feature flag is off", async () => {
     const env = createEnv({ manifestHosts: ["api.github.com"] });
+    vi.stubGlobal("fetch", vi.fn());
+
+    const request = new Request("https://worker.test/proxy?url=https://api.github.com/repos&capsuleId=caps1");
+    const response = await netProxy(request, env as Env, {} as any, {} as any);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "E-VIBECODR-0300" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("proxies requests for allowlisted hosts", async () => {
+    const env = createEnv({ manifestHosts: ["api.github.com"], proxyEnabled: true });
     const fetchMock = vi.fn(async () => new Response("ok", {
       status: 200,
       headers: { "content-type": "text/plain" },
@@ -111,7 +124,7 @@ describe("netProxy integration", () => {
   });
 
   it("rejects hosts that are not in the allowlist", async () => {
-    const env = createEnv({ manifestHosts: ["api.github.com"] });
+    const env = createEnv({ manifestHosts: ["api.github.com"], proxyEnabled: true });
     vi.stubGlobal("fetch", vi.fn());
 
     const request = new Request("https://worker.test/proxy?url=https://evil.example.com&capsuleId=caps1");
@@ -123,7 +136,7 @@ describe("netProxy integration", () => {
   });
 
   it("rejects proxy requests for capsules not owned by the caller", async () => {
-    const env = createEnv({ manifestHosts: ["api.github.com"], ownerId: "other-user" });
+    const env = createEnv({ manifestHosts: ["api.github.com"], ownerId: "other-user", proxyEnabled: true });
     vi.stubGlobal("fetch", vi.fn());
 
     const request = new Request("https://worker.test/proxy?url=https://api.github.com/repos&capsuleId=caps1");
@@ -135,7 +148,7 @@ describe("netProxy integration", () => {
   });
 
   it("enforces rate limits with in-memory fallback when KV binding is missing", async () => {
-    const env = createEnv({ manifestHosts: ["api.github.com"], runtimeKv: false });
+    const env = createEnv({ manifestHosts: ["api.github.com"], runtimeKv: false, proxyEnabled: true });
     const fetchMock = vi.fn(async () => new Response("ok", {
       status: 200,
       headers: { "content-type": "text/plain" },

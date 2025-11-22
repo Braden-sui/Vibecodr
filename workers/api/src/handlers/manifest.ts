@@ -4,6 +4,8 @@ import { verifyAuth, isModeratorOrAdmin } from "../auth";
 import type { Env } from "../index";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { getCapsuleKey } from "../storage/r2";
+import { buildBundleCsp, normalizeBundleNetworkMode } from "../security/bundleCsp";
+import { guessContentType } from "../runtime/mime";
 
 type Handler = (
   req: Request,
@@ -248,17 +250,17 @@ export const getCapsuleBundle: Handler = async (req, env, _ctx, params) => {
       return json({ error: "Entry file not found" }, 404);
     }
 
-    // Determine content type
-    const contentType = getContentType(manifest.entry);
+    const contentType = guessContentType(manifest.entry);
+    const bundleNetworkMode = normalizeBundleNetworkMode(env.CAPSULE_BUNDLE_NETWORK_MODE);
+    const cspHeader = buildBundleCsp(bundleNetworkMode);
 
     return new Response(entryObj.body, {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",
         "X-Capsule-Runner": manifest.runner,
-        // Strict CSP for safety
-        "Content-Security-Policy":
-          "default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'",
+        "X-Vibecodr-Bundle-Contract": "capsule-debug",
+        "Content-Security-Policy": cspHeader,
       },
     });
   } catch (error) {
@@ -271,20 +273,3 @@ export const getCapsuleBundle: Handler = async (req, env, _ctx, params) => {
     );
   }
 };
-
-function getContentType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  const types: Record<string, string> = {
-    html: "text/html",
-    js: "application/javascript",
-    css: "text/css",
-    json: "application/json",
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    svg: "image/svg+xml",
-    wasm: "application/wasm",
-  };
-  return types[ext || ""] || "application/octet-stream";
-}

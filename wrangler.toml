@@ -6,3 +6,4 @@ pages_build_output_dir = "apps/web/dist"
 
 [vars]
 NEXT_PUBLIC_BASE_URL = "https://vibecodr.space"
+NEXT_PUBLIC_RUNTIME_BUNDLE_NETWORK_MODE = "offline"

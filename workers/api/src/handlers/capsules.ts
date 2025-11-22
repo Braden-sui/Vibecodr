@@ -60,6 +60,30 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
   });
 }
 
+const RUNTIME_ARTIFACT_VERSION = "v0.1.0";
+const RUNTIME_ARTIFACT_RUNNERS = new Set<Manifest["runner"]>(["client-static", "webcontainer"]);
+
+function runtimeArtifactsEnabled(env: Env): boolean {
+  const flag = env.RUNTIME_ARTIFACTS_ENABLED;
+  if (typeof flag !== "string") {
+    return true;
+  }
+  return flag.trim().toLowerCase() !== "false";
+}
+
+function isRuntimeArtifactRunner(manifest: Manifest): boolean {
+  return RUNTIME_ARTIFACT_RUNNERS.has(manifest.runner as Manifest["runner"]);
+}
+
+function resolveRuntimeArtifactType(manifest: Manifest): RuntimeArtifactType {
+  if (manifest.runner === "client-static") {
+    return manifest.entry.toLowerCase().endsWith(".html") || manifest.entry.toLowerCase().endsWith(".htm")
+      ? "html"
+      : "react-jsx";
+  }
+  return "react-jsx";
+}
+
 /**
  * POST /capsules/publish
  * Publish a complete capsule bundle to R2 and create D1 record
@@ -300,6 +324,7 @@ export async function enforceSafetyForFiles(env: Env, manifest: Manifest, files:
       code: content,
       language,
       environment: "capsule",
+      codeHash,
     });
 
     logSafetyVerdict(env, {
@@ -319,6 +344,133 @@ export async function enforceSafetyForFiles(env: Env, manifest: Manifest, files:
       });
     }
   }
+}
+
+type RuntimeArtifactSummary = {
+  id: string;
+  runtimeVersion?: string | null;
+  bundleDigest?: string | null;
+  bundleSizeBytes?: number | null;
+  queued?: boolean;
+};
+
+type UploadResultSnapshot = { contentHash: string; totalSize: number; fileCount: number };
+
+async function createRuntimeArtifactForCapsule(params: {
+  env: Env;
+  manifest: Manifest;
+  files: CapsuleFile[];
+  uploadResult: UploadResultSnapshot;
+  capsuleId: string;
+  userId: string;
+}): Promise<RuntimeArtifactSummary> {
+  const { env, manifest, files, uploadResult, capsuleId, userId } = params;
+  const artifactId = crypto.randomUUID();
+  const artifactType = resolveRuntimeArtifactType(manifest);
+  const runtimeVersion = RUNTIME_ARTIFACT_VERSION;
+
+  let bundleR2Key = `capsules/${uploadResult.contentHash}/${manifest.entry}`;
+  let bundleDigest = uploadResult.contentHash;
+  let bundleSizeBytes = uploadResult.totalSize;
+
+  if (manifest.runner === "webcontainer") {
+    try {
+      const sourceFiles = new Map<string, Uint8Array>();
+      for (const file of files) {
+        if (file.path === "manifest.json") continue;
+        const content =
+          typeof file.content === "string"
+            ? new TextEncoder().encode(file.content)
+            : new Uint8Array(file.content as ArrayBuffer);
+        sourceFiles.set(file.path, content);
+      }
+
+      const bundled = await bundleInlineJs(sourceFiles, manifest.entry);
+      bundleR2Key = `artifacts/${artifactId}/bundle.js`;
+      bundleSizeBytes = bundled.content.byteLength;
+      bundleDigest = await hashUint8(bundled.content);
+
+      await env.R2.put(bundleR2Key, bundled.content, {
+        httpMetadata: { contentType: "application/javascript" },
+      });
+    } catch (err) {
+      console.error("E-VIBECODR-0501 runtime artifact bundle failed", {
+        capsuleId,
+        artifactId,
+        runner: manifest.runner,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new PublishCapsuleError(500, {
+        error: "Failed to build runtime artifact",
+        code: "E-VIBECODR-0501",
+      });
+    }
+  } else {
+    const entryFile = files.find((f) => f.path === manifest.entry);
+    if (entryFile) {
+      const entryBytes =
+        typeof entryFile.content === "string"
+          ? new TextEncoder().encode(entryFile.content)
+          : new Uint8Array(entryFile.content as ArrayBuffer);
+      bundleDigest = await hashUint8(entryBytes);
+      bundleSizeBytes = entryFile.size;
+    }
+  }
+
+  const runtimeManifest = buildRuntimeManifest({
+    artifactId,
+    type: artifactType,
+    bundleKey: bundleR2Key,
+    bundleSizeBytes,
+    bundleDigest,
+    runtimeVersion,
+  });
+
+  const runtimeManifestJson = JSON.stringify(runtimeManifest);
+  const runtimeManifestBytes = new TextEncoder().encode(runtimeManifestJson);
+  const runtimeManifestSize = runtimeManifestBytes.byteLength;
+  const runtimeManifestKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
+
+  await env.R2.put(runtimeManifestKey, runtimeManifestJson, {
+    httpMetadata: {
+      contentType: "application/json",
+    },
+  });
+
+  await env.DB.prepare(
+    "INSERT INTO artifacts (id, owner_id, capsule_id, type, runtime_version, bundle_digest) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(artifactId, userId, capsuleId, artifactType, runtimeVersion, runtimeManifest.bundle.digest)
+    .run();
+
+  const artifactManifestId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO artifact_manifests (id, artifact_id, version, manifest_json, size_bytes, runtime_version) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(artifactManifestId, artifactId, 1, runtimeManifestJson, runtimeManifestSize, runtimeVersion)
+    .run();
+
+  if (env.RUNTIME_MANIFEST_KV) {
+    const kvKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
+    try {
+      await env.RUNTIME_MANIFEST_KV.put(kvKey, runtimeManifestJson);
+    } catch (kvErr) {
+      console.error("E-VIBECODR-0502 runtime manifest KV write failed", {
+        capsuleId,
+        artifactId,
+        userId,
+        error: kvErr instanceof Error ? kvErr.message : String(kvErr),
+      });
+    }
+  }
+
+  return {
+    id: artifactId,
+    runtimeVersion,
+    bundleDigest: runtimeManifest.bundle.digest,
+    bundleSizeBytes,
+    queued: false,
+  };
 }
 
 export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<PersistCapsuleResult> {
@@ -484,106 +636,29 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
       }
     | null = null;
 
-  if (
-    env.RUNTIME_ARTIFACTS_ENABLED &&
-    env.RUNTIME_ARTIFACTS_ENABLED !== "false" &&
-    (manifest.runner === "client-static" || manifest.runner === "webcontainer")
-  ) {
+  const shouldBuildArtifact = runtimeArtifactsEnabled(env) && isRuntimeArtifactRunner(manifest);
+  if (shouldBuildArtifact) {
     try {
-      const artifactId = crypto.randomUUID();
-      const artifactType: RuntimeArtifactType =
-        manifest.runner === "client-static"
-          ? manifest.entry.toLowerCase().endsWith(".html") || manifest.entry.toLowerCase().endsWith(".htm")
-            ? "html"
-            : "react-jsx"
-          : "react-jsx";
-      const runtimeVersion = "v0.1.0";
-
-      let bundleR2Key = `capsules/${uploadResult.contentHash}/${manifest.entry}`;
-      let bundleDigest = uploadResult.contentHash;
-      let bundleSizeBytes = uploadResult.totalSize;
-
-      if (manifest.runner === "webcontainer") {
-        const sourceFiles = new Map<string, Uint8Array>();
-        for (const file of files) {
-          if (file.path === "manifest.json") continue;
-          const content =
-            typeof file.content === "string" ? new TextEncoder().encode(file.content) : new Uint8Array(file.content as ArrayBuffer);
-          sourceFiles.set(file.path, content);
-        }
-
-        const bundled = await bundleInlineJs(sourceFiles, manifest.entry);
-        bundleR2Key = `artifacts/${artifactId}/bundle.js`;
-        bundleSizeBytes = bundled.content.byteLength;
-        bundleDigest = await hashUint8(bundled.content);
-
-        await env.R2.put(bundleR2Key, bundled.content, {
-          httpMetadata: { contentType: "application/javascript" },
-        });
-      } else {
-        const entryFile = files.find((f) => f.path === manifest.entry);
-        bundleSizeBytes = entryFile?.size ?? uploadResult.totalSize;
-      }
-
-      const runtimeManifest = buildRuntimeManifest({
-        artifactId,
-        type: artifactType,
-        bundleKey: bundleR2Key,
-        bundleSizeBytes,
-        bundleDigest,
-        runtimeVersion,
+      artifactSummary = await createRuntimeArtifactForCapsule({
+        env,
+        manifest,
+        files,
+        uploadResult,
+        capsuleId,
+        userId: user.userId,
       });
-
-      const runtimeManifestJson = JSON.stringify(runtimeManifest);
-      const runtimeManifestBytes = new TextEncoder().encode(runtimeManifestJson);
-      const runtimeManifestSize = runtimeManifestBytes.byteLength;
-      const runtimeManifestKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
-
-      await env.R2.put(runtimeManifestKey, runtimeManifestJson, {
-        httpMetadata: {
-          contentType: "application/json",
-        },
-      });
-
-      await env.DB.prepare(
-        "INSERT INTO artifacts (id, owner_id, capsule_id, type, runtime_version, bundle_digest) VALUES (?, ?, ?, ?, ?, ?)"
-      )
-        .bind(artifactId, user.userId, capsuleId, artifactType, runtimeVersion, runtimeManifest.bundle.digest)
-        .run();
-
-      const artifactManifestId = crypto.randomUUID();
-      await env.DB.prepare(
-        "INSERT INTO artifact_manifests (id, artifact_id, version, manifest_json, size_bytes, runtime_version) VALUES (?, ?, ?, ?, ?, ?)"
-      )
-        .bind(artifactManifestId, artifactId, 1, runtimeManifestJson, runtimeManifestSize, runtimeVersion)
-        .run();
-
-      if (env.RUNTIME_MANIFEST_KV) {
-        try {
-          const kvKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
-          await env.RUNTIME_MANIFEST_KV.put(kvKey, runtimeManifestJson);
-        } catch (kvErr) {
-          console.error("runtime manifest KV write failed", {
-            capsuleId,
-            artifactId,
-            userId: user.userId,
-            error: kvErr instanceof Error ? kvErr.message : String(kvErr),
-          });
-        }
-      }
-
-      artifactSummary = {
-        id: artifactId,
-        runtimeVersion,
-        bundleDigest: runtimeManifest.bundle.digest,
-        bundleSizeBytes,
-        queued: false,
-      };
     } catch (err) {
-      console.error("artifact creation failed", {
+      if (err instanceof PublishCapsuleError) {
+        throw err;
+      }
+      console.error("E-VIBECODR-0503 runtime artifact create failed", {
         capsuleId,
         userId: user.userId,
         error: err instanceof Error ? err.message : String(err),
+      });
+      throw new PublishCapsuleError(500, {
+        error: "Failed to create runtime artifact",
+        code: "E-VIBECODR-0503",
       });
     }
   }

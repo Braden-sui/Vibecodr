@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Github, Upload, Loader2, CheckCircle2 } from "lucide-react";
+import { Github, Upload, Loader2, CheckCircle2, FileCode } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { analyzeZipFile, formatBytes } from "@/lib/zipBundle";
 import { capsulesApi } from "@/lib/api";
@@ -16,7 +16,7 @@ import { trackEvent } from "@/lib/analytics";
 import type { Manifest } from "@vibecodr/shared/manifest";
 import type { CapsuleDraft, DraftArtifact, DraftFile } from "./StudioShell";
 
-type ImportMethod = "github" | "zip";
+type ImportMethod = "github" | "zip" | "single";
 
 interface ImportTabProps {
   draft?: CapsuleDraft;
@@ -39,6 +39,8 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
   const [error, setError] = useState<string>("");
   const [isZipDragActive, setIsZipDragActive] = useState(false);
   const { getToken } = useAuth();
+  const [singleStatus, setSingleStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
+  const [singleError, setSingleError] = useState<string>("");
 
   const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -195,6 +197,71 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
     }
   };
 
+  const importSingleFile = async (file: File) => {
+    setSingleStatus("uploading");
+    setSingleError("");
+    setError("");
+    try {
+      const manifest: Manifest = {
+        version: "1.0",
+        runner: "client-static",
+        entry: "index.jsx",
+      };
+
+      const formData = new FormData();
+      formData.append("manifest", new Blob([JSON.stringify(manifest)], { type: "application/json" }), "manifest.json");
+      formData.append("index.jsx", file, "index.jsx");
+
+      const init = await buildAuthInit();
+      const response = await capsulesApi.publish(formData, init);
+      if (response.status === 401) {
+        redirectToSignIn();
+        return;
+      }
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        capsuleId?: string;
+        manifest?: Manifest;
+        warnings?: Array<{ path: string; message: string }>;
+        errors?: Array<{ path: string; message: string }>;
+        artifact?: DraftArtifact | null;
+        error?: string;
+      };
+
+      if (!response.ok || !data.success || !data.capsuleId) {
+        const message = data.error || "Single file upload failed. Please try again.";
+        setSingleStatus("error");
+        setSingleError(message);
+        setError(message);
+        return;
+      }
+
+      const files: DraftFile[] = [
+        {
+          path: "index.jsx",
+          type: file.type || "application/javascript",
+          size: file.size,
+          file,
+        },
+      ];
+
+      applyServerManifest(data.manifest ?? manifest, data.warnings, data.errors, {
+        sourceName: file.name,
+        capsuleId: data.capsuleId,
+        artifact: data.artifact ?? null,
+        files,
+      });
+      setSingleStatus("success");
+      setImportMethod("single");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to upload file";
+      setSingleStatus("error");
+      setSingleError(message);
+      setError(message);
+    }
+  };
+
   const handleGithubImport = async () => {
     const trimmedUrl = githubUrl.trim();
     if (!trimmedUrl) return;
@@ -300,7 +367,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
       </div>
 
       <Tabs value={importMethod} onValueChange={(v) => setImportMethod(v as ImportMethod)}>
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="github" className="gap-2">
             <Github className="h-4 w-4" />
             GitHub
@@ -308,6 +375,10 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
           <TabsTrigger value="zip" className="gap-2">
             <Upload className="h-4 w-4" />
             ZIP Upload
+          </TabsTrigger>
+          <TabsTrigger value="single" className="gap-2">
+            <FileCode className="h-4 w-4" />
+            Single JSX
           </TabsTrigger>
         </TabsList>
 
@@ -390,6 +461,63 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
               <p>- SSR or server-only code will be flagged</p>
               <p>- License information will be detected (SPDX)</p>
               <p>- For best results, use static exports (Next.js: next export, Vite: vite build)</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Single file upload */}
+        <TabsContent value="single" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Upload a single React JSX file</CardTitle>
+              <CardDescription>
+                Provide one `.jsx` entry file. We will wrap it as `index.jsx` and publish directly.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="single-file">Select file</Label>
+                <Input
+                  id="single-file"
+                  type="file"
+                  accept=".jsx,.tsx,.js,.ts"
+                  disabled={singleStatus === "uploading"}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      importSingleFile(file);
+                    }
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  We set runner=client-static and entry=index.jsx for you. Bundle size limits still apply.
+                </p>
+              </div>
+
+              {singleStatus === "uploading" && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Uploading and publishing…
+                </div>
+              )}
+
+              {singleStatus === "success" && (
+                <div className="rounded-md bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-400">
+                  File uploaded and published. Continue to Params or Publish.
+                </div>
+              )}
+
+              {singleStatus === "error" && (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {singleError || "Upload failed"}
+                </div>
+              )}
+
+              {error && importMethod === "single" && singleStatus !== "error" && (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

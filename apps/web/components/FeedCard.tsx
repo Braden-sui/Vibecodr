@@ -26,7 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
-import { capsulesApi, moderationApi, postsApi, usersApi } from "@/lib/api";
+import { artifactsApi, capsulesApi, moderationApi, postsApi, usersApi } from "@/lib/api";
 import { ReportButton } from "@/components/ReportButton";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import {
@@ -71,10 +71,12 @@ function toOrigin(url: string | null | undefined): string | null {
   }
 }
 
-function resolveRunnerOrigins(capsuleId?: string): string[] {
+function resolveRunnerOrigins(capsuleId?: string, artifactId?: string | null): string[] {
   if (!capsuleId) return [];
   const origins = new Set<string>();
-  const bundleOrigin = toOrigin(capsulesApi.bundleSrc(capsuleId));
+  const bundleOrigin = toOrigin(
+    artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)
+  );
   const runtimeCdnOrigin = toOrigin(process.env.NEXT_PUBLIC_RUNTIME_CDN_ORIGIN);
 
   if (bundleOrigin) {
@@ -242,9 +244,17 @@ export function FeedCard({ post }: FeedCardProps) {
   );
 
   const capsuleId = post.capsule?.id;
+  const artifactId = post.capsule?.artifactId ?? null;
   const isWebContainer = post.capsule?.runner === "webcontainer";
   // Note: WebContainer runner should support equivalent pause/resume semantics when inline runs are enabled.
-  const runnerOrigins = useMemo(() => resolveRunnerOrigins(capsuleId), [capsuleId]);
+  const bundleUrl = useMemo(
+    () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsuleId ? capsulesApi.bundleSrc(capsuleId) : ""),
+    [artifactId, capsuleId]
+  );
+  const runnerOrigins = useMemo(
+    () => resolveRunnerOrigins(capsuleId, artifactId),
+    [artifactId, capsuleId]
+  );
   const runnerOriginWarnedRef = useRef(false);
 
   const warnMissingRunnerOrigins = useCallback(
@@ -730,9 +740,10 @@ export function FeedCard({ post }: FeedCardProps) {
                 <div className="absolute inset-0 z-10">
                   <iframe
                     ref={iframeRef}
-                    src={capsulesApi.bundleSrc(capsuleId)}
+                    src={bundleUrl}
                     className="h-full w-full border-0"
                     sandbox="allow-scripts allow-same-origin"
+                    data-runtime-network-mode={process.env.NEXT_PUBLIC_RUNTIME_BUNDLE_NETWORK_MODE || "offline"}
                     style={{
                       colorScheme: "normal",
                     }}

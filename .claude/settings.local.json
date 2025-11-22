@@ -9,7 +9,9 @@
       "WebFetch(domain:opennext.js.org)",
       "WebSearch",
       "Bash(dir /b \"c:\\Users\\brade\\Desktop\\vibecodr\" 2)",
-      "Bash(nul)"
+      "Bash(nul)",
+      "Bash(dir /s /b c:UsersbradeDesktopvibecodrapps 2)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "../index";
-import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest } from "./artifacts";
+import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest, getArtifactBundle } from "./artifacts";
 import { getUserRunQuotaState, Plan } from "../storage/quotas";
 
 vi.mock("../auth", () => {
@@ -137,7 +137,7 @@ const createEnv = (): Env => {
             return {
               results: [
                 {
-                  manifest_json: JSON.stringify({ artifactId: "kv-artifact", source: "db" }),
+                  manifest_json: runtimeManifestFor("kv-artifact", "db"),
                   version: 1,
                   runtime_version: "v0.1.0",
                 },
@@ -148,7 +148,7 @@ const createEnv = (): Env => {
             return {
               results: [
                 {
-                  manifest_json: JSON.stringify({ artifactId: "db-artifact", source: "db" }),
+                  manifest_json: runtimeManifestFor("db-artifact", "db"),
                   version: 2,
                   runtime_version: "v0.1.0",
                 },
@@ -158,7 +158,7 @@ const createEnv = (): Env => {
           return {
             results: [
               {
-                manifest_json: JSON.stringify({ artifactId: "a1", type: "react-jsx" }),
+                manifest_json: runtimeManifestFor(typeof artifactId === "string" ? artifactId : "a1"),
                 version: 1,
                 runtime_version: "v0.1.0",
               },
@@ -171,7 +171,9 @@ const createEnv = (): Env => {
         return { success: true };
       },
       async first() {
-        return undefined;
+        const res = await this.all();
+        // Normalize shape similar to D1 first()
+        return (res as any)?.results?.[0] ?? null;
       },
     };
     return stmt;
@@ -184,6 +186,33 @@ const createEnv = (): Env => {
   const kvGet = vi.fn(async (key: string) => {
     return kvStore.get(key) ?? null;
   });
+  const runtimeManifestFor = (id: string, source?: string) =>
+    JSON.stringify({
+      artifactId: id,
+      type: "react-jsx",
+      runtime: {
+        version: "v0.1.0",
+        assets: {
+          bridge: { path: "/runtime-assets/v0.1.0/bridge.js" },
+          guard: { path: "/runtime-assets/v0.1.0/guard.js" },
+          runtimeScript: { path: "/runtime-assets/v0.1.0/react-runtime.js" },
+        },
+      },
+      bundle: {
+        r2Key: `artifacts/${id}/bundle.js`,
+        sizeBytes: 1024,
+        digest: `digest-${id}`,
+      },
+      source,
+    });
+
+  const r2Objects = new Map<
+    string,
+    {
+      body: any;
+      httpMetadata?: { contentType?: string };
+    }
+  >();
 
   const doFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
     return new Response(JSON.stringify({ ok: true, queued: true }), {
@@ -201,7 +230,17 @@ const createEnv = (): Env => {
   return {
     DB: { prepare } as any,
     R2: {
-      put: vi.fn().mockResolvedValue(undefined),
+      put: vi.fn(async (key: string, body: any, options?: any) => {
+        r2Objects.set(key, { body, httpMetadata: options?.httpMetadata });
+      }),
+      get: vi.fn(async (key: string) => {
+        const entry = r2Objects.get(key);
+        if (!entry) return null;
+        return {
+          body: entry.body,
+          httpMetadata: entry.httpMetadata,
+        };
+      }),
     } as any,
     RUNTIME_MANIFEST_KV: {
       put: kvPut,
@@ -493,5 +532,40 @@ describe("artifacts handlers", () => {
     expect(body.artifactId).toBe("db-artifact");
     expect(body.manifest).toBeDefined();
     expect(body.manifest.source).toBe("db");
+  });
+
+  it("serves artifact bundles with strict offline CSP by default", async () => {
+    await (env.R2 as any).put("artifacts/a1/bundle.js", "console.log('ok')", {
+      httpMetadata: { contentType: "application/javascript" },
+    });
+
+    const res = await getArtifactBundle(
+      new Request("https://api.example/artifacts/a1/bundle"),
+      env,
+      {} as any,
+      { p1: "a1" } as any
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Runtime-Artifact")).toBe("a1");
+    expect(res.headers.get("Content-Security-Policy")).toContain("connect-src 'none'");
+    expect(res.headers.get("Content-Type")).toBe("application/javascript");
+  });
+
+  it("allows https connect-src when bundle mode is relaxed", async () => {
+    (env as any).CAPSULE_BUNDLE_NETWORK_MODE = "allow-https";
+    await (env.R2 as any).put("artifacts/a1/bundle.js", "console.log('ok')", {
+      httpMetadata: { contentType: "application/javascript" },
+    });
+
+    const res = await getArtifactBundle(
+      new Request("https://api.example/artifacts/a1/bundle"),
+      env,
+      {} as any,
+      { p1: "a1" } as any
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Security-Policy")).toContain("connect-src 'self' https:");
   });
 });

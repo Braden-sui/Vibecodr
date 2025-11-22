@@ -1,24 +1,25 @@
-# workers/api – Cloudflare Worker API Skeleton
+# workers/api - Cloudflare Worker API Skeleton
 
 This Worker powers the Vibecodr UI at `/api/*`. Most endpoints are implemented and wired to D1/R2; see `src/index.ts` and `src/handlers/*` for full details.
 
 High-level surface area:
 
 - **Manifest & capsules**
-  - `POST /manifest/validate` – validate manifest JSON and return structured errors/warnings.
-  - `POST /capsules/publish` – validate manifest, enforce plan bundle/storage limits, upload bundle to R2, create capsule + assets rows.
-  - `GET /capsules/:id`, `GET /capsules/:id/verify`, `GET /capsules/:id/manifest`, `GET /capsules/:id/bundle` – capsule metadata, integrity checks, manifest, and entry bundle for the Player/Feed.
+  - `POST /manifest/validate` - validate manifest JSON and return structured errors/warnings.
+  - `POST /capsules/publish` - validate manifest, enforce plan bundle/storage limits, upload bundle to R2, create capsule + assets rows.
+  - `GET /capsules/:id`, `GET /capsules/:id/verify`, `GET /capsules/:id/manifest`, `GET /capsules/:id/bundle` - capsule metadata, integrity checks, manifest, and entry bundle for the Player/Feed (debug/legacy).
+  - `GET /artifacts/:id/manifest`, `GET /artifacts/:id/bundle` - runtime manifest + bundle retrieval for iframe runners.
 
 - **Import pipeline**
-  - `POST /import/github` – download a GitHub repo archive, analyze, (stub) bundle via esbuild-wasm, generate manifest, and upload as a capsule.
-  - `POST /import/zip` – accept ZIP upload, analyze contents, generate manifest, and upload as a capsule.
+  - `POST /import/github` - download a GitHub repo archive, analyze, (stub) bundle via esbuild-wasm, generate manifest, and upload as a capsule.
+  - `POST /import/zip` - accept ZIP upload, analyze contents, generate manifest, and upload as a capsule.
 
 - **Feed, posts, and runs**
-  - `GET /posts?mode=latest|following|foryou&q=&tags=` – feed backing the homepage lanes.
-  - `GET /posts/:id` – single post payload used by the Player.
-  - `POST /posts` – create App or Report posts (validated via Zod schema).
-  - `POST /runs/complete` – minimal run logging endpoint (capsuleId/postId, duration, status).
-  - `POST /runs/:id/logs` – append logs from runner (currently a stub that returns 501 with a TODO payload).
+  - `GET /posts?mode=latest|following|foryou&q=&tags=` - feed backing the homepage lanes.
+  - `GET /posts/:id` - single post payload used by the Player.
+  - `POST /posts` - create App or Report posts (validated via Zod schema).
+  - `POST /runs/complete` - minimal run logging endpoint (capsuleId/postId, duration, status).
+  - `POST /runs/:id/logs` - append logs from runner (currently a stub that returns 501 with a TODO payload).
 
 - **Social + profiles**
   - Likes: `POST /posts/:id/like`, `DELETE /posts/:id/like`, `GET /posts/:id/likes`.
@@ -36,14 +37,14 @@ High-level surface area:
   - Content filter helper: `POST /moderation/filter-content`.
 
 - **Embeds & proxy**
-  - `GET /oembed` – oEmbed JSON for `/player/:id` and `/e/:id`.
-  - `GET /e/:id` – static iframe wrapper for embedding the Player.
-  - `GET /og-image/:id` – branded SVG Open Graph image.
-  - `GET /proxy?url=…&capsuleId=…` – authenticated, allowlisted network proxy that only honors manifests for capsules owned by the caller, with per-capsule/host rate limiting and cookie stripping.
+  - `GET /oembed` - oEmbed JSON for `/player/:id` and `/e/:id`.
+  - `GET /e/:id` - static iframe wrapper for embedding the Player.
+  - `GET /og-image/:id` - branded SVG Open Graph image.
+  - `GET /proxy?url=&capsuleId=` - authenticated, allowlisted network proxy that only honors manifests for capsules owned by the caller, with per-capsule/host rate limiting and cookie stripping.
 
 Infra notes:
 - D1 schema lives in `src/schema.sql` and `src/schema.ts` (Drizzle model + Zod contracts). Apply via wrangler migrations or Drizzle once ready.
-- R2 stores immutable capsule bundles keyed by content hash (`capsules/{hash}/…`).
+- R2 stores immutable capsule bundles keyed by content hash (`capsules/{hash}/`).
 - Durable Objects (`BuildCoordinator`) can coordinate build queues and expose `/do/status`.
 - Workers Analytics Engine is wired for simple probes (see `doStatus`).
 - Auth requires `CLERK_JWT_ISSUER` (and optional `CLERK_JWT_AUDIENCE`) so the Worker can verify Clerk-issued JWTs via their JWKS. Write endpoints use `requireAuth` / `requireUser`, and moderator/admin routes gate on `isModeratorOrAdmin` / `requireAdmin`.

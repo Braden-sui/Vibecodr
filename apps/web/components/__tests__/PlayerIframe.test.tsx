@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render } from "@testing-library/react";
 import { act } from "react-dom/test-utils";
-import { capsulesApi } from "@/lib/api";
+import { artifactsApi, capsulesApi } from "@/lib/api";
 import { PlayerIframe } from "../Player/PlayerIframe";
 
 describe("PlayerIframe", () => {
@@ -120,5 +120,78 @@ describe("PlayerIframe", () => {
     });
 
     expect(onError).toHaveBeenCalledWith("runtime exploded");
+  });
+
+  it("prefers artifact bundle origins when artifactId is provided", async () => {
+    const postMessage = vi.fn();
+    const runnerOrigin = new URL(artifactsApi.bundleSrc("artifact1")).origin;
+    const contentWindow = { postMessage } as any;
+    const originalFetch = global.fetch;
+
+    Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", {
+      configurable: true,
+      get() {
+        return contentWindow;
+      },
+    });
+
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          artifactId: "artifact1",
+          type: "react-jsx",
+          runtimeVersion: "v0.1.0",
+          version: 1,
+          manifest: {
+            artifactId: "artifact1",
+            type: "react-jsx",
+            runtime: {
+              version: "v0.1.0",
+              assets: {
+                bridge: { path: "/runtime-assets/v0.1.0/bridge.js" },
+                guard: { path: "/runtime-assets/v0.1.0/guard.js" },
+                runtimeScript: { path: "/runtime-assets/v0.1.0/react-runtime.js" },
+              },
+            },
+            bundle: {
+              r2Key: "artifacts/artifact1/bundle.js",
+              sizeBytes: 1024,
+              digest: "digest",
+            },
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    ) as any;
+
+    render(<PlayerIframe capsuleId="capsule1" artifactId="artifact1" />);
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "ready", payload: {} },
+          origin: runnerOrigin,
+          source: contentWindow,
+        })
+      );
+    });
+
+    act(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, runnerOrigin);
+
+    act(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(postMessage).toHaveBeenCalledWith({ type: "resume" }, runnerOrigin);
+
+    if (originalFetch) {
+      global.fetch = originalFetch;
+    } else {
+      delete (global as any).fetch;
+    }
   });
 });

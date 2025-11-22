@@ -254,6 +254,7 @@ export function AppRoutes() {
 
         {/* Posts */}
         <Route path="/post/new" element={<ShareVibePage />} />
+        <Route path="/composer" element={<ShareVibePage />} />
         <Route path="/post/:id" element={<PostDetailRoute />} />
 
         {/* Marketing / static */}

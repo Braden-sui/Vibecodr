@@ -7,13 +7,15 @@ import {
   checkStorageQuota,
   getUserRunQuotaState,
 } from "../storage/quotas";
-import { RUNTIME_ARTIFACT_TYPES, type RuntimeArtifactType } from "../runtime/runtimeManifest";
+import { RUNTIME_ARTIFACT_TYPES, type RuntimeManifest, type RuntimeArtifactType } from "../runtime/runtimeManifest";
 import {
   ERROR_RUNTIME_MANIFEST_KV_UNAVAILABLE,
   ERROR_RUNTIME_MANIFEST_LOAD_FAILED,
   ERROR_RUNTIME_MANIFEST_PARSE_FAILED,
 } from "@vibecodr/shared";
 import { invalidateLatestArtifactCache } from "../feed-artifacts";
+import { buildBundleCsp, normalizeBundleNetworkMode } from "../security/bundleCsp";
+import { guessContentType } from "../runtime/mime";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -21,6 +23,115 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
     headers: { "content-type": "application/json" },
     ...init,
   });
+}
+
+type ArtifactRow = {
+  id: string;
+  owner_id?: string | null;
+  type: string;
+  runtime_version?: string | null;
+  status: string;
+  policy_status: string;
+  visibility: string;
+};
+
+type ArtifactManifestRow = {
+  manifest_json: string;
+  version: number;
+  runtime_version?: string | null;
+};
+
+type LoadedRuntimeManifest = {
+  artifact: ArtifactRow;
+  manifest: RuntimeManifest;
+  version: number;
+  runtimeVersion: string | null;
+};
+
+async function loadRuntimeManifestForArtifact(
+  env: Env,
+  artifactId: string
+): Promise<{ ok: true; data: LoadedRuntimeManifest } | { ok: false; response: Response }> {
+  const artifact = (await env.DB.prepare(
+    "SELECT id, owner_id, type, runtime_version, status, policy_status, visibility FROM artifacts WHERE id = ? LIMIT 1"
+  )
+    .bind(artifactId)
+    .first()) as ArtifactRow | null;
+
+  if (!artifact) {
+    return { ok: false, response: json({ error: "Artifact not found" }, 404) };
+  }
+
+  if (
+    artifact.status !== "active" ||
+    artifact.policy_status !== "active" ||
+    (artifact.visibility !== "public" && artifact.visibility !== "unlisted")
+  ) {
+    return { ok: false, response: json({ error: "Artifact not available" }, 404) };
+  }
+
+  const manifestRow = (await env.DB.prepare(
+    "SELECT manifest_json, version, runtime_version FROM artifact_manifests WHERE artifact_id = ? ORDER BY version DESC LIMIT 1"
+  )
+    .bind(artifactId)
+    .first()) as ArtifactManifestRow | null;
+
+  if (!manifestRow) {
+    return { ok: false, response: json({ error: "Runtime manifest not found" }, 404) };
+  }
+
+  let manifestJson: string | null = null;
+
+  if (env.RUNTIME_MANIFEST_KV) {
+    try {
+      const kvKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
+      const kvValue = await env.RUNTIME_MANIFEST_KV.get(kvKey);
+      if (typeof kvValue === "string" && kvValue.length > 0) {
+        manifestJson = kvValue;
+      }
+    } catch (kvErr) {
+      console.error(`${ERROR_RUNTIME_MANIFEST_KV_UNAVAILABLE} runtime manifest KV read failed`, {
+        artifactId,
+        error: kvErr instanceof Error ? kvErr.message : String(kvErr),
+      });
+    }
+  }
+
+  if (manifestJson === null) {
+    manifestJson = String(manifestRow.manifest_json || "");
+  }
+
+  let manifest: RuntimeManifest;
+  try {
+    manifest = JSON.parse(manifestJson) as RuntimeManifest;
+  } catch (err) {
+    console.error(`${ERROR_RUNTIME_MANIFEST_PARSE_FAILED} artifact runtime manifest parse failed`, {
+      artifactId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      ok: false,
+      response: json(
+        {
+          error: "Failed to load runtime manifest",
+          code: ERROR_RUNTIME_MANIFEST_PARSE_FAILED,
+        },
+        500
+      ),
+    };
+  }
+
+  const runtimeVersion =
+    artifact.runtime_version || manifestRow.runtime_version || manifest.runtime?.version || null;
+  return {
+    ok: true,
+    data: {
+      artifact,
+      manifest,
+      version: manifestRow.version,
+      runtimeVersion,
+    },
+  };
 }
 
 type AuthedHandler = (
@@ -330,92 +441,18 @@ export const getArtifactManifest: Handler = async (req, env, _ctx, params) => {
   }
 
   try {
-    const { results: artifactResults } = await env.DB.prepare(
-      "SELECT id, type, runtime_version, status, policy_status, visibility FROM artifacts WHERE id = ? LIMIT 1"
-    )
-      .bind(artifactId)
-      .all();
-
-    const artifact = (artifactResults && artifactResults[0]) as
-      | {
-          id: string;
-          type: string;
-          runtime_version?: string | null;
-          status: string;
-          policy_status: string;
-          visibility: string;
-        }
-      | undefined;
-
-    if (!artifact) {
-      return json({ error: "Artifact not found" }, 404);
+    const manifestResult = await loadRuntimeManifestForArtifact(env, artifactId);
+    if (!manifestResult.ok) {
+      return manifestResult.response;
     }
 
-    if (
-      artifact.status !== "active" ||
-      artifact.policy_status !== "active" ||
-      (artifact.visibility !== "public" && artifact.visibility !== "unlisted")
-    ) {
-      return json({ error: "Artifact not available" }, 404);
-    }
-
-    const { results: manifestResults } = await env.DB.prepare(
-      "SELECT manifest_json, version, runtime_version FROM artifact_manifests WHERE artifact_id = ? ORDER BY version DESC LIMIT 1"
-    )
-      .bind(artifactId)
-      .all();
-
-    const manifestRow = (manifestResults && manifestResults[0]) as
-      | { manifest_json: string; version: number; runtime_version?: string | null }
-      | undefined;
-
-    if (!manifestRow) {
-      return json({ error: "Runtime manifest not found" }, 404);
-    }
-
-    let manifestJson: string | null = null;
-
-    if (env.RUNTIME_MANIFEST_KV) {
-      try {
-        const kvKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
-        const kvValue = await env.RUNTIME_MANIFEST_KV.get(kvKey);
-        if (typeof kvValue === "string" && kvValue.length > 0) {
-          manifestJson = kvValue;
-        }
-      } catch (kvErr) {
-        console.error(`${ERROR_RUNTIME_MANIFEST_KV_UNAVAILABLE} runtime manifest KV read failed`, {
-          artifactId,
-          error: kvErr instanceof Error ? kvErr.message : String(kvErr),
-        });
-      }
-    }
-
-    if (manifestJson === null) {
-      manifestJson = String(manifestRow.manifest_json || "");
-    }
-
-    let manifest: unknown;
-    try {
-      manifest = JSON.parse(manifestJson);
-    } catch (err) {
-      console.error(`${ERROR_RUNTIME_MANIFEST_PARSE_FAILED} artifact runtime manifest parse failed`, {
-        artifactId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return json(
-        {
-          error: "Failed to load runtime manifest",
-          code: ERROR_RUNTIME_MANIFEST_PARSE_FAILED,
-        },
-        500
-      );
-    }
+    const { artifact, manifest, runtimeVersion, version } = manifestResult.data;
 
     return json({
       artifactId,
       type: artifact.type,
-      runtimeVersion: artifact.runtime_version || manifestRow.runtime_version || null,
-      version: manifestRow.version,
+      runtimeVersion,
+      version,
       manifest,
     });
   } catch (error) {
@@ -431,4 +468,56 @@ export const getArtifactManifest: Handler = async (req, env, _ctx, params) => {
       500
     );
   }
+};
+
+export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
+  const artifactId = params.p1;
+  if (!artifactId) {
+    return json({ error: "artifactId is required" }, 400);
+  }
+
+  const manifestResult = await loadRuntimeManifestForArtifact(env, artifactId);
+  if (!manifestResult.ok) {
+    return manifestResult.response;
+  }
+
+  const { manifest, runtimeVersion } = manifestResult.data;
+  const bundleKey = manifest.bundle?.r2Key;
+  if (!bundleKey || typeof bundleKey !== "string") {
+    return json(
+      {
+        error: "Runtime bundle reference missing",
+        code: "E-VIBECODR-0504",
+      },
+      500
+    );
+  }
+
+  const object = await env.R2.get(bundleKey);
+  if (!object) {
+    return json(
+      {
+        error: "Runtime bundle not found",
+        code: "E-VIBECODR-0505",
+      },
+      404
+    );
+  }
+
+  const storedContentType = (object as any)?.httpMetadata?.contentType;
+  const contentType = storedContentType || guessContentType(bundleKey);
+  const bundleMode = normalizeBundleNetworkMode(env.CAPSULE_BUNDLE_NETWORK_MODE);
+  const cspHeader = buildBundleCsp(bundleMode);
+  const artifactHeader = manifest.artifactId ? String(manifest.artifactId) : artifactId;
+
+  return new Response(object.body, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "X-Runtime-Artifact": artifactHeader,
+      "X-Runtime-Version": runtimeVersion || "",
+      "Content-Security-Policy": cspHeader,
+    },
+  });
 };

@@ -54,9 +54,13 @@ export async function ensureUserSynced(input: EnsureUserSyncedInput): Promise<vo
     return;
   }
 
+  const shouldLogError = typeof process === "undefined" || process.env.NODE_ENV !== "test";
+
   if (!inFlight) {
     inFlight = postSyncRequest(input).catch((error) => {
-      console.error(ERROR_PREFIX, error);
+      if (shouldLogError && typeof console !== "undefined" && typeof console.error === "function") {
+        console.error(ERROR_PREFIX, error);
+      }
       throw error;
     });
   }

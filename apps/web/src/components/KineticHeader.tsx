@@ -42,14 +42,17 @@ const KineticHeader = ({ text, className }: KineticHeaderProps) => {
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
             className={className}
+            aria-label={text}
             style={{
                 fontVariationSettings: `'wght' ${weight}`,
                 transition: shouldReduceMotion ? "none" : "font-variation-settings 0.2s ease-out",
             }}
         >
+            <span className="sr-only">{text}</span>
             {text.split("").map((char, i) => (
                 <motion.span
                     key={i}
+                    aria-hidden="true"
                     initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{

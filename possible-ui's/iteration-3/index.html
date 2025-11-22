@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vibecodr OS — Iteration 3</title>
+    <title>Vibecodr OS // Iteration 3</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -183,6 +183,132 @@
         box-shadow: 0 0 12px rgba(255, 184, 108, 0.7);
       }
 
+      /* Sidebar */
+      .sidebar-shell {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: 240px;
+        background: rgba(8, 10, 14, 0.92);
+        border-right: 1px solid var(--border);
+        backdrop-filter: blur(28px) saturate(180%);
+        -webkit-backdrop-filter: blur(28px) saturate(180%);
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 18px 16px 14px;
+      }
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 4px 2px 4px 4px;
+      }
+      .sidebar-title {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 13px;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      .sidebar-close {
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--ink);
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.2s ease, border-color 0.2s ease;
+      }
+      .sidebar-close:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+      .sidebar-nav {
+        display: grid;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .sidebar-link {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+        padding: 10px 12px;
+        color: var(--ink);
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      }
+      .sidebar-link:hover {
+        transform: translateX(2px);
+        border-color: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .sidebar-bullet {
+        width: 10px;
+        height: 10px;
+        margin-top: 2px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--amber), #ffd39a);
+        box-shadow: 0 0 12px rgba(255, 184, 108, 0.5);
+        flex-shrink: 0;
+      }
+      .sidebar-link-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .sidebar-label {
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .sidebar-desc {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* Floating menu button */
+      .floating-menu-btn {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--ink);
+        display: grid;
+        place-items: center;
+        box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+        cursor: pointer;
+        transition: transform 0.18s ease, background 0.2s ease, border-color 0.2s ease;
+        z-index: 61;
+      }
+      .floating-menu-btn:hover {
+        transform: translateY(-2px);
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+      .menu-icon-line {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: var(--ink);
+        border-radius: 999px;
+        margin: 3px 0;
+      }
+
       /* Windows */
       .window {
         position: absolute;
@@ -310,6 +436,95 @@
         50% { transform: translate(-2px, 1px); filter: hue-rotate(20deg); }
         100% { transform: translate(0); filter: hue-rotate(0deg); }
       }
+
+      /* Control center */
+      .section-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 0 0 8px;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--ink);
+      }
+      .plan-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .plan-card {
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .plan-card h4 {
+        margin: 0 0 4px;
+        font-size: 14px;
+        color: var(--ink);
+      }
+      .plan-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status-chip.locked {
+        color: #0f172a;
+        background: linear-gradient(120deg, var(--amber), #ffd39a);
+        border: none;
+      }
+      .status-chip.buffering {
+        color: var(--cyan);
+        border-color: rgba(139, 233, 253, 0.35);
+      }
+      .telemetry {
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px dashed rgba(139, 233, 253, 0.3);
+        background: rgba(139, 233, 253, 0.04);
+      }
+      .metric-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0;
+      }
+      .metric-pill {
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        color: var(--ink);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+      }
+      .event-log {
+        margin-top: 8px;
+        display: grid;
+        gap: 6px;
+      }
+      .event-line {
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--muted);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
@@ -323,6 +538,10 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/framer-motion@11.0.0/dist/framer-motion.umd.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+      // Default worker API base for telemetry; override via window.__WORKER_API_BASE__ if needed.
+      window.__WORKER_API_BASE__ = window.__WORKER_API_BASE__ || "https://vibecodr-api.braden-yig.workers.dev";
+    </script>
 
     <script type="text/babel">
       const { useState, useMemo } = React;
@@ -332,32 +551,55 @@
       const motion = {
         div: baseMotion.div || shim("div"),
       };
-
-      const initialWindows = [
-        {
+      const windowDefaults = {
+        composer: {
           id: "composer",
           title: "Composer",
-          zIndex: 11,
           minimized: false,
           position: { x: 200, y: 140 },
           size: { width: 520, height: 380 },
         },
-        {
+        feed: {
           id: "feed",
           title: "Network Feed",
-          zIndex: 12,
           minimized: false,
           position: { x: 760, y: 120 },
           size: { width: 520, height: 440 },
         },
-        {
+        timeline: {
           id: "timeline",
           title: "System Timeline",
-          zIndex: 13,
           minimized: false,
           position: { x: 260, y: 520 },
           size: { width: 520, height: 260 },
         },
+        control: {
+          id: "control",
+          title: "Feed Control Center",
+          minimized: false,
+          position: { x: 1020, y: 420 },
+          size: { width: 500, height: 360 },
+        },
+      };
+      const cloneWindow = (win) => ({
+        ...win,
+        position: { ...win.position },
+        size: { ...win.size },
+      });
+      function getWorkerApiBase() {
+        const hinted = window.__WORKER_API_BASE__ || window.WORKER_API_BASE || null;
+        if (typeof hinted === "string" && hinted.trim()) return hinted.replace(/\/+$/, "");
+        const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+        return isLocal ? "http://127.0.0.1:8787" : "https://vibecodr-api.braden-yig.workers.dev";
+      }
+
+      const TELEMETRY_ENDPOINT = `${getWorkerApiBase()}/runtime-events`;
+
+      const initialWindows = [
+        { ...cloneWindow(windowDefaults.composer), zIndex: 11 },
+        { ...cloneWindow(windowDefaults.feed), zIndex: 12 },
+        { ...cloneWindow(windowDefaults.timeline), zIndex: 13 },
+        { ...cloneWindow(windowDefaults.control), zIndex: 14 },
       ];
 
       const feedData = [
@@ -386,6 +628,20 @@
         { id: "t2", title: "Published vibe: Aurora field", detail: "WebContainer bundle ready", age: "38m ago" },
         { id: "t3", title: "Zip upload analyzed", detail: "Warnings: none", age: "1h ago" },
       ];
+
+      const readinessPlan = {
+        now: [
+          { id: "indexes", title: "Indexes", note: "Composite keys pinned to feed queries; guard explain plans.", status: "locked" },
+          { id: "api", title: "API shape", note: "Cursor contract frozen; error codes E-VIBECODR-####.", status: "locked" },
+          { id: "moderation", title: "Moderation filter", note: "Centralized allow/deny chain; consistent filters.", status: "locked" },
+        ],
+        next: [
+          { id: "ranking", title: "Ranking/search", note: "Collect usage to tune scoring; not live yet.", status: "buffering" },
+          { id: "stats", title: "Denser stats", note: "Likes/runs/remixes exposure pending; logging demand.", status: "buffering" },
+          { id: "caching", title: "KV/caching", note: "Precomputed feeds gated; watch cache hit candidates.", status: "buffering" },
+          { id: "lifecycle", title: "Lifecycle policies", note: "Retention rules for R2 covers and capsules queued.", status: "buffering" },
+        ],
+      };
 
       function Logo() {
         return (
@@ -456,13 +712,17 @@
         );
       }
 
-      function ComposerApp() {
+      function ComposerApp({ onAction }) {
         const [mode, setMode] = useState("status");
+        const handleMode = (next) => {
+          setMode(next);
+          onAction?.("composer_mode", next);
+        };
         return (
           <div>
             <div className="mode-row">
               {["status", "github", "zip", "code"].map((m) => (
-                <button key={m} className={`mode ${mode === m ? "active" : ""}`} onClick={() => setMode(m)}>
+                <button key={m} className={`mode ${mode === m ? "active" : ""}`} onClick={() => handleMode(m)}>
                   {m === "status" ? "Status" : m === "github" ? "GitHub" : m === "zip" ? "ZIP" : "Code"}
                 </button>
               ))}
@@ -473,16 +733,25 @@
               <textarea className="field textarea" placeholder="// write inline code here..." style={{ minHeight: 140 }} />
             )}
             <div className="btn-row">
-              <button className="btn">Preview</button>
-              <button className="btn primary glitch">Deploy</button>
+              <button className="btn" onClick={() => onAction?.("preview", mode)}>Preview</button>
+              <button className="btn primary glitch" onClick={() => onAction?.("deploy", mode)}>Deploy</button>
             </div>
           </div>
         );
       }
 
-      function FeedApp() {
+      function FeedApp({ onAction }) {
         return (
           <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div className="h2" style={{ fontSize: 15 }}>Network Feed</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <span className="status-chip locked">Moderation on</span>
+                <button className="btn" style={{ padding: "6px 10px" }} onClick={() => onAction?.("feed_refresh")}>
+                  Refresh
+                </button>
+              </div>
+            </div>
             {feedData.map((item) => (
               <div key={item.id} style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -523,13 +792,148 @@
         );
       }
 
+      function ControlCenter({ plan, telemetryEnabled, metrics, events, onToggleTelemetry, onTrack }) {
+        return (
+          <div>
+            <div className="section-title">
+              <span>Guardrails (live)</span>
+              <span className="status-chip locked">Locked</span>
+            </div>
+            <div className="plan-grid">
+              {plan.now.map((item) => (
+                <div className="plan-card" key={item.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h4>{item.title}</h4>
+                    <span className="status-chip locked">Locked</span>
+                  </div>
+                  <p>{item.note}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="section-title">
+              <span>Next (metrics only)</span>
+              <span className={`status-chip ${telemetryEnabled ? "buffering" : ""}`}>
+                {telemetryEnabled ? "Buffering signals" : "Tracking off"}
+              </span>
+            </div>
+            <div className="plan-grid">
+              {plan.next.map((item) => (
+                <div className="plan-card" key={item.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h4>{item.title}</h4>
+                    <span className={`status-chip ${item.status === "buffering" ? "buffering" : ""}`}>Not enabled</span>
+                  </div>
+                  <p>{item.note}</p>
+                  <div className="btn-row" style={{ justifyContent: "flex-start", marginTop: 8 }}>
+                    <button className="btn" onClick={() => onTrack?.("metric_probe", item.id)}>
+                      Track readiness
+                    </button>
+                    <button className="btn" disabled title="Configuration gated until signal is green">
+                      Configure (locked)
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="telemetry">
+              <div className="section-title" style={{ marginBottom: 4 }}>
+                <span>Telemetry buffer</span>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+                  <input
+                    type="checkbox"
+                    checked={telemetryEnabled}
+                    onChange={(e) => onToggleTelemetry?.(e.target.checked)}
+                    style={{ accentColor: "#ffb86c", cursor: "pointer" }}
+                  />
+                  Stream events
+                </label>
+              </div>
+              <p className="body" style={{ marginBottom: 6 }}>
+                Buffering interactions now so we can flip on real metrics without shipping new UI.
+              </p>
+              <div className="metric-row">
+                <span className="metric-pill">windows {metrics.windowOpen || 0}</span>
+                <span className="metric-pill">actions {metrics.actions || 0}</span>
+                <span className="metric-pill">deploys {metrics.deploy || 0}</span>
+                <span className="metric-pill">feed refresh {metrics.feed_refresh || 0}</span>
+                <span className="metric-pill">interest pings {metrics.metric_probe || 0}</span>
+              </div>
+              <div className="event-log">
+                {events.length === 0 && <div className="event-line">No events yet. Buffering.</div>}
+                {events.map((evt) => (
+                  <div className="event-line" key={evt.id}>
+                    [{evt.at}] {evt.type} -> {evt.detail || "n/a"}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function sendTelemetry(payload, enabled) {
+        if (!enabled) return;
+        const body = JSON.stringify({
+          ...payload,
+          source: "iteration-3-playground",
+          schema: "ui-telemetry-v1",
+        });
+        if (navigator.sendBeacon) {
+          const ok = navigator.sendBeacon(TELEMETRY_ENDPOINT, new Blob([body], { type: "application/json" }));
+          if (ok) return;
+        }
+        fetch(TELEMETRY_ENDPOINT, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+          keepalive: true,
+        }).catch((err) => {
+          console.warn("E-VIBECODR-3101 telemetry send failed", err);
+        });
+      }
+
       function App() {
         const [windows, setWindows] = useState(initialWindows);
+        const [navOpen, setNavOpen] = useState(true);
+        const [telemetryEnabled, setTelemetryEnabled] = useState(false);
+        const [metrics, setMetrics] = useState({
+          windowOpen: initialWindows.length,
+          actions: 0,
+          deploy: 0,
+          feed_refresh: 0,
+          metric_probe: 0,
+        });
+        const [events, setEvents] = useState([]);
+
+        const recordMetric = (type, detail = "") => {
+          const stamp = new Date();
+          const entry = {
+            id: `${type}-${stamp.getTime()}-${Math.random().toString(16).slice(2, 6)}`,
+            type,
+            detail,
+            at: stamp.toLocaleTimeString(),
+          };
+          setMetrics((prev) => ({
+            ...prev,
+            [type]: (prev[type] || 0) + 1,
+            actions: (prev.actions || 0) + 1,
+          }));
+          setEvents((prev) => [entry, ...prev].slice(0, 6));
+          const payload = { type, detail, ts: stamp.toISOString() };
+          sendTelemetry(payload, telemetryEnabled);
+          console[telemetryEnabled ? "info" : "debug"](
+            telemetryEnabled ? "[telemetry]" : "[telemetry-buffered]",
+            payload,
+          );
+        };
 
         const activeIds = useMemo(() => new Set(windows.map((w) => w.id)), [windows]);
 
         const bringToFront = (id) => {
           setWindows((prev) => {
+            if (prev.length === 0) return prev;
             const maxZ = Math.max(...prev.map((w) => w.zIndex));
             return prev.map((w) => (w.id === id ? { ...w, zIndex: maxZ + 1, minimized: false } : w));
           });
@@ -539,70 +943,114 @@
           setWindows((prev) => prev.filter((w) => w.id !== id));
         };
 
-        const ensureWindow = (id, defaults) => {
+        const ensureWindow = (id) => {
           setWindows((prev) => {
             const exists = prev.find((w) => w.id === id);
+            const maxZ = prev.length ? Math.max(...prev.map((w) => w.zIndex)) : 10;
             if (exists) {
-              const maxZ = Math.max(...prev.map((w) => w.zIndex));
               return prev.map((w) => (w.id === id ? { ...w, zIndex: maxZ + 1, minimized: false } : w));
             }
-            return [...prev, defaults];
+            recordMetric("windowOpen", id);
+            const defaults = cloneWindow(windowDefaults[id]);
+            return [...prev, { ...defaults, zIndex: maxZ + 1 }];
           });
         };
+        const menuItems = [
+          { id: "composer", label: "Composer", detail: "Ship a new vibe" },
+          { id: "feed", label: "Network Feed", detail: "Watch the stream" },
+          { id: "timeline", label: "Timeline", detail: "Latest system events" },
+          { id: "control", label: "Control Center", detail: "Guardrails + metrics" },
+        ];
 
         const contentFor = (id) => {
-          if (id === "composer") return <ComposerApp />;
-          if (id === "feed") return <FeedApp />;
+          if (id === "composer") return <ComposerApp onAction={(action, detail) => recordMetric(action, detail || "composer")} />;
+          if (id === "feed") return <FeedApp onAction={(action) => recordMetric(action, "feed")} />;
           if (id === "timeline") return <TimelineApp />;
+          if (id === "control")
+            return (
+              <ControlCenter
+                plan={readinessPlan}
+                telemetryEnabled={telemetryEnabled}
+                metrics={metrics}
+                events={events}
+                onToggleTelemetry={setTelemetryEnabled}
+                onTrack={(action, detail) => recordMetric(action, detail || "control")}
+              />
+            );
           return <div className="body">Coming soon.</div>;
         };
 
         return (
           <div className="desktop">
+            <motion.div
+              className="sidebar-shell"
+              initial={false}
+              animate={navOpen ? { x: 0, opacity: 1 } : { x: -260, opacity: 0 }}
+              transition={{ duration: 0.26, ease: [0.4, 0, 0.2, 1] }}
+              style={{ pointerEvents: navOpen ? "auto" : "none" }}
+              role="navigation"
+              aria-hidden={!navOpen}
+            >
+              <div className="sidebar-header">
+                <span className="sidebar-title">Navigation</span>
+                <button className="sidebar-close" onClick={() => setNavOpen(false)}>
+                  Close menu
+                </button>
+              </div>
+              <div className="sidebar-nav">
+                {menuItems.map((item) => (
+                  <button
+                    key={item.id}
+                    className="sidebar-link"
+                    onClick={() => {
+                      ensureWindow(item.id);
+                      setNavOpen(false);
+                    }}
+                  >
+                    <span className="sidebar-bullet"></span>
+                    <div className="sidebar-link-text">
+                      <span className="sidebar-label">{item.label}</span>
+                      <span className="sidebar-desc">{item.detail}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+
+            {!navOpen && (
+              <button
+                type="button"
+                className="floating-menu-btn"
+                onClick={() => setNavOpen(true)}
+                aria-label="Show navigation"
+              >
+                <span className="menu-icon-line"></span>
+                <span className="menu-icon-line"></span>
+                <span className="menu-icon-line"></span>
+              </button>
+            )}
+
             <div className="top-info">
               <Logo />
-              <span>vibecodr os · synth-glass · 2099</span>
+              <span>vibecodr os | synth-glass | 2099</span>
             </div>
 
             <div className="icon-stack">
               <DesktopIcon
                 label="Composer"
-                onActivate={() =>
-                  ensureWindow("composer", {
-                    id: "composer",
-                    title: "Composer",
-                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
-                    minimized: false,
-                    position: { x: 200, y: 140 },
-                    size: { width: 520, height: 380 },
-                  })
-                }
+                onActivate={() => ensureWindow("composer")}
               />
               <DesktopIcon
                 label="Feed"
-                onActivate={() =>
-                  ensureWindow("feed", {
-                    id: "feed",
-                    title: "Network Feed",
-                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
-                    minimized: false,
-                    position: { x: 760, y: 120 },
-                    size: { width: 520, height: 440 },
-                  })
-                }
+                onActivate={() => ensureWindow("feed")}
               />
               <DesktopIcon
                 label="Timeline"
-                onActivate={() =>
-                  ensureWindow("timeline", {
-                    id: "timeline",
-                    title: "System Timeline",
-                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
-                    minimized: false,
-                    position: { x: 260, y: 520 },
-                    size: { width: 520, height: 260 },
-                  })
-                }
+                onActivate={() => ensureWindow("timeline")}
+              />
+              <DesktopIcon
+                label="Control"
+                onActivate={() => ensureWindow("control")}
               />
             </div>
 
@@ -622,44 +1070,22 @@
               <DockIcon
                 label="Composer"
                 active={activeIds.has("composer")}
-                onActivate={() =>
-                  ensureWindow("composer", {
-                    id: "composer",
-                    title: "Composer",
-                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
-                    minimized: false,
-                    position: { x: 200, y: 140 },
-                    size: { width: 520, height: 380 },
-                  })
-                }
+                onActivate={() => ensureWindow("composer")}
               />
               <DockIcon
                 label="Feed"
                 active={activeIds.has("feed")}
-                onActivate={() =>
-                  ensureWindow("feed", {
-                    id: "feed",
-                    title: "Network Feed",
-                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
-                    minimized: false,
-                    position: { x: 760, y: 120 },
-                    size: { width: 520, height: 440 },
-                  })
-                }
+                onActivate={() => ensureWindow("feed")}
               />
               <DockIcon
                 label="Timeline"
                 active={activeIds.has("timeline")}
-                onActivate={() =>
-                  ensureWindow("timeline", {
-                    id: "timeline",
-                    title: "System Timeline",
-                    zIndex: Math.max(10, ...windows.map((w) => w.zIndex)) + 1,
-                    minimized: false,
-                    position: { x: 260, y: 520 },
-                    size: { width: 520, height: 260 },
-                  })
-                }
+                onActivate={() => ensureWindow("timeline")}
+              />
+              <DockIcon
+                label="Control"
+                active={activeIds.has("control")}
+                onActivate={() => ensureWindow("control")}
               />
             </div>
           </div>

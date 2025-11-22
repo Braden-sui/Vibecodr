@@ -494,6 +494,12 @@ export const capsulesApi = {
   },
 } as const;
 
+export const artifactsApi = {
+  bundleSrc(artifactId: string) {
+    return workerUrl(`/artifacts/${artifactId}/bundle`);
+  },
+} as const;
+
 export const liveApi = {
   joinWaitlist(
     input: { sessionId: string; email: string; handle: string; plan: string },

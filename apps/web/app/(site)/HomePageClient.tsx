@@ -34,26 +34,37 @@ export default function FeedPage() {
 
   // Keep searchTerm synced with URL `q`
   useEffect(() => {
-    setSearchTerm(searchParams.get("q") ?? "");
+    const nextSearch = searchParams.get("q") ?? "";
+    if (nextSearch !== searchTerm) {
+      setSearchTerm(nextSearch);
+    }
 
     const modeParam = searchParams.get("mode");
-    if (modeParam === "latest" || modeParam === "following" || modeParam === "foryou") {
-      setMode(modeParam);
-    } else {
-      setMode("latest");
+    const nextMode: FeedMode =
+      modeParam === "latest" || modeParam === "following" || modeParam === "foryou"
+        ? modeParam
+        : "latest";
+    if (nextMode !== mode) {
+      setMode(nextMode);
     }
 
     const tagsParam = searchParams.get("tags");
-    if (tagsParam && tagsParam.trim()) {
-      const parts = tagsParam
-        .split(",")
-        .map((tag: string) => tag.trim())
-        .filter(Boolean);
-      setSelectedTags(parts);
-    } else {
-      setSelectedTags([]);
+    const nextTags =
+      tagsParam && tagsParam.trim()
+        ? tagsParam
+            .split(",")
+            .map((tag: string) => tag.trim())
+            .filter(Boolean)
+        : [];
+
+    const tagsChanged =
+      nextTags.length !== selectedTags.length ||
+      nextTags.some((tag, index) => tag !== selectedTags[index]);
+
+    if (tagsChanged) {
+      setSelectedTags(nextTags);
     }
-  }, [searchParams]);
+  }, [searchParams, mode, searchTerm, selectedTags]);
 
   useEffect(() => {
     const controller = new AbortController();

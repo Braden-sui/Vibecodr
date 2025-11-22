@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
+import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 
 export interface SandboxFrameProps {
   manifest: ClientRuntimeManifest;
@@ -19,6 +20,19 @@ export interface SandboxFrameProps {
   onReady?: () => void;
   onError?: (message: string) => void;
   onPolicyViolation?: (event: PolicyViolationEvent) => void;
+}
+
+function buildSandboxCsp(): string {
+  const mode = getRuntimeBundleNetworkMode();
+  const connectSrc = mode === "allow-https" ? "connect-src 'self' https:" : "connect-src 'none'";
+
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'unsafe-inline' https: blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    connectSrc,
+  ].join("; ");
 }
 
 export function buildSandboxFrameSrcDoc({
@@ -44,7 +58,7 @@ export function buildSandboxFrameSrcDoc({
     <meta name="robots" content="noindex" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
+      content="${buildSandboxCsp()}"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
@@ -123,6 +137,7 @@ export const SandboxFrame = forwardRef<HTMLIFrameElement, SandboxFrameProps>(fun
   const combinedClassName = ["block", "w-full", "h-full", "border-0", "bg-transparent", className]
     .filter(Boolean)
     .join(" ");
+  const networkMode = getRuntimeBundleNetworkMode();
 
   return (
     <iframe
@@ -134,6 +149,7 @@ export const SandboxFrame = forwardRef<HTMLIFrameElement, SandboxFrameProps>(fun
       data-runtime-artifact={manifest.artifactId}
       data-runtime-type={manifest.type}
       data-runtime-version={manifest.runtimeVersion}
+      data-runtime-network-mode={networkMode}
       loading="lazy"
       ref={iframeRef}
     />

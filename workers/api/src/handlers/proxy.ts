@@ -37,6 +37,7 @@ interface AllowlistRule {
 }
 
 const ERROR_PROXY_ALLOWLIST_PARSE = "E-VIBECODR-0301";
+const ERROR_PROXY_DISABLED = "E-VIBECODR-0300";
 const ERROR_PROXY_HOST_BLOCKED = "E-VIBECODR-0302";
 const ERROR_PROXY_RATE_LIMIT_STORAGE = "E-VIBECODR-0303";
 const ERROR_PROXY_RATE_LIMIT_STORAGE_MISCONFIG = "E-VIBECODR-0304";
@@ -166,6 +167,10 @@ async function checkRateLimit(env: Env, capsuleId: string, host: string): Promis
  * - Adds CORS headers
  */
 export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, userId) => {
+  if (env.NET_PROXY_ENABLED !== "true") {
+    return json({ error: "Network proxy is disabled for client-static capsules", code: ERROR_PROXY_DISABLED }, 403);
+  }
+
   const url = new URL(req.url);
   const targetUrl = url.searchParams.get("url");
   const capsuleId = url.searchParams.get("capsuleId");

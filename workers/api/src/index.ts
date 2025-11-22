@@ -12,11 +12,14 @@ export interface Env {
   ARTIFACT_COMPILER_DURABLE: DurableObjectNamespace;
   vibecodr_analytics_engine: AnalyticsEngineDataset;
   RUNTIME_ARTIFACTS_ENABLED?: string;
+  CAPSULE_BUNDLE_NETWORK_MODE?: string;
   AWSBEDROCKAPI?: string;
   BEDROCK_REGION?: string;
   BEDROCK_SAFETY_MODEL?: string;
   SAFETY_ENABLED?: string;
   SAFETY_TIMEOUT_MS?: string;
+  SAFETY_BLOCKED_CODE_HASHES?: string;
+  NET_PROXY_ENABLED?: string;
 }
 
 export type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;
@@ -92,7 +95,13 @@ import {
   ogImageHandler,
 } from "./handlers/embeds";
 import { completeRun, appendRunLogs } from "./handlers/runs";
-import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest } from "./handlers/artifacts";
+import {
+  createArtifactUpload,
+  uploadArtifactSources,
+  completeArtifact,
+  getArtifactManifest,
+  getArtifactBundle,
+} from "./handlers/artifacts";
 import { joinLiveWaitlist } from "./handlers/live";
 import { recordRuntimeEvent, getRuntimeAnalyticsSummary } from "./handlers/runtimeEvents";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
@@ -843,6 +852,7 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "PUT", pattern: /^\/artifacts\/([^\/]+)\/sources$/, handler: uploadArtifactSources },
   { method: "PUT", pattern: /^\/artifacts\/([^\/]+)\/complete$/, handler: completeArtifact },
   { method: "GET", pattern: /^\/artifacts\/([^\/]+)\/manifest$/, handler: getArtifactManifest },
+  { method: "GET", pattern: /^\/artifacts\/([^\/]+)\/bundle$/, handler: getArtifactBundle },
 
   // Capsules
   { method: "POST", pattern: /^\/capsules\/publish$/, handler: publishCapsule },

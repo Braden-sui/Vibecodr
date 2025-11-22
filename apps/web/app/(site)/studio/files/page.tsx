@@ -1,4 +1,5 @@
-// Route: /studio/files — Minimal editor
+// Route: /studio/files - Minimal editor
+// NOTE: Studio screens are currently not linked from navigation; VibesComposer is the active entry point.
 // Responsibilities
 // - Show entry file, assets, manifest.json with validation messages
 // - Allow small tweaks, not a full IDE

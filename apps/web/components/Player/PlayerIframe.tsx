@@ -12,12 +12,13 @@ import {
 } from "react";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { capsulesApi } from "@/lib/api";
+import { artifactsApi, capsulesApi } from "@/lib/api";
 import { trackRuntimeEvent } from "@/lib/analytics";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import { loadRuntime } from "@/lib/runtime/registry";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
+import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 
 export interface PlayerIframeProps {
   capsuleId: string;
@@ -83,9 +84,11 @@ function toOrigin(url: string | null | undefined): string | null {
   }
 }
 
-function resolveRunnerOrigins(capsuleId: string): string[] {
+function resolveRunnerOrigins(capsuleId: string, artifactId?: string | null): string[] {
   const origins = new Set<string>();
-  const bundleOrigin = toOrigin(capsulesApi.bundleSrc(capsuleId));
+  const bundleOrigin = toOrigin(
+    artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)
+  );
   const runtimeCdnOrigin = toOrigin(process.env.NEXT_PUBLIC_RUNTIME_CDN_ORIGIN);
 
   if (bundleOrigin) {
@@ -113,11 +116,17 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
     const [errorMessage, setErrorMessage] = useState<string>("");
     const pauseStateRef = useRef<"paused" | "running">("running");
-    const runnerOrigins = useMemo(() => resolveRunnerOrigins(capsuleId), [capsuleId]);
+    const runnerOrigins = useMemo(
+      () => resolveRunnerOrigins(capsuleId, artifactId),
+      [artifactId, capsuleId]
+    );
     const [runtimeManifest, setRuntimeManifest] = useState<ClientRuntimeManifest | null>(null);
     const [runtimeFrame, setRuntimeFrame] = useState<ReactElement | null>(null);
     const heartbeatTrackedRef = useRef(false);
-    const bundleUrl = useMemo(() => capsulesApi.bundleSrc(capsuleId), [capsuleId]);
+    const bundleUrl = useMemo(
+      () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)),
+      [artifactId, capsuleId]
+    );
     const paramsRef = useRef(params);
     useEffect(() => {
       paramsRef.current = params;
@@ -203,7 +212,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           if (!sent) {
             const iframe = iframeRef.current;
             if (iframe) {
-              iframe.src = capsulesApi.bundleSrc(capsuleId);
+              iframe.src = bundleUrl;
             }
             setStatus("loading");
             setErrorMessage("");
@@ -223,7 +232,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return sent;
         },
       }),
-      [capsuleId, sendToIframe]
+      [bundleUrl, capsuleId, sendToIframe]
     );
 
     useEffect(() => {
@@ -470,8 +479,9 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const runtimeRender = runtimeFrame ?? (
       <iframe
         ref={iframeRef}
-        src={capsulesApi.bundleSrc(capsuleId)}
+        src={bundleUrl}
         data-capsule-id={capsuleId}
+        data-runtime-network-mode={getRuntimeBundleNetworkMode()}
         className="h-full w-full"
         sandbox="allow-scripts allow-same-origin"
         allow=""

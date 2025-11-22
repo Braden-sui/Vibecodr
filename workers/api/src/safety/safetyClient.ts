@@ -12,6 +12,7 @@ type SafetyInput = {
   code: string;
   language: string;
   environment: string;
+  codeHash?: string;
 };
 
 type SafetyLog = {
@@ -19,12 +20,6 @@ type SafetyLog = {
   codeHash?: string;
   verdict: SafetyVerdict;
 };
-
-const HARD_BLOCK_PATTERNS = [
-  /xmrig|coinhive|stratum\+tcp/i,
-  /child_process/i,
-  /ProcessBuilder/,
-];
 
 const HEURISTIC_PATTERNS = [
   /child_process|exec|spawn|fork/i,
@@ -37,7 +32,9 @@ const HEURISTIC_PATTERNS = [
   /atob\(|Buffer\.from\(.*base64/i,
 ];
 
-const MAX_CODE_LENGTH = 12000;
+const BLOCKLIST_KV_PREFIX = "safety:blocked-code-hash:";
+const DEFAULT_SAFETY_TAG = "mvp-allow";
+const ERROR_PARSE_BLOCKLIST = "E-VIBECODR-0501";
 
 export function collectSuspiciousPatterns(code: string): string[] {
   const hits: string[] = [];
@@ -55,86 +52,35 @@ export async function runSafetyCheck(env: Env, input: SafetyInput): Promise<Safe
     return allowWithNote("safety disabled");
   }
 
-  if (!env.AWSBEDROCKAPI) {
-    return block("missing AWS Bedrock token");
+  const codeHash = input.codeHash || (await hashCode(input.code));
+  const blocklistHit = await isHashBlocked(env, codeHash);
+  if (blocklistHit.blocked) {
+    return block(`blocked code hash ${codeHash}`, buildTags(["hash_block", blocklistHit.sourceTag], blocklistHit.reason));
   }
 
-  if (HARD_BLOCK_PATTERNS.some((pattern) => pattern.test(input.code))) {
-    return block("hard-block pattern match", ["hard_block"]);
-  }
-
+  // For MVP we only surface heuristics as visibility; we do not block unless hash-listed.
   const suspicious = collectSuspiciousPatterns(input.code);
-  const truncated = input.code.length > MAX_CODE_LENGTH;
-  const codeForModel = truncated ? `${input.code.slice(0, MAX_CODE_LENGTH)}\n/* truncated */` : input.code;
+  const reasons: string[] = suspicious.length > 0 ? [`${DEFAULT_SAFETY_TAG}: heuristics noted`] : [DEFAULT_SAFETY_TAG];
+  const tags = buildTags(
+    [DEFAULT_SAFETY_TAG, suspicious.length > 0 ? "heuristics" : undefined],
+    suspicious.length > 0 ? `patterns=${suspicious.slice(0, 5).join(",")}` : undefined
+  );
 
-  const system = [
-    "You are a security reviewer for a social coding platform.",
-    "Decide if the provided code is safe to run in a restricted container.",
-    "Focus on: remote code execution, crypto mining, arbitrary network calls, filesystem access, process spawning, data exfiltration (env/secrets/tokens), fingerprinting.",
-    "Be conservative. Return ONLY valid JSON:",
-    '{"safe":bool,"risk_level":"low|medium|high","reasons":[...],"blocked_capabilities":[...],"tags":[...]}',
-  ].join(" ");
-
-  const payload = {
-    model: env.BEDROCK_SAFETY_MODEL || "openai.gpt-oss-120b-1:0",
-    messages: [
-      { role: "system", content: system },
-      {
-        role: "user",
-        content: JSON.stringify({
-          language: input.language,
-          environment: input.environment,
-          suspicious_patterns: suspicious,
-          code: codeForModel,
-        }),
-      },
-    ],
-    max_tokens: 256,
-    temperature: 0,
-    response_format: { type: "json_object" },
+  return {
+    safe: true,
+    risk_level: suspicious.length > 0 ? "medium" : "low",
+    reasons,
+    blocked_capabilities: [],
+    tags,
   };
+}
 
-  const timeoutMs = Number(env.SAFETY_TIMEOUT_MS || 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const resp = await fetch(
-      `https://bedrock-runtime.${env.BEDROCK_REGION || "us-west-2"}.amazonaws.com/openai/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${env.AWSBEDROCKAPI}`,
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      }
-    );
-    clearTimeout(timeout);
-
-    if (!resp.ok) {
-      return block(`safety model HTTP ${resp.status}`, ["model_error"]);
-    }
-
-    const json = await resp.json();
-    const content = json?.choices?.[0]?.message?.content;
-    if (!content || typeof content !== "string") {
-      return block("invalid safety model response", ["parse_error"]);
-    }
-
-    const parsed = JSON.parse(content) as SafetyVerdict;
-    const tags = Array.from(new Set([...(parsed.tags ?? []), ...(truncated ? ["truncated"] : [])]));
-    return {
-      safe: !!parsed.safe,
-      risk_level: parsed.risk_level ?? "high",
-      reasons: parsed.reasons ?? ["no reasons provided"],
-      blocked_capabilities: parsed.blocked_capabilities ?? [],
-      tags,
-    };
-  } catch (error) {
-    return block("safety model unavailable", ["timeout"]);
+function buildTags(tags: Array<string | undefined>, detail?: string): string[] {
+  const set = new Set(tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0));
+  if (detail) {
+    set.add(detail);
   }
+  return Array.from(set);
 }
 
 function block(reason: string, tags: string[] = []): SafetyVerdict {
@@ -184,4 +130,48 @@ export function logSafetyVerdict(env: Env, log: SafetyLog) {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+async function isHashBlocked(env: Env, hash: string): Promise<{ blocked: boolean; reason?: string; sourceTag?: string }> {
+  const parsed = parseEnvBlocklist(env.SAFETY_BLOCKED_CODE_HASHES);
+  if (parsed.list.has(hash)) {
+    return { blocked: true, reason: parsed.reason, sourceTag: "env_blocklist" };
+  }
+
+  if (env.RUNTIME_MANIFEST_KV) {
+    try {
+      const kvHit = await env.RUNTIME_MANIFEST_KV.get(`${BLOCKLIST_KV_PREFIX}${hash}`);
+      if (kvHit) {
+        return { blocked: true, reason: kvHit, sourceTag: "kv_blocklist" };
+      }
+    } catch (error) {
+      console.error("E-VIBECODR-0502 kv_blocklist_check_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { blocked: false };
+}
+
+function parseEnvBlocklist(raw?: string): { list: Set<string>; reason: string } {
+  if (!raw) {
+    return { list: new Set(), reason: DEFAULT_SAFETY_TAG };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return {
+        list: new Set(parsed.filter((val): val is string => typeof val === "string" && val.trim().length > 0)),
+        reason: "env blocklist",
+      };
+    }
+  } catch (error) {
+    console.error(ERROR_PARSE_BLOCKLIST, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return { list: new Set(), reason: DEFAULT_SAFETY_TAG };
 }

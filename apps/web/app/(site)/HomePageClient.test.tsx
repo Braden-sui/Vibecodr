@@ -17,6 +17,7 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/lib/analytics", () => ({
   trackEvent: vi.fn(),
+  trackClientError: vi.fn(),
 }));
 
 vi.mock("@/components/FeedCard", () => ({
@@ -84,24 +85,26 @@ describe("HomePageClient feed data source", () => {
   });
 
   it("passes tag filters through to the Worker feed", async () => {
+    console.log("test:start passes tag filters");
     render(
       <MemoryRouter>
         <HomePageClient />
       </MemoryRouter>
     );
 
-    await waitFor(() =>
-      expect(screen.getByText("Worker post latest")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest");
 
     const tagButton = screen.getByText("#canvas");
     fireEvent.click(tagButton);
 
     await waitFor(() =>
-      expect(
-        screen.getByText("Worker post latest [canvas]")
-      ).toBeInTheDocument()
+      expect(mockList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ mode: "latest", tags: ["canvas"] })
+      )
     );
+    expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest [canvas]");
+    console.log("test:end passes tag filters");
   });
 
   it("does not fall back to sample posts on network errors", async () => {

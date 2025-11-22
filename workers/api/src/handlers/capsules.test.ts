@@ -419,6 +419,28 @@ describe("publishCapsule runtime artifacts", () => {
     expect(sqlCalls.some((sql) => sql.includes("INSERT INTO artifacts"))).toBe(true);
     expect(sqlCalls.some((sql) => sql.includes("INSERT INTO artifact_manifests"))).toBe(true);
   });
+
+  it("fails publish when runtime artifact creation fails", async () => {
+    const manifest = {
+      version: "1.0",
+      runner: "client-static",
+      entry: "index.html",
+    };
+
+    const req = createPublishRequest(manifest, "index.html", "<html><body>ok</body></html>");
+    const originalPut = ((env.R2 as any).put as ReturnType<typeof vi.fn>).getMockImplementation();
+    ((env.R2 as any).put as ReturnType<typeof vi.fn>).mockImplementation(async (key: string, body: any, opts?: any) => {
+      if (String(key).includes("runtime-manifest.json")) {
+        throw new Error("artifact manifest write failed");
+      }
+      return originalPut ? await originalPut(key, body, opts) : undefined;
+    });
+
+    const res = await publishCapsule(req, env, {} as any, {} as any);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as any;
+    expect(body.code).toBe("E-VIBECODR-0503");
+  });
 });
 
 describe("persistCapsuleBundle storage reservations", () => {
