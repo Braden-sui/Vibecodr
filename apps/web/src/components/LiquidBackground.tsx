@@ -9,6 +9,36 @@ const blobPaths = [
     "M36.6,-64.7C47.9,-57.1,57.9,-48.3,65.7,-37.8C73.5,-27.3,79.1,-15.1,78.4,-3.2C77.7,8.7,70.7,20.3,62.2,30.3C53.7,40.3,43.7,48.7,32.8,55.4C21.9,62.1,10.1,67.1,-1.4,69.5C-12.9,71.9,-24.1,71.7,-34.6,66.3C-45.1,60.9,-54.9,50.3,-62.4,38.2C-69.9,26.1,-75.1,12.5,-74.3,0.5C-73.5,-11.5,-66.7,-21.9,-58.1,-31.2C-49.5,-40.5,-39.1,-48.7,-28.4,-56.6C-17.7,-64.5,-6.7,-72.1,5.1,-72.9C16.9,-73.7,25.3,-72.3,36.6,-64.7Z"
 ];
 
+const wrapIndex = (value: number, length: number) => ((value % length) + length) % length;
+
+const mixHexColors = (from: string, to: string, progress: number) => {
+    const normalize = (input: string) => {
+        const hex = input.replace("#", "").trim();
+        const expanded = hex.length === 3 ? hex.split("").map((ch) => ch + ch).join("") : hex.padEnd(6, "0").slice(0, 6);
+        const r = parseInt(expanded.slice(0, 2), 16);
+        const g = parseInt(expanded.slice(2, 4), 16);
+        const b = parseInt(expanded.slice(4, 6), 16);
+        return [r, g, b] as const;
+    };
+
+    const lerp = (start: number, end: number, t: number) => Math.round(start + (end - start) * t);
+    const clampProgress = Math.min(1, Math.max(0, progress));
+    const [r1, g1, b1] = normalize(from);
+    const [r2, g2, b2] = normalize(to);
+    const toHex = (value: number) => value.toString(16).padStart(2, "0");
+
+    return `#${toHex(lerp(r1, r2, clampProgress))}${toHex(lerp(g1, g2, clampProgress))}${toHex(lerp(b1, b2, clampProgress))}`;
+};
+
+const buildBlobPath = (value: number, offset: number) => {
+    const total = blobPaths.length;
+    const shifted = wrapIndex(value + offset, total);
+    const base = Math.floor(shifted);
+    const progress = shifted - base;
+    const next = (base + 1) % total;
+    return interpolate(blobPaths[base], blobPaths[next])(progress);
+};
+
 const LiquidBackground = () => {
     const pathIndex = useMotionValue(0);
     const colors = ["#E67E22", "#2C3E50", "#16A085"]; // Coral, Navy, Teal
@@ -16,33 +46,45 @@ const LiquidBackground = () => {
     const pointerX = useSpring(0, { stiffness: 60, damping: 14 });
     const pointerY = useSpring(0, { stiffness: 60, damping: 14 });
 
-    const path = useTransform(pathIndex, (latest) => {
-        const index = Math.round(latest) % blobPaths.length;
-        const nextIndex = (index + 1) % blobPaths.length;
-        const progress = latest - Math.floor(latest);
-        return interpolate(blobPaths[index], blobPaths[nextIndex])(progress);
+    const path = useTransform(pathIndex, (latest) => buildBlobPath(latest, 0));
+    const secondaryPath = useTransform(pathIndex, (latest) => buildBlobPath(latest, 0.65));
+
+    const color = useTransform(colorIndex, (latest) => {
+        const total = colors.length;
+        const wrapped = wrapIndex(latest, total);
+        const base = Math.floor(wrapped);
+        const progress = wrapped - base;
+        const next = (base + 1) % total;
+        return mixHexColors(colors[base], colors[next], progress);
     });
 
-    const color = useTransform(colorIndex, (latest) => colors[Math.round(latest) % colors.length]);
+    const secondaryColor = useTransform(colorIndex, (latest) => {
+        const total = colors.length;
+        const wrapped = wrapIndex(latest + 1, total);
+        const base = Math.floor(wrapped);
+        const progress = wrapped - base;
+        const next = (base + 1) % total;
+        return mixHexColors(colors[base], colors[next], progress);
+    });
 
-    const parallaxX = useTransform(pointerX, (v) => v * 0.02);
-    const parallaxY = useTransform(pointerY, (v) => v * 0.02);
-    const parallaxX2 = useTransform(pointerX, (v) => v * -0.015);
-    const parallaxY2 = useTransform(pointerY, (v) => v * -0.015);
+    const parallaxX = useTransform(pointerX, (v) => v * 48);
+    const parallaxY = useTransform(pointerY, (v) => v * 48);
+    const parallaxX2 = useTransform(pointerX, (v) => v * -36);
+    const parallaxY2 = useTransform(pointerY, (v) => v * -36);
 
     useEffect(() => {
-        const controls = animate(pathIndex, blobPaths.length * 10, {
-            duration: 20,
+        const controls = animate(pathIndex, blobPaths.length, {
+            duration: 36,
             repeat: Infinity,
-            repeatType: "mirror",
-            ease: "easeInOut",
+            repeatType: "loop",
+            ease: "easeInOut"
         });
 
-        const colorControls = animate(colorIndex, colors.length * 10, {
-            duration: 30,
+        const colorControls = animate(colorIndex, colors.length, {
+            duration: 28,
             repeat: Infinity,
-            repeatType: "mirror",
-            ease: "linear",
+            repeatType: "loop",
+            ease: "linear"
         });
 
         const handlePointer = (event: PointerEvent) => {
@@ -77,7 +119,7 @@ const LiquidBackground = () => {
                 className="absolute bottom-[-25%] right-[-15%] w-[80vw] h-[80vw] opacity-18 blur-2xl mix-blend-screen"
                 style={{ rotate: 180, translateX: parallaxX2, translateY: parallaxY2 }}
             >
-                <motion.path d={path} fill={colors[1]} />
+                <motion.path d={secondaryPath} fill={secondaryColor} />
             </motion.svg>
         </div>
     );

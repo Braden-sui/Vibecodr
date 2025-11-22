@@ -159,17 +159,42 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
 
     const ownerId = String((user as any).id);
 
-    const [profileRow, themeRow, blocksResult, projectsResult, badgesResult] = await Promise.all([
-      env.DB.prepare(
-        `SELECT display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, pinned_capsules, profile_capsule_id
-         FROM profiles WHERE user_id = ?`,
-      )
-        .bind(ownerId)
-        .first(),
-      env.DB.prepare(
+    let themeRow: any = null;
+    try {
+      themeRow = await env.DB.prepare(
         `SELECT mode, accent_hue, accent_saturation, accent_lightness, radius_scale, density,
                 accent_color, bg_color, text_color, font_family, cover_image_url, glass, canvas_blur
          FROM profile_themes WHERE user_id = ?`,
+      )
+        .bind(ownerId)
+        .first();
+    } catch (error) {
+      console.error("E-VIBECODR-1006 profile theme lookup failed", {
+        userId: ownerId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      themeRow = null;
+    }
+
+    let badgesResult: any = { results: [] };
+    try {
+      badgesResult = await env.DB.prepare(
+        "SELECT b.id, b.slug, b.label, b.description, b.icon, b.tier FROM user_badges ub INNER JOIN badges b ON ub.badge_id = b.id WHERE ub.user_id = ?",
+      )
+        .bind(ownerId)
+        .all();
+    } catch (error) {
+      console.error("E-VIBECODR-1007 profile badges lookup failed", {
+        userId: ownerId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      badgesResult = { results: [] };
+    }
+
+    const [profileRow, blocksResult, projectsResult] = await Promise.all([
+      env.DB.prepare(
+        `SELECT display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, pinned_capsules, profile_capsule_id
+         FROM profiles WHERE user_id = ?`,
       )
         .bind(ownerId)
         .first(),
@@ -180,11 +205,6 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
         .all(),
       env.DB.prepare(
         "SELECT id, title, description, cover_key, tags, created_at FROM projects WHERE user_id = ? ORDER BY created_at DESC LIMIT 12",
-      )
-        .bind(ownerId)
-        .all(),
-      env.DB.prepare(
-        "SELECT b.id, b.slug, b.label, b.description, b.icon, b.tier FROM user_badges ub INNER JOIN badges b ON ub.badge_id = b.id WHERE ub.user_id = ?",
       )
         .bind(ownerId)
         .all(),
