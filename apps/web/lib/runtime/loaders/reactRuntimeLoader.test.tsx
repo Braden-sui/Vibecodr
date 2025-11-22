@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { reactRuntimeLoader } from "./reactRuntimeLoader";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";

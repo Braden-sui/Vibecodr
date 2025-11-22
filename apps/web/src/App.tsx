@@ -28,15 +28,15 @@ function PrimaryNav() {
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
     >
       <nav className="container mx-auto flex items-center gap-5 py-4">
-        <Highlight className="flex items-center gap-2 rounded-full px-2 py-1">
-          <HighlightItem asChild radiusClassName="rounded-full">
+        <Highlight className="flex items-center gap-2 rounded-full px-2 py-1" radiusClassName="rounded-full">
+          <HighlightItem asChild>
             <Link to="/" data-highlighted={isActive("/") || undefined} className="flex items-center gap-3 px-2 py-1">
               <VibecodrWordmark />
               <span className="hidden text-sm font-medium text-muted-foreground sm:inline">Playable vibes lab</span>
             </Link>
           </HighlightItem>
 
-          <HighlightItem asChild radiusClassName="rounded-full">
+          <HighlightItem asChild>
             <Link
               to="/post/new"
               data-highlighted={isActive("/post/new") || undefined}
@@ -46,7 +46,7 @@ function PrimaryNav() {
             </Link>
           </HighlightItem>
 
-          <HighlightItem asChild radiusClassName="rounded-full">
+          <HighlightItem asChild>
             <Link
               to="/live"
               data-highlighted={isActive("/live") || undefined}
@@ -56,7 +56,7 @@ function PrimaryNav() {
             </Link>
           </HighlightItem>
 
-          <HighlightItem asChild radiusClassName="rounded-full">
+          <HighlightItem asChild>
             <Link
               to="/pricing"
               data-highlighted={isActive("/pricing") || undefined}

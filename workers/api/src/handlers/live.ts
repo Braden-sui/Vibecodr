@@ -58,8 +58,7 @@ export const joinLiveWaitlist: Handler = async (req, env) => {
 
     try {
       await env.vibecodr_analytics_engine.writeDataPoint({
-        blobs: ["live_waitlist"],
-        strings: [plan, sessionId],
+        blobs: ["live_waitlist", plan, sessionId],
       });
     } catch (err) {
       console.warn("E-VIBECODR-0601 live waitlist analytics write failed", {

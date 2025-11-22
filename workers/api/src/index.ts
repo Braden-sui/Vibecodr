@@ -25,19 +25,10 @@ export interface Env {
 export type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;
 
 // Import handlers
-import {
-  validateManifestHandler,
-  getManifest,
-  getCapsuleBundle,
-} from "./handlers/manifest";
+import { validateManifestHandler, getManifest, getCapsuleBundle } from "./handlers/manifest";
 import { importGithub, importZip } from "./handlers/import";
 
-import {
-  publishCapsule,
-  getCapsule,
-  verifyCapsule,
-  getUserQuota,
-} from "./handlers/capsules";
+import { publishCapsule, getCapsule, verifyCapsule, getUserQuota, listUserCapsules } from "./handlers/capsules";
 
 import {
   likePost,
@@ -856,6 +847,7 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
 
   // Capsules
   { method: "POST", pattern: /^\/capsules\/publish$/, handler: publishCapsule },
+  { method: "GET", pattern: /^\/capsules\/mine$/, handler: listUserCapsules },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)$/, handler: getCapsule },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/verify$/, handler: verifyCapsule },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: getManifest },

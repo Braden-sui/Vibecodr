@@ -16,23 +16,29 @@ import { ERROR_RUNTIME_ANALYTICS_FAILED } from "@vibecodr/shared";
 
 const makeEnv = () => {
   const boundValues: any[][] = [];
-  const env = {
-    DB: {
-      prepare: vi.fn(() => ({
-        bind: (...args: any[]) => {
-          boundValues.push(args);
-          return { run: vi.fn().mockResolvedValue(undefined) };
-        },
-      })),
-    },
+  const db = {
+    prepare: vi.fn(() => ({
+      bind: (...args: any[]) => {
+        boundValues.push(args);
+        return { run: vi.fn().mockResolvedValue(undefined) };
+      },
+    })),
+    batch: vi.fn(),
+    exec: vi.fn(),
+    dump: vi.fn(),
+    withSession: vi.fn(),
+  };
+  const env: Env = {
+    DB: db as unknown as D1Database,
     R2: {} as any,
     vibecodr_analytics_engine: {
       writeDataPoint: vi.fn(),
     } as any,
     ALLOWLIST_HOSTS: "[]",
+    CLERK_JWT_ISSUER: "test-issuer",
     BUILD_COORDINATOR_DURABLE: {} as any,
     ARTIFACT_COMPILER_DURABLE: {} as any,
-  } as Env;
+  };
 
   return { env, boundValues };
 };

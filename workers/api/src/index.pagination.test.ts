@@ -52,7 +52,7 @@ describe("getPosts pagination hardening", () => {
     const res = await app.fetch(req, env, ctx);
 
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("E-VIBECODR-0401 invalid pagination");
     expect(prepareCalls.length).toBe(0);
   });
@@ -62,7 +62,7 @@ describe("getPosts pagination hardening", () => {
     const res = await app.fetch(req, env, ctx);
 
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("E-VIBECODR-0404 invalid pagination");
     expect(prepareCalls.length).toBe(0);
   });
@@ -72,7 +72,7 @@ describe("getPosts pagination hardening", () => {
     const res = await app.fetch(req, env, ctx);
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { limit?: number; offset?: number };
     expect(body.limit).toBe(50);
     expect(body.offset).toBe(3);
     expect(prepareCalls).toHaveLength(1);

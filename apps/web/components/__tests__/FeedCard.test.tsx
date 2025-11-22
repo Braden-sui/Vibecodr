@@ -5,6 +5,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom";
 import { FeedCard } from "../FeedCard";
 import { capsulesApi } from "@/lib/api";
+import type { ManifestParam } from "@vibecodr/shared/manifest";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
 const RUNNER_ORIGIN = new URL(capsulesApi.bundleSrc("capsule1")).origin;
@@ -73,6 +74,16 @@ afterAll(() => {
 });
 
 describe("FeedCard", () => {
+  const mockParams: ManifestParam[] = [
+    {
+      name: "count",
+      type: "number",
+      label: "Count",
+      default: 1,
+      min: 0,
+      max: 10,
+    },
+  ];
   const mockPost = {
     id: "post1",
     type: "app" as const,
@@ -89,8 +100,9 @@ describe("FeedCard", () => {
       capabilities: {
         net: ["api.example.com"],
         storage: true,
+        workers: false,
       },
-      params: [{ name: "count" }],
+      params: mockParams,
     },
     tags: ["test", "demo"],
     stats: {

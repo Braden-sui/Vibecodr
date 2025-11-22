@@ -7,6 +7,7 @@
     "build": "vite build",
     "build:spa": "vite build",
     "preview": "vite preview",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:component": "vitest run",

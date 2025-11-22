@@ -25,7 +25,11 @@ import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClie
 import { bundleInlineJs } from "./inlineBundle";
 
 async function hashUint8(data: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data);
+  const buffer =
+    data.byteOffset === 0 && data.byteLength === data.buffer.byteLength
+      ? data.buffer
+      : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(buffer as ArrayBuffer));
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -43,6 +47,36 @@ export class PublishCapsuleError extends Error {
     this.body = body;
   }
 }
+
+export const listUserCapsules: Handler = requireAuth(async (req, env, ctx, params, user) => {
+  const limit = 50;
+  const { results } = await env.DB.prepare(
+    "SELECT id, manifest_json, created_at FROM capsules WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(user.userId, limit)
+    .all();
+
+  const capsules = (results || []).map((row: any) => {
+    let title: string | null = null;
+    try {
+      const manifest = JSON.parse(row.manifest_json || "{}");
+      if (manifest && typeof manifest.name === "string") {
+        title = manifest.name;
+      } else if (manifest && typeof manifest.title === "string") {
+        title = manifest.title;
+      }
+    } catch {
+      title = null;
+    }
+    return {
+      id: String(row.id),
+      title,
+      createdAt: Number(row.created_at ?? 0),
+    };
+  });
+
+  return json({ capsules });
+});
 
 type Handler = (
   req: Request,

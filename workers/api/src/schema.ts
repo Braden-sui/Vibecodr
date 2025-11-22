@@ -349,6 +349,8 @@ export const profiles = sqliteTable("profiles", {
   searchTags: text("search_tags"),
   aboutMd: text("about_md"),
   layoutVersion: integer("layout_version").notNull().default(1),
+  pinnedCapsules: text("pinned_capsules"),
+  profileCapsuleId: text("profile_capsule_id"),
   createdAt: integer("created_at", { mode: "timestamp" }).default(
     sql`(strftime('%s','now'))`,
   ),
@@ -372,6 +374,13 @@ export const profileThemes = sqliteTable("profile_themes", {
   density: text("density", { enum: ["comfortable", "cozy", "compact"] })
     .notNull()
     .default("comfortable"),
+  accentColor: text("accent_color"),
+  bgColor: text("bg_color"),
+  textColor: text("text_color"),
+  fontFamily: text("font_family"),
+  coverImageUrl: text("cover_image_url"),
+  glass: integer("glass", { mode: "boolean" }).notNull().default(false),
+  canvasBlur: integer("canvas_blur"),
 });
 
 // Profile blocks – configurable layout blocks per user
@@ -484,6 +493,11 @@ export const handleHistory = sqliteTable("handle_history", {
 // Profile Zod Schemas
 // ============================================
 
+const hexColor = z
+  .string()
+  .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/)
+  .max(9);
+
 export const profileThemeSchema = z.object({
   mode: z.enum(["system", "light", "dark"]).default("system"),
   accentHue: z.number().int().min(0).max(360).default(260),
@@ -491,6 +505,13 @@ export const profileThemeSchema = z.object({
   accentLightness: z.number().int().min(0).max(100).default(60),
   radiusScale: z.number().int().min(1).max(4).default(2),
   density: z.enum(["comfortable", "cozy", "compact"]).default("comfortable"),
+  accentColor: hexColor.nullable().optional(),
+  bgColor: hexColor.nullable().optional(),
+  textColor: hexColor.nullable().optional(),
+  fontFamily: z.string().max(120).nullable().optional(),
+  coverImageUrl: z.string().url().max(500).nullable().optional(),
+  glass: z.boolean().optional(),
+  canvasBlur: z.number().int().min(0).max(64).optional(),
 });
 
 export type ProfileThemeInput = z.infer<typeof profileThemeSchema>;
@@ -509,6 +530,9 @@ export const profileBlockConfigSchema = z.object({
     "stats",
     "imageGallery",
     "videoEmbed",
+    "banner",
+    "capsuleGrid",
+    "capsuleEmbed",
   ]),
   visibility: z.enum(["public", "followers", "private"]).default("public"),
   props: z.record(z.string(), z.unknown()).default({}),
@@ -548,6 +572,8 @@ export const updateProfileSchema = z.object({
   theme: profileThemeSchema.optional(),
   customFields: z.array(customFieldDefinitionSchema).optional(),
   blocks: z.array(profileBlockConfigSchema).optional(),
+  pinnedCapsules: z.array(z.string().max(64)).max(12).optional(),
+  profileCapsuleId: z.string().max(64).nullable().optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

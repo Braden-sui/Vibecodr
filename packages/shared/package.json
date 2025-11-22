@@ -9,6 +9,7 @@
     "./manifest": "./src/manifest.ts"
   },
   "scripts": {
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run",

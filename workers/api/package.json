@@ -8,6 +8,7 @@
     "dev:api": "wrangler dev --config wrangler.toml --assets assets",
     "deploy": "wrangler deploy",
     "build": "tsc",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",

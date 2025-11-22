@@ -99,9 +99,11 @@ export function trackClientError(code: string, properties?: AnalyticsProps) {
   });
 }
 
-export function trackRuntimeEvent(event: string, payload: AnalyticsPayload) {
+type RuntimeAnalyticsPayload = Omit<AnalyticsPayload, "event">;
+
+export function trackRuntimeEvent(event: string, payload?: RuntimeAnalyticsPayload) {
   void sendAnalytics({
     event,
-    ...payload,
+    ...(payload ?? {}),
   });
 }

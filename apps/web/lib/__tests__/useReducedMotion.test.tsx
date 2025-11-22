@@ -28,8 +28,11 @@ describe("useReducedMotion", () => {
 
   it("reflects media query match state and reacts to changes", () => {
     const listeners: Array<(event: MediaQueryListEvent) => void> = [];
+    let mediaMatches = false;
     const mockMedia = {
-      matches: false,
+      get matches() {
+        return mediaMatches;
+      },
       addEventListener: vi.fn((_event: string, cb: (event: MediaQueryListEvent) => void) => {
         listeners.push(cb);
       }),
@@ -42,7 +45,7 @@ describe("useReducedMotion", () => {
     expect(screen.getByTestId("prefers").textContent).toBe("false");
 
     act(() => {
-      mockMedia.matches = true;
+      mediaMatches = true;
       listeners.forEach((cb) => cb({ matches: true } as MediaQueryListEvent));
     });
 

@@ -1,19 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { enforceSafetyForFiles, PublishCapsuleError } from "./capsules";
 import type { Manifest } from "@vibecodr/shared/manifest";
 
 vi.mock("../safety/safetyClient");
 import * as safetyModule from "../safety/safetyClient";
-const runSafetyCheck = safetyModule.runSafetyCheck as unknown as vi.Mock;
-const logSafetyVerdict = safetyModule.logSafetyVerdict as unknown as vi.Mock;
+const runSafetyCheck = safetyModule.runSafetyCheck as unknown as Mock;
+const logSafetyVerdict = safetyModule.logSafetyVerdict as unknown as Mock;
 
 describe("enforceEntrySafety", () => {
   const manifest: Manifest = {
-    id: "test",
     entry: "index.html",
-    version: "1.0.0",
-    runtime: { type: "html", version: "1" },
-    files: [],
+    version: "1.0",
+    runner: "client-static",
   };
 
   const baseEnv: any = {

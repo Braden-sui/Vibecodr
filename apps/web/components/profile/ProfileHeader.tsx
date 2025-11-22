@@ -49,8 +49,8 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
                 </Badge>
               ) : null}
             </div>
-            <p className="text-sm text-muted-foreground">@{user.handle}</p>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <p className="text-sm text-[var(--vc-muted)]">@{user.handle}</p>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--vc-muted)]">
               {header.pronouns ? <span>{header.pronouns}</span> : null}
               <span>Joined {formatJoined(user.createdAt)}</span>
               {header.location ? <span>{header.location}</span> : null}
@@ -91,8 +91,8 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
           ) : null}
         </div>
       </div>
-      {header.tagline ? <p className="text-sm text-muted-foreground">{header.tagline}</p> : null}
-      {user.bio ? <p className="text-sm leading-relaxed">{user.bio}</p> : null}
+      {header.tagline ? <p className="text-sm text-[var(--vc-muted)]">{header.tagline}</p> : null}
+      {user.bio ? <p className="text-sm leading-relaxed text-[var(--vc-fg)]">{user.bio}</p> : null}
     </header>
   );
 }

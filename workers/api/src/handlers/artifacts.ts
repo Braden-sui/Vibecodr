@@ -335,12 +335,14 @@ const completeArtifactHandler: AuthedHandler = async (req, env, _ctx, params, us
   }
 
   const { results } = await env.DB.prepare(
-    "SELECT id, owner_id FROM artifacts WHERE id = ? LIMIT 1"
+    "SELECT id, owner_id, capsule_id, type FROM artifacts WHERE id = ? LIMIT 1"
   )
     .bind(artifactId)
     .all();
 
-  const artifact = (results && results[0]) as { id: string; owner_id: string } | undefined;
+  const artifact = (results && results[0]) as
+    | { id: string; owner_id: string; capsule_id?: string | null; type: RuntimeArtifactType }
+    | undefined;
 
   if (!artifact) {
     return json({ error: "Artifact not found" }, 404);

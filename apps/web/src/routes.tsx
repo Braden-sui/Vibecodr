@@ -212,7 +212,8 @@ function ProfileRouteWrapper() {
     return <div className="py-10 text-center text-muted-foreground">Unable to load profile.</div>;
   }
 
-  const style = themeToInlineStyle((profile as any).theme ?? null);
+  const styleVars = themeToInlineStyle((profile as any).theme ?? null);
+  const style = { ...styleVars, fontFamily: "var(--vc-font)" };
 
   return (
     <div style={style} className="min-h-screen bg-[var(--vc-bg)] text-[var(--vc-fg)]">

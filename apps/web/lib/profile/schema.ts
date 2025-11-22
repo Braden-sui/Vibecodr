@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const hexColor = z
+  .string()
+  .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/)
+  .max(9);
+
 export const profileThemeSchema = z.object({
   mode: z.enum(["system", "light", "dark"]).default("system"),
   accentHue: z.number().int().min(0).max(360).default(260),
@@ -7,6 +12,13 @@ export const profileThemeSchema = z.object({
   accentLightness: z.number().int().min(0).max(100).default(60),
   radiusScale: z.number().int().min(1).max(4).default(2),
   density: z.enum(["comfortable", "cozy", "compact"]).default("comfortable"),
+  accentColor: hexColor.optional().nullable(),
+  bgColor: hexColor.optional().nullable(),
+  textColor: hexColor.optional().nullable(),
+  fontFamily: z.string().max(120).optional().nullable(),
+  coverImageUrl: z.string().url().max(500).optional().nullable(),
+  glass: z.boolean().optional(),
+  canvasBlur: z.number().int().min(0).max(64).optional(),
 });
 
 export const profileBlockSchema = z.object({
@@ -24,6 +36,9 @@ export const profileBlockSchema = z.object({
     "stats",
     "imageGallery",
     "videoEmbed",
+    "banner",
+    "capsuleGrid",
+    "capsuleEmbed",
   ]),
   visibility: z.enum(["public", "followers", "private"]).default("public"),
   position: z.number().int().min(0).default(0),
@@ -42,6 +57,9 @@ export const customFieldDefinitionSchema = z.object({
 });
 
 export const updateProfilePayloadSchema = z.object({
+  displayName: z.string().max(80).nullable().optional(),
+  avatarUrl: z.string().url().max(500).nullable().optional(),
+  bio: z.string().max(500).nullable().optional(),
   tagline: z.string().max(160).nullable().optional(),
   location: z.string().max(80).nullable().optional(),
   websiteUrl: z.string().url().max(255).nullable().optional(),
@@ -52,6 +70,8 @@ export const updateProfilePayloadSchema = z.object({
   theme: profileThemeSchema.optional(),
   customFields: z.array(customFieldDefinitionSchema).optional(),
   blocks: z.array(profileBlockSchema).optional(),
+  pinnedCapsules: z.array(z.string().max(64)).max(12).optional(),
+  profileCapsuleId: z.string().max(64).nullable().optional(),
 });
 
 export type ProfileTheme = z.infer<typeof profileThemeSchema>;

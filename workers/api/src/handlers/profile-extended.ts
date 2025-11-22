@@ -42,6 +42,16 @@ function mapThemeRow(row: any | null | undefined): ProfileThemeInput | null {
     accentLightness: Number(row.accent_lightness ?? 60),
     radiusScale: Number(row.radius_scale ?? 2),
     density: row.density ?? "comfortable",
+    accentColor: row.accent_color ?? null,
+    bgColor: row.bg_color ?? null,
+    textColor: row.text_color ?? null,
+    fontFamily: row.font_family ?? null,
+    coverImageUrl: row.cover_image_url ?? null,
+    glass: row.glass === 1 || row.glass === true,
+    canvasBlur:
+      row.canvas_blur === null || row.canvas_blur === undefined
+        ? undefined
+        : Number(row.canvas_blur),
   };
   // Validate to avoid leaking malformed rows
   const parsed = profileThemeSchema.safeParse(base);
@@ -65,6 +75,65 @@ function parseBlockConfig(raw: unknown, userId: string, blockId: string): Profil
     return null;
   }
   return parsed.data;
+}
+
+function allowEmbedHost(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    return host.endsWith("vibecodr.space") || host.endsWith("vibecodr.com");
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeBlock(block: ProfileBlockConfig): ProfileBlockConfig | null {
+  const next = { ...block, props: { ...(block.props ?? {}) } as Record<string, unknown> };
+
+  switch (block.type) {
+    case "links": {
+      const rawLinks = Array.isArray((next.props as any).links) ? ((next.props as any).links as any[]) : [];
+      const links: Array<{ label: string; url: string }> = [];
+      for (const entry of rawLinks) {
+        const label =
+          typeof (entry as any)?.label === "string" ? (entry as any).label.trim().slice(0, 80) : "";
+        const url = typeof (entry as any)?.url === "string" ? (entry as any).url.trim() : "";
+        if (!label || !url) continue;
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+          links.push({ label, url: parsed.toString() });
+        } catch {
+          continue;
+        }
+        if (links.length >= 12) break;
+      }
+      (next.props as any).links = links;
+      break;
+    }
+    case "markdown":
+    case "text": {
+      const content = typeof (next.props as any)?.content === "string" ? (next.props as any).content : "";
+      (next.props as any).content = content.slice(0, block.type === "markdown" ? 8000 : 2000);
+      break;
+    }
+    case "capsuleEmbed": {
+      const embedUrl = typeof (next.props as any)?.embedUrl === "string" ? (next.props as any).embedUrl.trim() : "";
+      if (embedUrl && !allowEmbedHost(embedUrl)) {
+        return null;
+      }
+      const heightRaw = Number((next.props as any)?.height ?? 360);
+      const height = Number.isFinite(heightRaw) ? Math.min(1200, Math.max(240, Math.round(heightRaw))) : 360;
+      (next.props as any).embedUrl = embedUrl;
+      (next.props as any).height = height;
+      break;
+    }
+    default:
+      break;
+  }
+
+  return next;
 }
 
 /**
@@ -92,13 +161,15 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
 
     const [profileRow, themeRow, blocksResult, projectsResult, badgesResult] = await Promise.all([
       env.DB.prepare(
-        `SELECT display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md
+        `SELECT display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, pinned_capsules, profile_capsule_id
          FROM profiles WHERE user_id = ?`,
       )
         .bind(ownerId)
         .first(),
       env.DB.prepare(
-        "SELECT mode, accent_hue, accent_saturation, accent_lightness, radius_scale, density FROM profile_themes WHERE user_id = ?",
+        `SELECT mode, accent_hue, accent_saturation, accent_lightness, radius_scale, density,
+                accent_color, bg_color, text_color, font_family, cover_image_url, glass, canvas_blur
+         FROM profile_themes WHERE user_id = ?`,
       )
         .bind(ownerId)
         .first(),
@@ -145,7 +216,8 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       let parsedConfig: ProfileBlockConfig | null = null;
       try {
         const parsedJson = row.config_json ? JSON.parse(row.config_json) : {};
-        parsedConfig = parseBlockConfig(parsedJson, ownerId, String(row.id));
+        const rawConfig = parseBlockConfig(parsedJson, ownerId, String(row.id));
+        parsedConfig = rawConfig ? sanitizeBlock(rawConfig) : null;
       } catch (error) {
         console.error("E-VIBECODR-1004 profile block JSON parse failed", {
           userId: ownerId,
@@ -189,6 +261,22 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
     const resolvedAvatar = profileRow?.avatar_url ?? (user as any).avatar_url ?? null;
     const resolvedBio = profileRow?.bio ?? (user as any).bio ?? null;
 
+    let pinnedCapsules: string[] = [];
+    if (profileRow?.pinned_capsules) {
+      try {
+        const parsed = JSON.parse(String(profileRow.pinned_capsules));
+        if (Array.isArray(parsed)) {
+          pinnedCapsules = parsed.filter((x) => typeof x === "string").slice(0, 12) as string[];
+        }
+      } catch {
+        pinnedCapsules = [];
+      }
+    }
+    const profileCapsuleId =
+      profileRow?.profile_capsule_id && typeof profileRow.profile_capsule_id === "string"
+        ? profileRow.profile_capsule_id
+        : null;
+
     const payload = {
       user: {
         id: String(user.id),
@@ -212,6 +300,8 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       blocks,
       projects,
       badges,
+      pinnedCapsules,
+      profileCapsuleId,
     };
 
     return json(payload);
@@ -261,8 +351,8 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
   try {
     // Upsert profiles row
     await env.DB.prepare(
-      `INSERT INTO profiles (user_id, display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO profiles (user_id, display_name, avatar_url, bio, tagline, location, website_url, x_handle, github_handle, pronouns, about_md, pinned_capsules, profile_capsule_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET
          display_name = excluded.display_name,
          avatar_url = excluded.avatar_url,
@@ -274,6 +364,8 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
          github_handle = excluded.github_handle,
          pronouns = excluded.pronouns,
          about_md = excluded.about_md,
+         pinned_capsules = excluded.pinned_capsules,
+         profile_capsule_id = excluded.profile_capsule_id,
          updated_at = excluded.updated_at`,
     )
       .bind(
@@ -288,6 +380,8 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
         data.githubHandle ?? null,
         data.pronouns ?? null,
         data.aboutMd ?? null,
+        data.pinnedCapsules ? JSON.stringify(data.pinnedCapsules) : null,
+        data.profileCapsuleId ?? null,
         now,
       )
       .run();
@@ -295,15 +389,25 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
     if (data.theme) {
       const safeTheme = profileThemeSchema.parse(data.theme);
       await env.DB.prepare(
-        `INSERT INTO profile_themes (user_id, mode, accent_hue, accent_saturation, accent_lightness, radius_scale, density)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO profile_themes (
+           user_id, mode, accent_hue, accent_saturation, accent_lightness, radius_scale, density,
+           accent_color, bg_color, text_color, font_family, cover_image_url, glass, canvas_blur
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
            mode = excluded.mode,
            accent_hue = excluded.accent_hue,
            accent_saturation = excluded.accent_saturation,
            accent_lightness = excluded.accent_lightness,
            radius_scale = excluded.radius_scale,
-           density = excluded.density`,
+           density = excluded.density,
+           accent_color = excluded.accent_color,
+           bg_color = excluded.bg_color,
+           text_color = excluded.text_color,
+           font_family = excluded.font_family,
+           cover_image_url = excluded.cover_image_url,
+           glass = excluded.glass,
+           canvas_blur = excluded.canvas_blur`,
       )
         .bind(
           userId,
@@ -313,6 +417,13 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
           safeTheme.accentLightness,
           safeTheme.radiusScale,
           safeTheme.density,
+          safeTheme.accentColor ?? null,
+          safeTheme.bgColor ?? null,
+          safeTheme.textColor ?? null,
+          safeTheme.fontFamily ?? null,
+          safeTheme.coverImageUrl ?? null,
+          safeTheme.glass ? 1 : 0,
+          safeTheme.canvasBlur ?? null,
         )
         .run();
     }
@@ -353,11 +464,15 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
         .bind(userId)
         .run();
 
-      data.blocks.forEach(async (block, index) => {
+      for (const [index, block] of data.blocks.entries()) {
         const safeBlock = profileBlockConfigSchema.parse(block);
+        const sanitized = sanitizeBlock(safeBlock);
+        if (!sanitized) {
+          return json({ error: "Validation failed", details: "Invalid block config" }, 400);
+        }
         const id = (block as any).id ?? crypto.randomUUID();
         const position = (block as any).position ?? index;
-        const visibility = safeBlock.visibility ?? "public";
+        const visibility = sanitized.visibility ?? "public";
         await env.DB.prepare(
           `INSERT INTO profile_blocks (id, user_id, type, position, visibility, config_json, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -365,15 +480,15 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
           .bind(
             id,
             userId,
-            safeBlock.type,
+            sanitized.type,
             position,
             visibility,
-            JSON.stringify(safeBlock),
+            JSON.stringify(sanitized),
             now,
             now,
           )
           .run();
-      });
+      }
     }
 
     return json({ ok: true });

@@ -864,7 +864,7 @@
                 {events.length === 0 && <div className="event-line">No events yet. Buffering.</div>}
                 {events.map((evt) => (
                   <div className="event-line" key={evt.id}>
-                    [{evt.at}] {evt.type} -> {evt.detail || "n/a"}
+                    [{evt.at}] {evt.type} -&gt; {evt.detail || "n/a"}
                   </div>
                 ))}
               </div>

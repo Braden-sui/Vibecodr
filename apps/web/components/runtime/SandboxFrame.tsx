@@ -22,6 +22,12 @@ export interface SandboxFrameProps {
   onPolicyViolation?: (event: PolicyViolationEvent) => void;
 }
 
+export type BuildSandboxFrameOptions = {
+  manifest: ClientRuntimeManifest;
+  bundleUrl?: string;
+  params?: Record<string, unknown>;
+};
+
 function buildSandboxCsp(): string {
   const mode = getRuntimeBundleNetworkMode();
   const connectSrc = mode === "allow-https" ? "connect-src 'self' https:" : "connect-src 'none'";
@@ -105,9 +111,9 @@ export const SandboxFrame = forwardRef<HTMLIFrameElement, SandboxFrameProps>(fun
     () => buildSandboxFrameSrcDoc({ manifest, bundleUrl, params }),
     [manifest, bundleUrl, params]
   );
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  useImperativeHandle(forwardedRef, () => iframeRef.current, []);
+  useImperativeHandle(forwardedRef, () => iframeRef.current as HTMLIFrameElement, []);
 
   useEffect(() => {
     const iframe = iframeRef.current;

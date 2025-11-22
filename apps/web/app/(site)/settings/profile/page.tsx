@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileBlocks } from "@/components/profile/ProfileBlocks";
 import { themeToInlineStyle } from "@/lib/profile/theme";
-import { profileApi } from "@/lib/api";
+import { profileApi, capsulesApi } from "@/lib/api";
 import type {
   ProfileBlock,
   ProfileTheme,
@@ -28,6 +28,13 @@ type LayoutBlock = {
   visibility: "public" | "followers" | "private";
   config: ProfileBlock;
 };
+
+type NormalizedBlock = UpdateProfilePayload["blocks"] extends Array<infer T> ? T : ProfileBlock;
+
+const makeId = (prefix: string) =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 type LoadedProfilePayload = {
   user: {
@@ -50,6 +57,8 @@ type LoadedProfilePayload = {
   aboutMd?: string | null;
   theme?: ProfileTheme | null;
   blocks: LayoutBlock[];
+  pinnedCapsules: string[];
+  profileCapsuleId: string | null;
   projects: Array<{
     id: string;
     title: string;
@@ -74,9 +83,16 @@ const defaultTheme: ProfileTheme = {
   accentLightness: 60,
   radiusScale: 2,
   density: "comfortable",
+  accentColor: null,
+  bgColor: "#050816",
+  textColor: "#f5f5f5",
+  fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+  coverImageUrl: null,
+  glass: true,
+  canvasBlur: 8,
 };
 
-const DEFAULT_BLOCK_TYPES: ProfileBlock["type"][] = ["about", "projects", "badges"];
+const DEFAULT_BLOCK_TYPES: ProfileBlock["type"][] = ["banner", "about", "links", "projects", "badges"];
 
 function buildInitialBlocks(): LayoutBlock[] {
   return DEFAULT_BLOCK_TYPES.map((type, index) => {
@@ -99,6 +115,52 @@ function buildInitialBlocks(): LayoutBlock[] {
   });
 }
 
+function createBlock(type: ProfileBlock["type"], position: number): LayoutBlock {
+  const id = makeId(type);
+  const baseProps: Record<string, unknown> =
+    type === "links"
+      ? { links: [{ label: "Website", url: "" }] }
+      : type === "markdown"
+        ? { content: "" }
+        : type === "text"
+          ? { content: "" }
+          : type === "capsuleEmbed"
+            ? { embedUrl: "", height: 360 }
+            : {};
+
+  const config: ProfileBlock = {
+    id,
+    version: 1,
+    type,
+    visibility: "public",
+    position,
+    props: baseProps,
+  };
+
+  return {
+    id,
+    type,
+    position,
+    visibility: "public",
+    config,
+  };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const hh = ((h % 360) + 360) % 360;
+  const ss = Math.min(100, Math.max(0, s)) / 100;
+  const ll = Math.min(100, Math.max(0, l)) / 100;
+  const a = ss * Math.min(ll, 1 - ll);
+  const convert = (n: number) => {
+    const k = (n + hh / 30) % 12;
+    const color = ll - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${convert(0)}${convert(8)}${convert(4)}`;
+}
+
 export default function ProfileSettingsPage() {
   const { user, isSignedIn, isLoaded } = useUser();
   const { getToken } = useAuth();
@@ -109,6 +171,9 @@ export default function ProfileSettingsPage() {
 
   const [remoteProfile, setRemoteProfile] = useState<LoadedProfilePayload | null>(null);
 
+  const [displayName, setDisplayName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [bio, setBio] = useState("");
   const [tagline, setTagline] = useState("");
   const [location, setLocation] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -119,6 +184,12 @@ export default function ProfileSettingsPage() {
 
   const [theme, setTheme] = useState<ProfileTheme | null>(null);
   const [blocks, setBlocks] = useState<LayoutBlock[]>([]);
+  const [newBlockType, setNewBlockType] = useState<ProfileBlock["type"]>("markdown");
+  const [pinnedCapsules, setPinnedCapsules] = useState<string[]>([]);
+  const [profileCapsuleId, setProfileCapsuleId] = useState("");
+  const [capsuleOptions, setCapsuleOptions] = useState<Array<{ id: string; title: string | null }>>([]);
+  const [capsulesLoading, setCapsulesLoading] = useState(false);
+  const [capsulesError, setCapsulesError] = useState<string | null>(null);
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -223,12 +294,17 @@ export default function ProfileSettingsPage() {
           aboutMd: json.aboutMd ?? null,
           theme: remoteTheme,
           blocks: normalizedBlocks,
+          pinnedCapsules: Array.isArray(json.pinnedCapsules) ? json.pinnedCapsules : [],
+          profileCapsuleId: typeof json.profileCapsuleId === "string" ? json.profileCapsuleId : null,
           projects: Array.isArray(json.projects) ? json.projects : [],
           badges: Array.isArray(json.badges) ? json.badges : [],
         };
 
         setRemoteProfile(loaded);
 
+        setDisplayName(loaded.user.name ?? "");
+        setAvatarUrl(loaded.user.avatarUrl ?? "");
+        setBio(loaded.user.bio ?? "");
         setTagline(loaded.header.tagline ?? "");
         setLocation(loaded.header.location ?? "");
         setWebsiteUrl(loaded.header.websiteUrl ?? "");
@@ -238,6 +314,8 @@ export default function ProfileSettingsPage() {
         setAboutMd(loaded.aboutMd ?? "");
         setTheme(remoteTheme ?? defaultTheme);
         setBlocks(normalizedBlocks);
+        setPinnedCapsules(loaded.pinnedCapsules ?? []);
+        setProfileCapsuleId(loaded.profileCapsuleId ?? "");
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load profile");
@@ -254,6 +332,43 @@ export default function ProfileSettingsPage() {
       cancelled = true;
     };
   }, [isLoaded, isSignedIn, user]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
+    async function loadCapsules() {
+      setCapsulesLoading(true);
+      setCapsulesError(null);
+      try {
+        const init = await buildAuthInit();
+        const res = await capsulesApi.listMine(init);
+        if (!res.ok) {
+          throw new Error(`Failed to load capsules (${res.status})`);
+        }
+        const json = (await res.json()) as any;
+        if (cancelled) return;
+        const options =
+          Array.isArray(json.capsules) && json.capsules.length
+            ? json.capsules.map((item: any) => ({
+                id: String(item.id),
+                title: item.title ?? null,
+              }))
+            : [];
+        setCapsuleOptions(options);
+      } catch (err) {
+        if (cancelled) return;
+        setCapsulesError(err instanceof Error ? err.message : "Failed to load capsules");
+      } finally {
+        if (!cancelled) {
+          setCapsulesLoading(false);
+        }
+      }
+    }
+    loadCapsules();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn]);
 
   const handleMoveBlock = (index: number, direction: "up" | "down") => {
     setBlocks((prev: LayoutBlock[]) => {
@@ -305,12 +420,137 @@ export default function ProfileSettingsPage() {
     setTheme((prev) => ({ ...(prev ?? defaultTheme), density: value }));
   };
 
+  const handleAddBlock = () => {
+    setBlocks((prev) => {
+      const next = [...prev, createBlock(newBlockType, prev.length)];
+      return next.map((block, index) => ({ ...block, position: index }));
+    });
+  };
+
+  const handleRemoveBlock = (id: string) => {
+    setBlocks((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((block) => block.id !== id).map((block, index) => ({ ...block, position: index }));
+      return next.length > 0 ? next : buildInitialBlocks();
+    });
+  };
+
+  const updateBlockProps = (
+    id: string,
+    updater: (props: Record<string, unknown>) => Record<string, unknown>,
+  ) => {
+    setBlocks((prev) =>
+      prev.map((block) =>
+        block.id === id
+          ? {
+              ...block,
+              config: {
+                ...block.config,
+                props: updater(block.config.props ?? {}),
+              },
+            }
+          : block,
+      ),
+    );
+  };
+
+  const handleContentChange = (id: string, content: string) => {
+    updateBlockProps(id, (props) => ({ ...props, content }));
+  };
+
+  const handleAddLink = (id: string) => {
+    updateBlockProps(id, (props) => {
+      const links = Array.isArray((props as any).links) ? [...((props as any).links as any[])] : [];
+      links.push({ label: "", url: "" });
+      return { ...props, links };
+    });
+  };
+
+  const handleRemoveLink = (id: string, index: number) => {
+    updateBlockProps(id, (props) => {
+      const links = Array.isArray((props as any).links) ? [...((props as any).links as any[])] : [];
+      links.splice(index, 1);
+      return { ...props, links };
+    });
+  };
+
+  const handleLinkChange = (id: string, index: number, field: "label" | "url", value: string) => {
+    updateBlockProps(id, (props) => {
+      const links = Array.isArray((props as any).links) ? [...((props as any).links as any[])] : [];
+      const existing = (links[index] as any) ?? { label: "", url: "" };
+      links[index] = { ...existing, [field]: value };
+      return { ...props, links };
+    });
+  };
+
+  const handleEmbedChange = (id: string, field: "embedUrl" | "height", value: string | number) => {
+    updateBlockProps(id, (props) => ({ ...props, [field]: value }));
+  };
+
+  const isAllowedEmbedUrl = (value: string) => {
+    try {
+      const url = new URL(value);
+      const host = url.hostname.toLowerCase();
+      return host.endsWith("vibecodr.space") || host.endsWith("vibecodr.com");
+    } catch {
+      return false;
+    }
+  };
+
+  const handleTogglePinnedCapsule = (capsuleId: string) => {
+    setPinnedCapsules((prev) => {
+      if (prev.includes(capsuleId)) {
+        return prev.filter((id) => id !== capsuleId);
+      }
+      if (prev.length >= 12) return prev;
+      return [...prev, capsuleId];
+    });
+  };
+
+  const handleAccentHexChange = (value: string) => {
+    const normalized = value.trim();
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), accentColor: normalized || null }));
+  };
+
+  const handleBgHexChange = (value: string) => {
+    const normalized = value.trim();
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), bgColor: normalized || defaultTheme.bgColor }));
+  };
+
+  const handleTextHexChange = (value: string) => {
+    const normalized = value.trim();
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), textColor: normalized || defaultTheme.textColor }));
+  };
+
+  const handleFontChange = (value: string) => {
+    const normalized = value.trim();
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), fontFamily: normalized || defaultTheme.fontFamily }));
+  };
+
+  const handleCoverChange = (value: string) => {
+    const normalized = value.trim();
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), coverImageUrl: normalized || null }));
+  };
+
+  const handleGlassToggle = (value: boolean) => {
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), glass: value }));
+  };
+
+  const handleCanvasBlurChange = (value: number[]) => {
+    const raw = value[0] ?? 0;
+    const clamped = Math.min(64, Math.max(0, Math.round(raw)));
+    setTheme((prev) => ({ ...(prev ?? defaultTheme), canvasBlur: clamped }));
+  };
+
   const handleSave = async () => {
     if (!isSignedIn) {
       redirectToSignIn("/settings/profile");
       return;
     }
 
+    const trimmedName = displayName.trim();
+    const trimmedAvatar = avatarUrl.trim();
+    const trimmedBio = bio.trim();
     const trimmedTagline = tagline.trim();
     const trimmedLocation = location.trim();
     const trimmedWebsite = websiteUrl.trim();
@@ -320,8 +560,82 @@ export default function ProfileSettingsPage() {
     const trimmedAbout = aboutMd.trim();
 
     const themePayload = theme ?? defaultTheme;
+    if (themePayload.coverImageUrl) {
+      try {
+        new URL(themePayload.coverImageUrl);
+      } catch {
+        setError("Cover image URL must be a valid absolute URL");
+        return;
+      }
+    }
+
+    const normalizeLinks = (raw: unknown): Array<{ label: string; url: string }> => {
+      if (!Array.isArray(raw)) return [];
+      const result: Array<{ label: string; url: string }> = [];
+      for (const entry of raw) {
+        const label = typeof (entry as any)?.label === "string" ? (entry as any).label.trim().slice(0, 80) : "";
+        const url = typeof (entry as any)?.url === "string" ? (entry as any).url.trim() : "";
+        if (!label || !url) continue;
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+          result.push({ label, url: parsed.toString() });
+        } catch {
+          continue;
+        }
+        if (result.length >= 12) break;
+      }
+      return result;
+    };
+
+    let hasInvalidBlocks = false;
+    const normalizedBlocks =
+      blocks.length > 0
+        ? blocks.map<NormalizedBlock | null>((block, index) => {
+            const props: Record<string, unknown> = { ...(block.config.props ?? {}) };
+
+            if (block.type === "links") {
+              props.links = normalizeLinks(props.links);
+            }
+
+            if (block.type === "markdown" || block.type === "text") {
+              props.content = typeof props.content === "string" ? props.content : "";
+            }
+
+            if (block.type === "capsuleEmbed") {
+              const embedUrl = typeof props.embedUrl === "string" ? props.embedUrl.trim() : "";
+              if (embedUrl && !isAllowedEmbedUrl(embedUrl)) {
+                setError("Capsule embed URL must be hosted on vibecodr.*");
+                hasInvalidBlocks = true;
+                return null;
+              }
+              const heightRaw = Number(props.height ?? 360);
+              const height = Number.isFinite(heightRaw) ? Math.min(1200, Math.max(240, Math.round(heightRaw))) : 360;
+              props.embedUrl = embedUrl;
+              props.height = height;
+            }
+
+            return {
+              id: block.id,
+              version: block.config.version ?? 1,
+              type: block.type,
+              visibility: block.visibility,
+              position: index,
+              props,
+            };
+          })
+        : undefined;
+
+    if (hasInvalidBlocks) {
+      return;
+    }
+
+    const filteredBlocks = normalizedBlocks?.filter((block): block is NormalizedBlock => block !== null);
 
     const payload: UpdateProfilePayload = {
+      displayName: trimmedName || null,
+      avatarUrl: trimmedAvatar || null,
+      bio: trimmedBio || null,
       tagline: trimmedTagline || null,
       location: trimmedLocation || null,
       websiteUrl: trimmedWebsite || null,
@@ -330,17 +644,9 @@ export default function ProfileSettingsPage() {
       pronouns: trimmedPronouns || null,
       aboutMd: trimmedAbout || null,
       theme: themePayload,
-      blocks:
-        blocks.length > 0
-          ? blocks.map((block, index) => ({
-              id: block.id,
-              version: block.config.version ?? 1,
-              type: block.type,
-              visibility: block.visibility,
-              position: index,
-              props: block.config.props ?? {},
-            }))
-          : undefined,
+      blocks: filteredBlocks ?? undefined,
+      pinnedCapsules: pinnedCapsules.length ? pinnedCapsules.slice(0, 12) : undefined,
+      profileCapsuleId: profileCapsuleId.trim() || null,
     };
 
     setSaving(true);
@@ -388,18 +694,55 @@ export default function ProfileSettingsPage() {
       pronouns: pronouns || null,
     };
 
+    const user = {
+      ...remoteProfile.user,
+      name: displayName || remoteProfile.user.name,
+      avatarUrl: avatarUrl || remoteProfile.user.avatarUrl,
+      bio: bio || remoteProfile.user.bio,
+    };
+
     return {
-      user: remoteProfile.user,
+      user,
       header,
       aboutMd: aboutMd || null,
       theme,
       blocks,
+      pinnedCapsules,
+      profileCapsuleId: profileCapsuleId.trim() || null,
       projects: remoteProfile.projects,
       badges: remoteProfile.badges,
     };
-  }, [remoteProfile, theme, tagline, location, websiteUrl, xHandle, githubHandle, pronouns, aboutMd, blocks]);
+  }, [
+    remoteProfile,
+    theme,
+    displayName,
+    avatarUrl,
+    bio,
+    tagline,
+    location,
+    websiteUrl,
+    xHandle,
+    githubHandle,
+    pronouns,
+    aboutMd,
+    pinnedCapsules,
+    profileCapsuleId,
+    blocks,
+  ]);
 
-  const style = previewProfile ? themeToInlineStyle(previewProfile.theme ?? null) : {};
+  const styleVars = previewProfile ? themeToInlineStyle(previewProfile.theme ?? null) : {};
+  const style = { ...styleVars, fontFamily: "var(--vc-font)" };
+  const accentColorValue =
+    theme?.accentColor ??
+    hslToHex(
+      theme?.accentHue ?? defaultTheme.accentHue,
+      theme?.accentSaturation ?? defaultTheme.accentSaturation,
+      theme?.accentLightness ?? defaultTheme.accentLightness
+    );
+  const backgroundColorValue = theme?.bgColor ?? defaultTheme.bgColor ?? "#050816";
+  const textColorValue = theme?.textColor ?? defaultTheme.textColor ?? "#f5f5f5";
+  const fontFamilyValue =
+    theme?.fontFamily ?? defaultTheme.fontFamily ?? "Inter, system-ui, -apple-system, sans-serif";
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 py-4">
@@ -427,6 +770,48 @@ export default function ProfileSettingsPage() {
         <TabsContent value="details" className="mt-4">
           <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="displayName" className="text-sm font-medium">
+                  Display name
+                </label>
+                <Input
+                  id="displayName"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder="How you want to appear on your profile"
+                  maxLength={80}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="avatarUrl" className="text-sm font-medium">
+                  Avatar URL
+                </label>
+                <Input
+                  id="avatarUrl"
+                  type="url"
+                  value={avatarUrl}
+                  onChange={(event) => setAvatarUrl(event.target.value)}
+                  placeholder="https://...your-avatar.png"
+                  maxLength={500}
+                />
+                <p className="text-xs text-muted-foreground">Square images look best. We'll keep it inside the canvas.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="bio" className="text-sm font-medium">
+                  Bio
+                </label>
+                <Textarea
+                  id="bio"
+                  value={bio}
+                  onChange={(event) => setBio(event.target.value)}
+                  placeholder="One or two sentences. Appears under your handle."
+                  rows={3}
+                  maxLength={500}
+                />
+              </div>
+
               <div className="space-y-2">
                 <label htmlFor="tagline" className="text-sm font-medium">
                   Tagline
@@ -525,8 +910,90 @@ export default function ProfileSettingsPage() {
                 </p>
               </div>
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="profileCapsuleId" className="text-sm font-medium">
+                    Profile capsule (picker)
+                  </label>
+                  {capsulesLoading ? <span className="text-xs text-muted-foreground">Loading...</span> : null}
+                </div>
+                {capsulesError ? (
+                  <p className="text-xs text-destructive"> {capsulesError} </p>
+                ) : (
+                  <select
+                    id="profileCapsuleId"
+                    value={profileCapsuleId}
+                    onChange={(event) => setProfileCapsuleId(event.target.value)}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">None</option>
+                    {capsuleOptions.map((capsule) => (
+                      <option key={capsule.id} value={capsule.id}>
+                        {capsule.title || capsule.id}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  One capsule to embed as your primary profile app (sandboxed). Pick from your published capsules.
+                </p>
+                <Input
+                  value={profileCapsuleId}
+                  onChange={(event) => setProfileCapsuleId(event.target.value)}
+                  placeholder="capsule_123 (manual override)"
+                  maxLength={64}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Pinned capsules</label>
+                  <span className="text-xs text-muted-foreground">{pinnedCapsules.length}/12</span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {capsuleOptions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No published capsules yet.</p>
+                  ) : (
+                    capsuleOptions.map((capsule) => {
+                      const checked = pinnedCapsules.includes(capsule.id);
+                      return (
+                        <button
+                          type="button"
+                          key={capsule.id}
+                          onClick={() => handleTogglePinnedCapsule(capsule.id)}
+                          className={`flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm ${
+                            checked ? "border-primary bg-primary/10" : "border-muted"
+                          }`}
+                        >
+                          <span className="truncate">{capsule.title || capsule.id}</span>
+                          <span className="text-xs text-muted-foreground">{checked ? "Pinned" : "Pin"}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <label htmlFor="pinnedCapsules" className="text-xs font-medium text-muted-foreground">
+                  Manual add (comma-separated) if a capsule is not listed
+                </label>
+                <Input
+                  id="pinnedCapsules"
+                  value={pinnedCapsules.join(",")}
+                  onChange={(event) =>
+                    setPinnedCapsules(
+                      event.target.value
+                        .split(",")
+                        .map((id) => id.trim())
+                        .filter(Boolean)
+                        .slice(0, 12),
+                    )
+                  }
+                  placeholder="capsule_1, capsule_2"
+                  maxLength={512}
+                />
+              </div>
+
               <Button type="button" onClick={handleSave} disabled={saving || loading} className="mt-2">
-                {saving ? "Saving…" : "Save profile"}
+                {saving ? "Saving..." : "Save profile"}
               </Button>
             </div>
 
@@ -535,7 +1002,7 @@ export default function ProfileSettingsPage() {
                 <h2 className="mb-2 text-sm font-semibold">Live preview</h2>
                 {loading || !previewProfile ? (
                   <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
-                    Loading preview…
+                    Loading preview...
                   </div>
                 ) : (
                   <div
@@ -554,6 +1021,107 @@ export default function ProfileSettingsPage() {
         <TabsContent value="theme" className="mt-4">
           <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             <div className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Accent color</span>
+                    <span className="text-xs text-muted-foreground">Overrides sliders</span>
+                  </div>
+                  <input
+                    type="color"
+                    value={accentColorValue}
+                    onChange={(event) => handleAccentHexChange(event.target.value)}
+                    className="h-10 w-full cursor-pointer rounded-md border bg-transparent"
+                    aria-label="Accent color"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Background</span>
+                  </div>
+                  <input
+                    type="color"
+                    value={backgroundColorValue}
+                    onChange={(event) => handleBgHexChange(event.target.value)}
+                    className="h-10 w-full cursor-pointer rounded-md border bg-transparent"
+                    aria-label="Background color"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Text</span>
+                  </div>
+                  <input
+                    type="color"
+                    value={textColorValue}
+                    onChange={(event) => handleTextHexChange(event.target.value)}
+                    className="h-10 w-full cursor-pointer rounded-md border bg-transparent"
+                    aria-label="Text color"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="coverImage" className="text-sm font-medium">
+                    Cover image URL
+                  </label>
+                  <Input
+                    id="coverImage"
+                    type="url"
+                    value={theme?.coverImageUrl ?? ""}
+                    onChange={(event) => handleCoverChange(event.target.value)}
+                    placeholder="https://assets.vibecodr.space/..."
+                    maxLength={500}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional background image for the profile canvas.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="fontFamily" className="text-sm font-medium">
+                    Font
+                  </label>
+                  <select
+                    id="fontFamily"
+                    value={fontFamilyValue}
+                    onChange={(event) => handleFontChange(event.target.value)}
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="Inter, system-ui, -apple-system, sans-serif">Inter</option>
+                    <option value="Space Grotesk, Inter, system-ui, -apple-system, sans-serif">
+                      Space Grotesk
+                    </option>
+                    <option value="JetBrains Mono, ui-monospace, SFMono-Regular, monospace">
+                      JetBrains Mono
+                    </option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Glass + blur</span>
+                    <button
+                      type="button"
+                      onClick={() => handleGlassToggle(!(theme?.glass ?? false))}
+                      className={cn(
+                        "rounded-md border px-3 py-1 text-xs",
+                        theme?.glass ? "border-primary text-primary" : "text-muted-foreground",
+                      )}
+                      aria-pressed={theme?.glass ?? false}
+                    >
+                      {theme?.glass ? "Glass on" : "Glass off"}
+                    </button>
+                  </div>
+                  <Slider
+                    min={0}
+                    max={64}
+                    step={1}
+                    value={[theme?.canvasBlur ?? defaultTheme.canvasBlur ?? 0]}
+                    onValueChange={handleCanvasBlurChange}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Controls blur intensity behind cards when glass is enabled.
+                  </p>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Accent hue</span>
@@ -640,7 +1208,7 @@ export default function ProfileSettingsPage() {
               </div>
 
               <Button type="button" onClick={handleSave} disabled={saving || loading} className="mt-2">
-                {saving ? "Saving…" : "Save theme"}
+                {saving ? "Saving..." : "Save theme"}
               </Button>
             </div>
 
@@ -649,7 +1217,7 @@ export default function ProfileSettingsPage() {
                 <h2 className="mb-2 text-sm font-semibold">Theme preview</h2>
                 {loading || !previewProfile ? (
                   <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
-                    Loading preview…
+                    Loading preview...
                   </div>
                 ) : (
                   <div
@@ -671,6 +1239,24 @@ export default function ProfileSettingsPage() {
                 Reorder blocks to change how your profile reads. Visibility controls who can see each
                 block.
               </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={newBlockType}
+                  onChange={(event) => setNewBlockType(event.target.value as ProfileBlock["type"])}
+                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                >
+                  {blockRegistry
+                    .filter((b) => b.type !== "header")
+                    .map((b) => (
+                      <option key={b.type} value={b.type}>
+                        {b.label}
+                      </option>
+                    ))}
+                </select>
+                <Button type="button" onClick={handleAddBlock} variant="secondary" size="sm">
+                  + Add block
+                </Button>
+              </div>
               <div className="space-y-2">
                 {blocks.map((block: LayoutBlock, index: number) => {
                   const def = getBlockDefinition(block.type) ??
@@ -679,61 +1265,166 @@ export default function ProfileSettingsPage() {
                   return (
                     <div
                       key={block.id}
-                      className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
+                      className="space-y-3 rounded-md border bg-background px-3 py-3 text-sm"
                     >
-                      <div className="space-y-1">
-                        <div className="font-medium">{label}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {def?.description ?? "Profile block"}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="font-medium">{label}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {def?.description ?? "Profile block"}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={block.visibility}
+                            onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
+                              handleVisibilityChange(
+                                block.id,
+                                event.target.value as LayoutBlock["visibility"],
+                              )
+                            }
+                            className="h-8 rounded-md border bg-background px-2 text-xs"
+                          >
+                            <option value="public">Public</option>
+                            <option value="followers">Followers</option>
+                            <option value="private">Private</option>
+                          </select>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              disabled={index === 0}
+                              onClick={() => handleMoveBlock(index, "up")}
+                              aria-label="Move block up"
+                            >
+                              ^
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              disabled={index === blocks.length - 1}
+                              onClick={() => handleMoveBlock(index, "down")}
+                              aria-label="Move block down"
+                            >
+                              v
+                            </Button>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => handleRemoveBlock(block.id)}
+                            aria-label="Remove block"
+                          >
+                            x
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={block.visibility}
-                          onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
-                            handleVisibilityChange(
-                              block.id,
-                              event.target.value as LayoutBlock["visibility"],
+                      {block.type === "markdown" || block.type === "text" ? (
+                        <div className="space-y-1">
+                          <label className="text-xs text-muted-foreground">
+                            {block.type === "markdown" ? "Markdown content" : "Text content"}
+                          </label>
+                          <Textarea
+                            value={typeof block.config.props?.content === "string" ? block.config.props.content : ""}
+                            onChange={(event) => handleContentChange(block.id, event.target.value)}
+                            rows={4}
+                            placeholder="Write content for this block"
+                          />
+                        </div>
+                      ) : null}
+                      {block.type === "links" ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-muted-foreground">Links</span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleAddLink(block.id)}
+                              className="h-7 px-2 text-xs"
+                            >
+                              + Add link
+                            </Button>
+                          </div>
+                          {Array.isArray((block.config.props as any)?.links) &&
+                          (block.config.props as any).links.length > 0 ? (
+                            (block.config.props as any).links.map(
+                              (link: any, linkIndex: number) => (
+                                <div key={`${block.id}-link-${linkIndex}`} className="grid gap-2 sm:grid-cols-[2fr_3fr_auto]">
+                                  <Input
+                                    value={link?.label ?? ""}
+                                    onChange={(event) =>
+                                      handleLinkChange(block.id, linkIndex, "label", event.target.value)
+                                    }
+                                    placeholder="Label"
+                                    className="h-9"
+                                    maxLength={80}
+                                  />
+                                  <Input
+                                    value={link?.url ?? ""}
+                                    onChange={(event) =>
+                                      handleLinkChange(block.id, linkIndex, "url", event.target.value)
+                                    }
+                                    placeholder="https://"
+                                    className="h-9"
+                                    maxLength={500}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-9 w-9 text-destructive"
+                                    onClick={() => handleRemoveLink(block.id, linkIndex)}
+                                    aria-label="Remove link"
+                                  >
+                                    x
+                                  </Button>
+                                </div>
+                              ),
                             )
-                          }
-                          className="h-8 rounded-md border bg-background px-2 text-xs"
-                        >
-                          <option value="public">Public</option>
-                          <option value="followers">Followers</option>
-                          <option value="private">Private</option>
-                        </select>
-                        <div className="flex flex-col gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            disabled={index === 0}
-                            onClick={() => handleMoveBlock(index, "up")}
-                            aria-label="Move block up"
-                          >
-                            ^
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            disabled={index === blocks.length - 1}
-                            onClick={() => handleMoveBlock(index, "down")}
-                            aria-label="Move block down"
-                          >
-                            v
-                          </Button>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">No links yet.</p>
+                          )}
                         </div>
-                      </div>
+                      ) : null}
+                      {block.type === "capsuleEmbed" ? (
+                        <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Embed URL (vibecodr.* only)</label>
+                            <Input
+                              value={typeof block.config.props?.embedUrl === "string" ? block.config.props.embedUrl : ""}
+                              onChange={(event) => handleEmbedChange(block.id, "embedUrl", event.target.value)}
+                              placeholder="https://assets.vibecodr.space/runner.html?..."
+                              maxLength={500}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Height (px)</label>
+                            <Input
+                              type="number"
+                              value={Number(block.config.props?.height ?? 360)}
+                              onChange={(event) =>
+                                handleEmbedChange(block.id, "height", Number(event.target.value))
+                              }
+                              min={240}
+                              max={1200}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
               </div>
 
               <Button type="button" onClick={handleSave} disabled={saving || loading} className="mt-2">
-                {saving ? "Saving…" : "Save layout"}
+                {saving ? "Saving..." : "Save layout"}
               </Button>
             </div>
 
@@ -742,7 +1433,7 @@ export default function ProfileSettingsPage() {
                 <h2 className="mb-2 text-sm font-semibold">Layout preview</h2>
                 {loading || !previewProfile ? (
                   <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
-                    Loading preview…
+                    Loading preview...
                   </div>
                 ) : (
                   <div

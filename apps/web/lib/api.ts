@@ -171,7 +171,7 @@ export const commentsApi = {
 // Shared feed post type used by HomePageClient, FeedCard, and Player page.
 type FeedCapsule = {
   id: string;
-  runner: Manifest["runner"];
+  runner?: Manifest["runner"];
   capabilities?: Manifest["capabilities"];
   params?: Manifest["params"];
   artifactId?: string | null;
@@ -464,6 +464,9 @@ export const capsulesApi = {
   },
   bundleSrc(capsuleId: string) {
     return workerUrl(`/capsules/${capsuleId}/bundle`);
+  },
+  listMine(init?: RequestInit) {
+    return fetch(workerUrl("/capsules/mine"), init);
   },
   publish(formData: FormData, init?: RequestInit) {
     return fetch(workerUrl("/capsules/publish"), {

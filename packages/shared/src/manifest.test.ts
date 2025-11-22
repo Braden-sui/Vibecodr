@@ -204,6 +204,8 @@ describe("Manifest Validation", () => {
       const manifest: Manifest = {
         ...baseManifest,
         capabilities: {
+          storage: false,
+          workers: false,
           net: ["api.example.com"],
         },
       };

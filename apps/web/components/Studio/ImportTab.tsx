@@ -110,19 +110,12 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
     setIsImporting(true);
     setImportStatus("downloading");
     setError("");
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
 
     try {
       setImportStatus("analyzing");
       const analysis = await analyzeZipFile(file);
 
       if (analysis.errors && analysis.errors.length > 0) {
-        setZipSummary({
-          fileName: file.name,
-          totalSize: analysis.totalSize,
-        });
-        setZipManifestWarnings(analysis.errors);
         setImportStatus("error");
         setError("Manifest validation failed. Review the errors below.");
         onDraftChange(() => ({
@@ -141,12 +134,6 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         }));
         return;
       }
-
-      setZipSummary({
-        fileName: file.name,
-        totalSize: analysis.totalSize,
-      });
-      setZipManifestWarnings(analysis.warnings ?? []);
 
       const init = await buildAuthInit();
       const response = await capsulesApi.importZip(file, init);
@@ -170,14 +157,10 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         const message = data.error || "ZIP import failed. Please check your archive.";
         setImportStatus("error");
         setError(message);
-        setZipManifestWarnings(data.warnings ?? analysis.warnings ?? []);
-        setZipPublishWarnings(data.warnings ?? []);
         trackEvent("studio_import_zip_failed", { error: message });
         return;
       }
 
-      setZipManifestWarnings(data.warnings ?? analysis.warnings ?? []);
-      setZipPublishWarnings(data.warnings ?? []);
       applyServerManifest(data.manifest, data.warnings, data.errors, {
         sourceName: file.name,
         capsuleId: data.capsuleId,

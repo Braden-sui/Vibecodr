@@ -16,6 +16,7 @@ export type ProfileBlocksProps = {
     }>;
     projects: ProfilePageData["projects"];
     badges: ProfilePageData["badges"];
+    pinnedCapsules?: string[];
   };
 };
 
@@ -31,6 +32,7 @@ export function ProfileBlocks({ profile }: ProfileBlocksProps) {
     aboutMd: profile.aboutMd ?? null,
     projects: profile.projects,
     badges: profile.badges,
+    pinnedCapsules: profile.pinnedCapsules ?? [],
   };
 
   const blocks = [...profile.blocks].sort((a, b) => a.position - b.position);

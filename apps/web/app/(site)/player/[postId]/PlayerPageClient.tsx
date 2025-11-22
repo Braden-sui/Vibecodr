@@ -328,7 +328,9 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const finalizeRunSession = useCallback(
     (status: "completed" | "failed", errorMessage?: string) => {
       const session = currentRunRef.current;
-      if (!session || !post?.capsule) {
+      const currentPost = post;
+      const capsule = currentPost?.capsule;
+      if (!session || !capsule) {
         return;
       }
       flushLogBatch(session.id);
@@ -339,8 +341,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             trackClientError("E-VIBECODR-0516", {
               area: "player.completeRun",
               runId: session.id,
-              capsuleId: post?.capsule?.id,
-              postId: post?.id,
+              capsuleId: capsule.id,
+              postId: currentPost?.id,
               status,
               message: "Missing auth token for run completion",
             });
@@ -349,8 +351,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           return runsApi.complete(
             {
               runId: session.id,
-              capsuleId: post.capsule.id,
-              postId: post.id,
+              capsuleId: capsule.id,
+              postId: currentPost.id,
               durationMs: Math.max(0, Date.now() - session.startedAt),
               status,
               errorMessage,
@@ -711,7 +713,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       <div className="border-b bg-card p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/">
+            <Link to="/">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
@@ -719,7 +721,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             <div>
               <h1 className="text-xl font-bold">{post?.title}</h1>
               <Link
-                href={post ? `/u/${post.author.handle}` : "#"}
+                to={post ? `/u/${post.author.handle}` : "#"}
                 className="text-sm text-muted-foreground hover:underline"
               >
                 {post ? `by @${post.author.handle}` : ""}
