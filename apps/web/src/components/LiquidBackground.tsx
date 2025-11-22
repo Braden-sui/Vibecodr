@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { motion, useMotionValue, useTransform, animate } from "framer-motion";
+import React, { useEffect } from "react";
+import { motion, useMotionValue, useSpring, useTransform, animate } from "framer-motion";
 import { interpolate } from "flubber";
 
 // Pre-defined blob paths (normalized to 100x100 viewbox for simplicity, will scale)
@@ -13,6 +13,8 @@ const LiquidBackground = () => {
     const pathIndex = useMotionValue(0);
     const colors = ["#E67E22", "#2C3E50", "#16A085"]; // Coral, Navy, Teal
     const colorIndex = useMotionValue(0);
+    const pointerX = useSpring(0, { stiffness: 60, damping: 14 });
+    const pointerY = useSpring(0, { stiffness: 60, damping: 14 });
 
     const path = useTransform(pathIndex, (latest) => {
         const index = Math.round(latest) % blobPaths.length;
@@ -21,11 +23,12 @@ const LiquidBackground = () => {
         return interpolate(blobPaths[index], blobPaths[nextIndex])(progress);
     });
 
-    const color = useTransform(colorIndex, (latest) => {
-        // Simple color cycling logic could go here, but for now let's stick to path morphing
-        // as color interpolation with flubber/framer is complex without d3-interpolate
-        return colors[Math.round(latest) % colors.length];
-    });
+    const color = useTransform(colorIndex, (latest) => colors[Math.round(latest) % colors.length]);
+
+    const parallaxX = useTransform(pointerX, (v) => v * 0.02);
+    const parallaxY = useTransform(pointerY, (v) => v * 0.02);
+    const parallaxX2 = useTransform(pointerX, (v) => v * -0.015);
+    const parallaxY2 = useTransform(pointerY, (v) => v * -0.015);
 
     useEffect(() => {
         const controls = animate(pathIndex, blobPaths.length * 10, {
@@ -35,23 +38,44 @@ const LiquidBackground = () => {
             ease: "easeInOut",
         });
 
-        return () => controls.stop();
-    }, [pathIndex]);
+        const colorControls = animate(colorIndex, colors.length * 10, {
+            duration: 30,
+            repeat: Infinity,
+            repeatType: "mirror",
+            ease: "linear",
+        });
+
+        const handlePointer = (event: PointerEvent) => {
+            const { innerWidth, innerHeight } = window;
+            const x = (event.clientX / innerWidth - 0.5) * 2;
+            const y = (event.clientY / innerHeight - 0.5) * 2;
+            pointerX.set(x);
+            pointerY.set(y);
+        };
+
+        window.addEventListener("pointermove", handlePointer);
+
+        return () => {
+            controls.stop();
+            colorControls.stop();
+            window.removeEventListener("pointermove", handlePointer);
+        };
+    }, [pathIndex, colorIndex, pointerX, pointerY, colors.length]);
 
     return (
         <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
             <motion.svg
                 viewBox="-100 -100 200 200"
-                className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] opacity-5 blur-3xl"
-                style={{ pathLength: 1 }} // Just to ensure motion props work
+                className="absolute top-[-25%] left-[-15%] w-[70vw] h-[70vw] opacity-25 blur-2xl mix-blend-screen"
+                style={{ translateX: parallaxX, translateY: parallaxY }}
             >
-                <motion.path d={path} fill={colors[0]} />
+                <motion.path d={path} fill={color} />
             </motion.svg>
 
             <motion.svg
                 viewBox="-100 -100 200 200"
-                className="absolute bottom-[-20%] right-[-10%] w-[70vw] h-[70vw] opacity-5 blur-3xl"
-                style={{ rotate: 180 }}
+                className="absolute bottom-[-25%] right-[-15%] w-[80vw] h-[80vw] opacity-18 blur-2xl mix-blend-screen"
+                style={{ rotate: 180, translateX: parallaxX2, translateY: parallaxY2 }}
             >
                 <motion.path d={path} fill={colors[1]} />
             </motion.svg>
