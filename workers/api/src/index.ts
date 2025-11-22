@@ -63,6 +63,7 @@ import { verifyAuth, isModeratorOrAdmin, requireUser } from "./auth";
 import { ApiFeedResponseSchema, ApiFeedPostSchema, type ApiFeedPost } from "./contracts";
 import { buildCapsuleSummary } from "./capsule-manifest";
 import { getLatestArtifactsWithCache } from "./feed-artifacts";
+import { getCapsuleKey } from "./storage/r2";
 import { createPostSchema } from "./schema";
 import { incrementUserCounters } from "./handlers/counters";
 
@@ -153,6 +154,12 @@ export function computeForYouScore(input: ForYouScoreInput): number {
 const DEFAULT_FEED_LIMIT = 20;
 const MAX_FEED_LIMIT = 50;
 
+function runtimeArtifactsEnabled(env: Env): boolean {
+  const flag = env.RUNTIME_ARTIFACTS_ENABLED;
+  if (typeof flag !== "string") return true;
+  return flag.trim().toLowerCase() !== "false";
+}
+
 type PaginationValidationResult =
   | { ok: true; limit: number; offset: number }
   | { ok: false; response: Response };
@@ -242,6 +249,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
 
   try {
     const authedUser = await verifyAuth(req, env);
+    const runtimeEnabled = runtimeArtifactsEnabled(env);
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
     let query = `
       SELECT
@@ -257,7 +265,7 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         pr.display_name as profile_display_name,
         pr.avatar_url as profile_avatar,
         pr.bio as profile_bio,
-        c.id as capsule_id, c.manifest_json
+        c.id as capsule_id, c.manifest_json, c.hash as capsule_hash
       FROM posts p
       INNER JOIN users u ON p.author_id = u.id
       LEFT JOIN profiles pr ON pr.user_id = u.id
@@ -389,11 +397,13 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         GROUP BY parent_capsule_id
       `;
 
-      const [runsResult, remixesResult, latestArtifactMap] = await Promise.all([
-        env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
-        env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
-        getLatestArtifactsWithCache(env, capsuleIds),
-      ]);
+      const runsPromise = env.DB.prepare(runsQuery).bind(...capsuleIds).all();
+      const remixesPromise = env.DB.prepare(remixesQuery).bind(...capsuleIds).all();
+      const [runsResult, remixesResult] = await Promise.all([runsPromise, remixesPromise]);
+      let latestArtifactMap = new Map<string, { artifactId: string; createdAt: number }>();
+      if (runtimeEnabled) {
+        latestArtifactMap = await getLatestArtifactsWithCache(env, capsuleIds);
+      }
 
       for (const row of runsResult.results || []) {
         runsByCapsule.set((row as any).capsule_id, Number((row as any).count ?? 0));
@@ -402,8 +412,10 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
       }
 
-      for (const [capsuleId, info] of latestArtifactMap.entries()) {
-        artifactIdsByCapsule.set(capsuleId, info.artifactId);
+      if (runtimeEnabled) {
+        for (const [capsuleId, info] of latestArtifactMap.entries()) {
+          artifactIdsByCapsule.set(capsuleId, info.artifactId);
+        }
       }
     }
 
@@ -455,10 +467,17 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
         postId: row.id,
       });
 
+      const contentHash = row.capsule_hash ? String(row.capsule_hash) : null;
+
       if (capsuleSummary && row.capsule_id) {
-        const artifactId = artifactIdsByCapsule.get(row.capsule_id);
-        if (artifactId) {
-          (capsuleSummary as any).artifactId = artifactId;
+        if (runtimeEnabled) {
+          const artifactId = artifactIdsByCapsule.get(row.capsule_id);
+          if (artifactId) {
+            (capsuleSummary as any).artifactId = artifactId;
+          }
+        } else if (contentHash && typeof (capsuleSummary as any).entry === "string") {
+          (capsuleSummary as any).bundleKey = getCapsuleKey(contentHash, (capsuleSummary as any).entry);
+          (capsuleSummary as any).contentHash = contentHash;
         }
       }
 
@@ -551,6 +570,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
 
   try {
     const authedUser = await verifyAuth(req, env);
+    const runtimeEnabled = runtimeArtifactsEnabled(env);
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
 
     let query = `
@@ -567,7 +587,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
         pr.display_name as profile_display_name,
         pr.avatar_url as profile_avatar,
         pr.bio as profile_bio,
-        c.id as capsule_id, c.manifest_json
+        c.id as capsule_id, c.manifest_json, c.hash as capsule_hash
       FROM posts p
       INNER JOIN users u ON p.author_id = u.id
       LEFT JOIN profiles pr ON pr.user_id = u.id
@@ -624,7 +644,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
     ]);
 
     let artifactIdForCapsule: string | null = null;
-    if (row.capsule_id) {
+    if (runtimeEnabled && row.capsule_id) {
       const latestArtifacts = await getLatestArtifactsWithCache(env, [row.capsule_id]);
       const latest = latestArtifacts.get(row.capsule_id);
       if (latest) {
@@ -637,8 +657,15 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
       postId: row.id,
     });
 
-    if (capsuleSummary && artifactIdForCapsule) {
-      (capsuleSummary as any).artifactId = artifactIdForCapsule;
+    const contentHash = row.capsule_hash ? String(row.capsule_hash) : null;
+
+    if (capsuleSummary && row.capsule_id) {
+      if (runtimeEnabled && artifactIdForCapsule) {
+        (capsuleSummary as any).artifactId = artifactIdForCapsule;
+      } else if (contentHash && typeof (capsuleSummary as any).entry === "string") {
+        (capsuleSummary as any).bundleKey = getCapsuleKey(contentHash, (capsuleSummary as any).entry);
+        (capsuleSummary as any).contentHash = contentHash;
+      }
     }
 
     const authorProfile = {

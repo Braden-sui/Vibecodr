@@ -6,6 +6,7 @@ import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
 import { ApiUserProfileResponseSchema, ApiUserPostsResponseSchema } from "../contracts";
 import { buildCapsuleSummary } from "../capsule-manifest";
 import { buildLatestArtifactMap, type CapsuleArtifactRow } from "../feed-artifacts";
+import { getCapsuleKey } from "../storage/r2";
 
 type Params = Record<string, string>;
 
@@ -15,6 +16,12 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
     headers: { "content-type": "application/json" },
     ...init
   });
+}
+
+function runtimeArtifactsEnabled(env: Env): boolean {
+  const flag = env.RUNTIME_ARTIFACTS_ENABLED;
+  if (typeof flag !== "string") return true;
+  return flag.trim().toLowerCase() !== "false";
 }
 
 /**
@@ -98,6 +105,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
   const url = new URL(req.url);
   const limit = parseInt(url.searchParams.get("limit") || "20");
   const offset = parseInt(url.searchParams.get("offset") || "0");
+  const runtimeEnabled = runtimeArtifactsEnabled(env);
 
   try {
     // Get user ID from handle
@@ -116,7 +124,7 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
     let query = `
       SELECT
         p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.created_at,
-        c.id as capsule_id, c.manifest_json
+        c.id as capsule_id, c.manifest_json, c.hash as capsule_hash
       FROM posts p
       LEFT JOIN capsules c ON p.capsule_id = c.id
       WHERE p.author_id = ?`;
@@ -209,10 +217,16 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         ORDER BY created_at DESC
       `;
 
+      const runsPromise = env.DB.prepare(runsQuery).bind(...capsuleIds).all();
+      const remixesPromise = env.DB.prepare(remixesQuery).bind(...capsuleIds).all();
+      const artifactsPromise = runtimeEnabled
+        ? env.DB.prepare(artifactsQuery).bind(...capsuleIds).all()
+        : Promise.resolve({ results: [] });
+
       const [runsResult, remixesResult, artifactsResult] = await Promise.all([
-        env.DB.prepare(runsQuery).bind(...capsuleIds).all(),
-        env.DB.prepare(remixesQuery).bind(...capsuleIds).all(),
-        env.DB.prepare(artifactsQuery).bind(...capsuleIds).all(),
+        runsPromise,
+        remixesPromise,
+        artifactsPromise,
       ]);
 
       for (const row of runsResult.results || []) {
@@ -222,9 +236,11 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
       }
 
-      const latestArtifacts = buildLatestArtifactMap((artifactsResult.results || []) as CapsuleArtifactRow[]);
-      for (const [capsuleId, artifactId] of latestArtifacts.entries()) {
-        artifactIdsByCapsule.set(capsuleId, artifactId);
+      if (runtimeEnabled) {
+        const latestArtifacts = buildLatestArtifactMap((artifactsResult.results || []) as CapsuleArtifactRow[]);
+        for (const [capsuleId, artifactId] of latestArtifacts.entries()) {
+          artifactIdsByCapsule.set(capsuleId, artifactId);
+        }
       }
     }
 
@@ -289,9 +305,15 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       });
 
       if (capsuleSummary && row.capsule_id) {
-        const artifactId = artifactIdsByCapsule.get(row.capsule_id);
-        if (artifactId) {
-          (capsuleSummary as any).artifactId = artifactId;
+        const contentHash = row.capsule_hash ? String(row.capsule_hash) : null;
+        if (runtimeEnabled) {
+          const artifactId = artifactIdsByCapsule.get(row.capsule_id);
+          if (artifactId) {
+            (capsuleSummary as any).artifactId = artifactId;
+          }
+        } else if (contentHash && typeof (capsuleSummary as any).entry === "string") {
+          (capsuleSummary as any).bundleKey = getCapsuleKey(contentHash, (capsuleSummary as any).entry);
+          (capsuleSummary as any).contentHash = contentHash;
         }
       }
 

@@ -7,6 +7,7 @@ import {
   getCapsuleMetadata,
   deleteCapsuleBundle,
   type CapsuleFile,
+  getCapsuleKey,
 } from "../storage/r2";
 import {
   getUserPlan,
@@ -386,9 +387,85 @@ type RuntimeArtifactSummary = {
   bundleDigest?: string | null;
   bundleSizeBytes?: number | null;
   queued?: boolean;
+  bundleKey?: string;
 };
 
 type UploadResultSnapshot = { contentHash: string; totalSize: number; fileCount: number };
+
+async function createCapsuleBackedArtifactRecord(params: {
+  env: Env;
+  manifest: Manifest;
+  files: CapsuleFile[];
+  uploadResult: UploadResultSnapshot;
+  capsuleId: string;
+  userId: string;
+  artifactId: string;
+  artifactType: RuntimeArtifactType;
+}): Promise<RuntimeArtifactSummary> {
+  const { env, manifest, files, uploadResult, capsuleId, userId, artifactId, artifactType } = params;
+  const runtimeVersion = RUNTIME_ARTIFACT_VERSION;
+  const bundleKey = getCapsuleKey(uploadResult.contentHash, manifest.entry);
+  const entryFile = files.find((f) => f.path === manifest.entry);
+
+  let bundleDigest = uploadResult.contentHash;
+  let bundleSizeBytes = uploadResult.totalSize;
+
+  if (entryFile) {
+    const entryBytes =
+      typeof entryFile.content === "string"
+        ? new TextEncoder().encode(entryFile.content)
+        : new Uint8Array(entryFile.content as ArrayBuffer);
+    bundleDigest = await hashUint8(entryBytes);
+    bundleSizeBytes = entryFile.size;
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO artifacts (id, owner_id, capsule_id, type, runtime_version, bundle_digest) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(artifactId, userId, capsuleId, artifactType, runtimeVersion, bundleDigest)
+    .run();
+
+  const runtimeManifest = buildRuntimeManifest({
+    artifactId,
+    type: artifactType,
+    bundleKey,
+    bundleSizeBytes,
+    bundleDigest,
+    runtimeVersion,
+  });
+  const runtimeManifestJson = JSON.stringify(runtimeManifest);
+  const runtimeManifestSize = new TextEncoder().encode(runtimeManifestJson).byteLength;
+  const artifactManifestId = crypto.randomUUID();
+
+  await env.DB.prepare(
+    "INSERT INTO artifact_manifests (id, artifact_id, version, manifest_json, size_bytes, runtime_version) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(artifactManifestId, artifactId, 1, runtimeManifestJson, runtimeManifestSize, runtimeVersion)
+    .run();
+
+  if (env.RUNTIME_MANIFEST_KV) {
+    const kvKey = `artifacts/${artifactId}/v1/runtime-manifest.json`;
+    try {
+      await env.RUNTIME_MANIFEST_KV.put(kvKey, runtimeManifestJson);
+    } catch (kvErr) {
+      console.error("E-VIBECODR-0504 runtime manifest KV write failed (capsule-backed artifact)", {
+        capsuleId,
+        artifactId,
+        userId,
+        error: kvErr instanceof Error ? kvErr.message : String(kvErr),
+      });
+    }
+  }
+
+  return {
+    id: artifactId,
+    runtimeVersion,
+    bundleDigest,
+    bundleSizeBytes,
+    bundleKey,
+    queued: false,
+  };
+}
 
 async function createRuntimeArtifactForCapsule(params: {
   env: Env;
@@ -397,10 +474,12 @@ async function createRuntimeArtifactForCapsule(params: {
   uploadResult: UploadResultSnapshot;
   capsuleId: string;
   userId: string;
+  artifactId?: string;
+  artifactType?: RuntimeArtifactType;
 }): Promise<RuntimeArtifactSummary> {
   const { env, manifest, files, uploadResult, capsuleId, userId } = params;
-  const artifactId = crypto.randomUUID();
-  const artifactType = resolveRuntimeArtifactType(manifest);
+  const artifactId = params.artifactId ?? crypto.randomUUID();
+  const artifactType = params.artifactType ?? resolveRuntimeArtifactType(manifest);
   const runtimeVersion = RUNTIME_ARTIFACT_VERSION;
 
   let bundleR2Key = `capsules/${uploadResult.contentHash}/${manifest.entry}`;
@@ -503,6 +582,7 @@ async function createRuntimeArtifactForCapsule(params: {
     runtimeVersion,
     bundleDigest: runtimeManifest.bundle.digest,
     bundleSizeBytes,
+    bundleKey: runtimeManifest.bundle.r2Key,
     queued: false,
   };
 }
@@ -665,13 +745,16 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
         id: string;
         runtimeVersion?: string | null;
         bundleDigest?: string | null;
-        bundleSizeBytes?: number | null;
-        queued?: boolean;
-      }
+      bundleSizeBytes?: number | null;
+      queued?: boolean;
+    }
     | null = null;
 
-  const shouldBuildArtifact = runtimeArtifactsEnabled(env) && isRuntimeArtifactRunner(manifest);
-  if (shouldBuildArtifact) {
+  const artifactId = crypto.randomUUID();
+  const artifactType = resolveRuntimeArtifactType(manifest);
+  const runtimeEnabled = runtimeArtifactsEnabled(env) && isRuntimeArtifactRunner(manifest);
+
+  if (runtimeEnabled) {
     try {
       artifactSummary = await createRuntimeArtifactForCapsule({
         env,
@@ -680,6 +763,8 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
         uploadResult,
         capsuleId,
         userId: user.userId,
+        artifactId,
+        artifactType,
       });
     } catch (err) {
       if (err instanceof PublishCapsuleError) {
@@ -693,6 +778,29 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
       throw new PublishCapsuleError(500, {
         error: "Failed to create runtime artifact",
         code: "E-VIBECODR-0503",
+      });
+    }
+  } else {
+    try {
+      artifactSummary = await createCapsuleBackedArtifactRecord({
+        env,
+        manifest,
+        files,
+        uploadResult,
+        capsuleId,
+        userId: user.userId,
+        artifactId,
+        artifactType,
+      });
+    } catch (err) {
+      console.error("E-VIBECODR-0506 capsule-backed artifact create failed", {
+        capsuleId,
+        userId: user.userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new PublishCapsuleError(500, {
+        error: "Failed to record artifact",
+        code: "E-VIBECODR-0506",
       });
     }
   }

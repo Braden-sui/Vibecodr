@@ -9,6 +9,8 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "typecheck": "turbo run typecheck",
+    "d1:apply": "pnpm --filter vibecodr-api run d1:apply:local",
+    "d1:apply:remote": "pnpm --filter vibecodr-api run d1:apply:remote",
     "test": "npm run test:unit && npm run test:component",
     "test:unit": "turbo run test:unit",
     "test:component": "npm run test:component -w apps/web",

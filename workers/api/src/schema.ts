@@ -222,6 +222,17 @@ export const reports = sqliteTable("reports", {
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
+// Live waitlist signups
+export const liveWaitlist = sqliteTable("live_waitlist", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  email: text("email").notNull(),
+  handle: text("handle").notNull(),
+  plan: text("plan", { enum: ["free", "creator", "pro", "team"] }).notNull(),
+  userId: text("user_id").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
 // ============================================
 // Zod Schemas for Validation
 // ============================================

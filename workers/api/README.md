@@ -43,7 +43,7 @@ High-level surface area:
   - `GET /proxy?url=&capsuleId=` - authenticated, allowlisted network proxy that only honors manifests for capsules owned by the caller, with per-capsule/host rate limiting and cookie stripping.
 
 Infra notes:
-- D1 schema lives in `src/schema.sql` and `src/schema.ts` (Drizzle model + Zod contracts). Apply via wrangler migrations or Drizzle once ready.
+- D1 schema source of truth is `src/schema.ts` (Drizzle model + Zod contracts). `src/schema.sql` is generated from it for D1. Apply via `pnpm d1:apply` (local) or `pnpm d1:apply:remote` from the repo root to hydrate new environments.
 - R2 stores immutable capsule bundles keyed by content hash (`capsules/{hash}/`).
 - Durable Objects (`BuildCoordinator`) can coordinate build queues and expose `/do/status`.
 - Workers Analytics Engine is wired for simple probes (see `doStatus`).

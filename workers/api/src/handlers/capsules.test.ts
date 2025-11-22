@@ -420,6 +420,35 @@ describe("publishCapsule runtime artifacts", () => {
     expect(sqlCalls.some((sql) => sql.includes("INSERT INTO artifact_manifests"))).toBe(true);
   });
 
+  it("records artifact rows even when runtime artifacts are disabled", async () => {
+    env.RUNTIME_ARTIFACTS_ENABLED = "false";
+    const manifest = {
+      version: "1.0",
+      runner: "client-static",
+      entry: "index.html",
+    };
+
+    const res = await publishCapsule(
+      createPublishRequest(manifest, "index.html", "<html><body>ok</body></html>"),
+      env,
+      {} as any,
+      {} as any
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PublishCapsuleResponse;
+    expect(body.artifact?.id).toBeDefined();
+
+    const dbPrepare = (env.DB as any).prepare as ReturnType<typeof vi.fn>;
+    const sqlCalls = dbPrepare.mock.calls.map((args: any[]) => args[0] as string);
+    expect(sqlCalls.some((sql) => sql.includes("INSERT INTO artifacts"))).toBe(true);
+    expect(sqlCalls.some((sql) => sql.includes("INSERT INTO artifact_manifests"))).toBe(true);
+
+    const r2Put = (env.R2 as any).put as ReturnType<typeof vi.fn>;
+    const artifactPut = r2Put.mock.calls.find(([key]) => String(key).startsWith("artifacts/"));
+    expect(artifactPut).toBeUndefined();
+  });
+
   it("fails publish when runtime artifact creation fails", async () => {
     const manifest = {
       version: "1.0",

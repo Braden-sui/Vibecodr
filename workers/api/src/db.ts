@@ -21,11 +21,36 @@ export async function getUserByHandle(env: Env, handle: string) {
   });
 }
 
-export async function upsertUser(env: Env, user: { id: string; email?: string; password_hash?: string }) {
+export async function upsertUser(
+  env: Env,
+  user: {
+    id: string;
+    handle: string;
+    name?: string | null;
+    avatarUrl?: string | null;
+    bio?: string | null;
+    plan?: "free" | "creator" | "pro" | "team" | null;
+  }
+) {
   await env.DB.prepare(
-    `INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET email=excluded.email, password_hash=COALESCE(excluded.password_hash, users.password_hash)`
-  ).bind(user.id, user.email || null, user.password_hash || null).run();
+    `INSERT INTO users (id, handle, name, avatar_url, bio, plan)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       handle=excluded.handle,
+       name=COALESCE(excluded.name, users.name),
+       avatar_url=COALESCE(excluded.avatar_url, users.avatar_url),
+       bio=COALESCE(excluded.bio, users.bio),
+       plan=COALESCE(excluded.plan, users.plan)`
+  )
+    .bind(
+      user.id,
+      user.handle,
+      user.name ?? null,
+      user.avatarUrl ?? null,
+      user.bio ?? null,
+      user.plan ?? null
+    )
+    .run();
 }
 
 export async function upsertProfile(
