@@ -275,7 +275,28 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       tier: row.tier as string | null,
     }));
 
-    const theme = mapThemeRow(themeRow as any);
+    if (blocks.length === 0) {
+      const defaultTypes: ProfileBlockConfig["type"][] = ["banner", "about", "links", "projects", "badges"];
+      for (const [index, type] of defaultTypes.entries()) {
+        const baseConfig = {
+          version: 1,
+          type,
+          visibility: "public",
+          props: {},
+        } as ProfileBlockConfig;
+        const sanitized = sanitizeBlock(baseConfig);
+        if (!sanitized) continue;
+        blocks.push({
+          id: `default-${type}`,
+          type,
+          position: index,
+          visibility: sanitized.visibility ?? "public",
+          config: sanitized,
+        });
+      }
+    }
+
+    const theme = mapThemeRow(themeRow as any) ?? profileThemeSchema.parse({});
 
     const resolvedName = profileRow?.display_name ?? (user as any).name ?? null;
     const resolvedAvatar = profileRow?.avatar_url ?? (user as any).avatar_url ?? null;
