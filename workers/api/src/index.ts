@@ -270,8 +270,8 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const where: string[] = [];
     // Safety: exclude suspended or shadow-banned authors from surfaced feeds
     where.push("(u.is_suspended = 0 AND u.shadow_banned = 0)");
-    // Only surface public posts in feeds; unlisted/private must stay hidden from timelines.
-    where.push("p.visibility = 'public'");
+    // Only surface public posts in feeds; legacy rows without visibility are treated as public.
+    where.push("(p.visibility IS NULL OR p.visibility = 'public')");
     // Hide quarantined posts from all surfaced feeds, including moderators/admins.
     where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
 
@@ -313,12 +313,10 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const { results } = await env.DB.prepare(query).bind(...bindings).all();
 
     // Filter any bad rows for safety (defense-in-depth)
-    const safeRows = (results || []).filter(
-      (row: any) =>
-        row.author_is_suspended === 0 &&
-        row.author_shadow_banned === 0 &&
-        row.visibility === "public"
-    );
+    const safeRows = (results || []).filter((row: any) => {
+      const visibility = row.visibility || "public";
+      return row.author_is_suspended === 0 && row.author_shadow_banned === 0 && visibility === "public";
+    });
 
     const postIds = safeRows.map((row: any) => row.id);
     const authorIds = Array.from(new Set(safeRows.map((row: any) => row.author_id))) as string[];
@@ -600,7 +598,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
     const viewerId = authedUser?.userId ?? null;
     const viewerIsAuthor = viewerId === row.author_id;
     const canBypassVisibility = isMod || viewerIsAuthor;
-    const isPublic = row.visibility === "public";
+    const isPublic = !row.visibility || row.visibility === "public";
     if (!isPublic && !canBypassVisibility) {
       return json({ error: "Post not found" }, 404);
     }

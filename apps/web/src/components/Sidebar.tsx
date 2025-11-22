@@ -20,12 +20,15 @@ const Sidebar = ({ open, onClose }: SidebarProps) => {
         }
     };
 
+    const profileHandle = user?.username || user?.id || null;
+    const profilePath = profileHandle ? `/u/${profileHandle}` : "/settings/profile";
+
     const navItems = [
         { icon: Home, label: "Home", path: "/" },
         { icon: Zap, label: "Trending", path: "/trending" },
         { icon: Radio, label: "Live", path: "/live" },
         { icon: Code2, label: "Snippets", path: "/snippets" },
-        { icon: User, label: "Profile", path: "/profile" },
+        { icon: User, label: "Profile", path: profilePath },
         { icon: Settings, label: "Settings", path: "/settings" },
     ];
 
@@ -63,7 +66,8 @@ const Sidebar = ({ open, onClose }: SidebarProps) => {
             {/* Navigation */}
             <nav className="flex-1 px-4 space-y-2">
                 {navItems.map((item) => {
-                    const isActive = location.pathname === item.path;
+                    const isActive =
+                        location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
                     const Icon = item.icon;
 
                     return (
