@@ -39,6 +39,8 @@ const buildBlobPath = (value: number, offset: number) => {
     return interpolate(blobPaths[base], blobPaths[next])(progress);
 };
 
+const filterId = "vc-liquid-gooey";
+
 const LiquidBackground = () => {
     const pathIndex = useMotionValue(0);
     const colors = ["#E67E22", "#2C3E50", "#16A085"]; // Coral, Navy, Teal
@@ -67,10 +69,12 @@ const LiquidBackground = () => {
         return mixHexColors(colors[base], colors[next], progress);
     });
 
-    const parallaxX = useTransform(pointerX, (v) => v * 48);
-    const parallaxY = useTransform(pointerY, (v) => v * 48);
-    const parallaxX2 = useTransform(pointerX, (v) => v * -36);
-    const parallaxY2 = useTransform(pointerY, (v) => v * -36);
+    const parallaxX = useTransform(pointerX, (v) => v * 52);
+    const parallaxY = useTransform(pointerY, (v) => v * 52);
+    const parallaxX2 = useTransform(pointerX, (v) => v * -46);
+    const parallaxY2 = useTransform(pointerY, (v) => v * -46);
+    const wobbleScale = useTransform(pathIndex, (latest) => 0.92 + 0.08 * Math.sin(latest * Math.PI * 0.7));
+    const wobbleScale2 = useTransform(pathIndex, (latest) => 0.9 + 0.1 * Math.cos(latest * Math.PI * 0.65));
 
     useEffect(() => {
         const controls = animate(pathIndex, blobPaths.length, {
@@ -107,19 +111,39 @@ const LiquidBackground = () => {
     return (
         <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
             <motion.svg
-                viewBox="-100 -100 200 200"
-                className="absolute top-[-25%] left-[-15%] w-[70vw] h-[70vw] opacity-25 blur-2xl mix-blend-screen"
-                style={{ translateX: parallaxX, translateY: parallaxY }}
+                viewBox="-120 -120 240 240"
+                className="absolute inset-0 h-[120vh] w-[120vw] -left-[10vw] -top-[10vh] opacity-[0.32] mix-blend-screen"
             >
-                <motion.path d={path} fill={color} />
-            </motion.svg>
+                <defs>
+                    <filter id={filterId}>
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur" />
+                        <feColorMatrix
+                            in="blur"
+                            mode="matrix"
+                            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 38 -18"
+                            result="gooey"
+                        />
+                        <feBlend in="SourceGraphic" in2="gooey" />
+                    </filter>
+                </defs>
 
-            <motion.svg
-                viewBox="-100 -100 200 200"
-                className="absolute bottom-[-25%] right-[-15%] w-[80vw] h-[80vw] opacity-18 blur-2xl mix-blend-screen"
-                style={{ rotate: 180, translateX: parallaxX2, translateY: parallaxY2 }}
-            >
-                <motion.path d={secondaryPath} fill={secondaryColor} />
+                <motion.g filter={`url(#${filterId})`}>
+                    <motion.path
+                        d={path}
+                        fill={color}
+                        style={{ translateX: parallaxX, translateY: parallaxY, scale: wobbleScale }}
+                    />
+                    <motion.path
+                        d={secondaryPath}
+                        fill={secondaryColor}
+                        style={{
+                            translateX: parallaxX2,
+                            translateY: parallaxY2,
+                            scale: wobbleScale2,
+                            rotate: 180,
+                        }}
+                    />
+                </motion.g>
             </motion.svg>
         </div>
     );
