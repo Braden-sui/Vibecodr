@@ -255,3 +255,49 @@ export async function getUserRunQuotaState(
   const result = checkRunQuota(plan, runsThisMonth);
   return { plan, runsThisMonth, result };
 }
+
+/**
+ * Increment a user's recorded storage usage with optimistic locking.
+ * Returns the new storage version when successful.
+ */
+export async function incrementStorageUsage(
+  userId: string,
+  env: { DB: D1Database },
+  deltaBytes: number,
+  options?: { expectedVersion?: number }
+): Promise<number> {
+  if (deltaBytes <= 0) {
+    return options?.expectedVersion ?? 0;
+  }
+
+  let attempts = 0;
+  let state = await getUserStorageState(userId, env);
+  const maxAttempts = 2;
+
+  while (attempts < maxAttempts) {
+    const currentVersion = typeof options?.expectedVersion === "number" ? options.expectedVersion : state.storageVersion;
+    const updateResult = await env.DB.prepare(
+      `UPDATE users
+       SET storage_usage_bytes = storage_usage_bytes + ?, storage_version = storage_version + 1
+       WHERE id = ? AND storage_version = ?`
+    )
+      .bind(deltaBytes, userId, currentVersion)
+      .run();
+
+    const changes = updateResult?.meta?.changes ?? 0;
+    if (changes > 0) {
+      return currentVersion + 1;
+    }
+
+    // Re-read state and ensure quota still holds before retrying
+    state = await getUserStorageState(userId, env);
+    const quotaCheck = checkStorageQuota(state.plan, state.storageUsageBytes, deltaBytes);
+    if (!quotaCheck.allowed) {
+      throw new Error("E-VIBECODR-0405 storage quota exceeded during accounting");
+    }
+
+    attempts += 1;
+  }
+
+  throw new Error("E-VIBECODR-0406 failed to record storage usage");
+}

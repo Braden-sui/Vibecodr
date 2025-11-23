@@ -81,6 +81,6 @@ describe("loadRuntimeManifest", () => {
     } as any);
 
     await expect(loadRuntimeManifest("missing"))
-      .rejects.toThrowError(/Failed to load runtime manifest/);
+      .rejects.toThrowError(/E-VIBECODR-2109/);
   });
 });

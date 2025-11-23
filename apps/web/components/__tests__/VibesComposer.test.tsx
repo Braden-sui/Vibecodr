@@ -44,47 +44,27 @@ const capsulesImportGithubMock = capsulesApi.importGithub as any;
 const coversUploadMock = coversApi.upload as any;
 
 async function readFormDataEntry(value: FormDataEntryValue | null): Promise<string> {
-  if (value == null) {
-    throw new Error("Missing form data entry");
-  }
-  if (typeof (value as any)?.__raw === "string") {
-    return (value as any).__raw as string;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
+  if (value == null) throw new Error("Missing form data entry");
 
-  const candidate = value as unknown as {
-    text?: () => Promise<string>;
-    arrayBuffer?: () => Promise<ArrayBuffer>;
-    buffer?: ArrayBuffer | ArrayBufferView;
-    data?: unknown;
-  };
+  if (typeof value === "string") return value;
 
+  const candidate = value as any;
   if (typeof candidate.text === "function") {
     return candidate.text();
   }
-
   if (typeof candidate.arrayBuffer === "function") {
     const buf = await candidate.arrayBuffer();
     return new TextDecoder().decode(buf);
   }
-
   if (typeof Blob !== "undefined" && value instanceof Blob) {
     return await new Response(value).text();
-  }
-
-  if (candidate.buffer instanceof ArrayBuffer) {
-    return new TextDecoder().decode(candidate.buffer);
   }
 
   try {
     return await new Response(value as BodyInit).text();
   } catch {
-    // fall through
+    return String(value);
   }
-
-  return String(value);
 }
 
 describe("VibesComposer inline code mode", () => {
@@ -102,81 +82,116 @@ describe("VibesComposer inline code mode", () => {
   });
 
   it("includes capabilities and params from Advanced inline settings in manifest", async () => {
-    postsApiCreateMock.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => ({ id: "post123" }),
-    } as any);
+    let capturedManifest: any;
+    const originalStringify = JSON.stringify;
+    try {
+      (JSON as any).stringify = function (value: any, ...args: any[]) {
+        try {
+          if (
+            value &&
+            typeof value === "object" &&
+            value.runner === "webcontainer" &&
+            value.entry === "entry.tsx" &&
+            value.version === "1.0"
+          ) {
+            capturedManifest = value;
+          }
+        } catch {
+          // ignore
+        }
+        return (originalStringify as any)(value, ...args);
+      } as any;
 
+      capsulesPublishMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, capsuleId: "caps123" }),
+      } as any);
+
+      postsApiCreateMock.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: "post123" }),
+      } as any);
+
+      const user = userEvent.setup();
+      render(<VibesComposer />);
+
+      const codeChip = screen.getByRole("button", { name: "Code" });
+      await user.click(codeChip);
+
+      const titleInput = screen.getByPlaceholderText("Title for your vibe");
+      fireEvent.focus(titleInput);
+      fireEvent.change(titleInput, { target: { value: "Inline app with advanced settings" } });
+
+      const descriptionInput = screen.getByPlaceholderText("Add more details (optional)");
+      fireEvent.change(descriptionInput, { target: { value: "Demo description" } });
+
+      const codeTextarea = await screen.findByPlaceholderText(
+        /Write your app code here\. HTML stays client-static/i
+      );
+      fireEvent.change(codeTextarea, { target: { value: "<div>Advanced</div>" } });
+
+      const storageSwitch = document.getElementById("inline-code-storage") as HTMLButtonElement;
+      await user.click(storageSwitch);
+
+      const paramSwitch = document.getElementById("inline-code-param") as HTMLButtonElement;
+      await user.click(paramSwitch);
+
+      const labelInput = await screen.findByLabelText("Label");
+      fireEvent.change(labelInput, { target: { value: "Intensity" } });
+
+      const defaultInput = screen.getByLabelText("Default");
+      fireEvent.change(defaultInput, { target: { value: "75" } });
+
+      const minInput = screen.getByLabelText("Min");
+      fireEvent.change(minInput, { target: { value: "0" } });
+
+      const maxInput = screen.getByLabelText("Max");
+      fireEvent.change(maxInput, { target: { value: "200" } });
+
+      const stepInput = screen.getByLabelText("Step");
+      fireEvent.change(stepInput, { target: { value: "5" } });
+
+      const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
+      await waitFor(() => expect(shareButton).not.toBeDisabled());
+      await user.click(shareButton);
+
+      await waitFor(() => {
+        expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
+        expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
+      });
+
+      expect(capturedManifest.runner).toBe("webcontainer");
+      expect(capturedManifest.entry).toBe("entry.tsx");
+      expect(capturedManifest.capabilities).toEqual({ storage: true });
+      expect(Array.isArray(capturedManifest.params)).toBe(true);
+      expect(capturedManifest.params[0]).toMatchObject({
+        name: "intensity",
+        type: "slider",
+        label: "Intensity",
+        default: 75,
+        min: 0,
+        max: 200,
+        step: 5,
+      });
+    } finally {
+      (JSON as any).stringify = originalStringify;
+    }
+  });
+
+  it("resets Advanced settings on successful inline submit", async () => {
     capsulesPublishMock.mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ success: true, capsuleId: "caps123" }),
     } as any);
 
-    // Patch Blob/File so we can reliably read back the JSON we constructed
-    const OriginalBlob = globalThis.Blob as any;
-    const OriginalFile = globalThis.File as any;
-    class TestBlob extends OriginalBlob {
-      __raw?: string;
-      constructor(parts: any[], opts?: any) {
-        super(parts, opts);
-        try {
-          this.__raw = parts
-            .map((p: any) => (typeof p === "string" ? p : (p && p.__raw) || ""))
-            .join("");
-        } catch {
-          this.__raw = undefined;
-        }
-      }
-      async text() {
-        try {
-          return await OriginalBlob.prototype.text.call(this);
-        } catch {
-          return this.__raw ?? Object.prototype.toString.call(this);
-        }
-      }
-    }
-    class TestFile extends OriginalFile {
-      __raw?: string;
-      constructor(parts: any[], name: any, opts?: any) {
-        super(parts as any, name, opts);
-        try {
-          this.__raw = parts
-            .map((p: any) => (typeof p === "string" ? p : (p && p.__raw) || ""))
-            .join("");
-        } catch {
-          this.__raw = undefined;
-        }
-      }
-      async text() {
-        try {
-          return await OriginalBlob.prototype.text.call(this);
-        } catch {
-          return this.__raw ?? Object.prototype.toString.call(this);
-        }
-      }
-    }
-    (globalThis as any).Blob = TestBlob;
-    (globalThis as any).File = TestFile;
-
-    // Also capture manifest before it becomes a Blob by intercepting JSON.stringify
-    let capturedManifest: any | undefined;
-    const originalStringify = JSON.stringify;
-    (JSON as any).stringify = function (value: any, ...args: any[]) {
-      try {
-        if (
-          value &&
-          typeof value === "object" &&
-          value.runner === "client-static" &&
-          value.entry === "index.html" &&
-          "version" in value
-        ) {
-          capturedManifest = value;
-        }
-      } catch {}
-      return (originalStringify as any)(value, ...args);
-    } as any;
+    postsApiCreateMock.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "post123" }),
+    } as any);
 
     const user = userEvent.setup();
     render(<VibesComposer />);
@@ -186,109 +201,14 @@ describe("VibesComposer inline code mode", () => {
 
     const titleInput = screen.getByPlaceholderText("Title for your vibe");
     fireEvent.focus(titleInput);
-    await user.type(titleInput, "Inline app with advanced settings");
-
-    // Ensure inline code UI is present before interacting further
-    await screen.findByText("Inline App Code");
-
-    const descriptionInput = screen.getByPlaceholderText("Add more details (optional)");
-    await user.type(descriptionInput, "Demo description");
+    fireEvent.change(titleInput, { target: { value: "Inline app reset test" } });
 
     const codeTextarea = await screen.findByPlaceholderText(
-      /Write your app markup \(HTML\) here\. It will run in a sandboxed iframe\./i,
+      /Write your app code here\. HTML stays client-static/i
     );
-    await user.type(codeTextarea, "<div>Advanced</div>");
+    fireEvent.change(codeTextarea, { target: { value: "<div>Reset</div>" } });
 
     const storageSwitch = document.getElementById("inline-code-storage") as HTMLButtonElement;
-    await user.click(storageSwitch);
-    await waitFor(() => expect(storageSwitch).toHaveAttribute("data-state", "checked"));
-
-    const paramSwitch = document.getElementById("inline-code-param") as HTMLButtonElement;
-    await user.click(paramSwitch);
-    await waitFor(() => {
-      expect(paramSwitch).toHaveAttribute("data-state", "checked");
-    });
-
-    const labelInput = await screen.findByLabelText("Label");
-    await user.clear(labelInput);
-    await user.type(labelInput, "Intensity");
-
-    const defaultInput = screen.getByLabelText("Default");
-    await user.clear(defaultInput);
-    await user.type(defaultInput, "75");
-
-    const minInput = screen.getByLabelText("Min");
-    await user.clear(minInput);
-    await user.type(minInput, "0");
-
-    const maxInput = screen.getByLabelText("Max");
-    await user.clear(maxInput);
-    await user.type(maxInput, "200");
-
-    const stepInput = screen.getByLabelText("Step");
-    fireEvent.change(stepInput, { target: { value: "5" } });
-
-    const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
-    await waitFor(() => expect(shareButton).not.toBeDisabled());
-    await user.click(shareButton);
-
-    await waitFor(() => {
-      expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
-    });
-
-    expect(capturedManifest).toBeDefined();
-    const manifest = capturedManifest as any;
-
-    expect(manifest.runner).toBe("client-static");
-    expect(manifest.entry).toBe("index.html");
-    expect(manifest.capabilities).toEqual({
-      storage: true,
-    });
-    expect(Array.isArray(manifest.params)).toBe(true);
-    expect(manifest.params[0]).toMatchObject({
-      type: "slider",
-      label: "Intensity",
-      default: 75,
-      min: 0,
-      max: 200,
-    });
-
-    // restore JSON.stringify and global Blob/File
-    (JSON as any).stringify = originalStringify;
-    (globalThis as any).Blob = OriginalBlob;
-    (globalThis as any).File = OriginalFile;
-
-    // Post creation is covered by a separate test; manifest validation ends here.
-  });
-
-  it("resets Advanced settings on successful inline submit", async () => {
-    postsApiCreateMock.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => ({ id: "post123" }),
-    } as any);
-
-    capsulesPublishMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, capsuleId: "caps123" }),
-    } as any);
-
-    const user = userEvent.setup();
-    render(<VibesComposer />);
-
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip);
-
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
-    await user.type(titleInput, "Inline app reset test");
-
-    const codeTextarea = await screen.findByPlaceholderText(
-      /Write your app markup \(HTML\) here\. It will run in a sandboxed iframe\./i,
-    );
-    await user.type(codeTextarea, "<div>Reset</div>");
-
-    const storageSwitch = screen.getByLabelText("Allow storage");
     await user.click(storageSwitch);
 
     const paramSwitch = document.getElementById("inline-code-param") as HTMLButtonElement;
@@ -305,16 +225,15 @@ describe("VibesComposer inline code mode", () => {
       expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
     });
 
-    // Reopen composer in Code mode and verify Advanced controls are reset
     const codeChip2 = screen.getByRole("button", { name: "Code" });
     await user.click(codeChip2);
 
-    const titleInput2 = screen.getByPlaceholderText("Title for your vibe");
-    fireEvent.focus(titleInput2);
+    const reopenTitle = screen.getByPlaceholderText("Title for your vibe");
+    fireEvent.focus(reopenTitle);
+    await screen.findByText("Inline App Code");
 
-    const storageSwitch2 = screen.getByLabelText("Allow storage") as HTMLInputElement;
-    expect(storageSwitch2).not.toBeChecked();
-
+    const storageSwitch2 = document.getElementById("inline-code-storage") as HTMLButtonElement;
+    expect(storageSwitch2).toHaveAttribute("data-state", "unchecked");
 
     const paramSwitch2 = document.getElementById("inline-code-param") as HTMLButtonElement;
     expect(paramSwitch2).toHaveAttribute("data-state", "unchecked");
@@ -341,7 +260,8 @@ describe("VibesComposer inline code mode", () => {
     await userEvent.click(codeChip);
 
     const titleInput = screen.getByPlaceholderText("Title for your vibe");
-    await userEvent.type(titleInput, "My inline app");
+    fireEvent.focus(titleInput);
+    fireEvent.change(titleInput, { target: { value: "My inline app" } });
 
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await userEvent.click(shareButton);
@@ -372,12 +292,13 @@ describe("VibesComposer inline code mode", () => {
     await user.click(codeChip);
 
     const titleInput = screen.getByPlaceholderText("Title for your vibe");
-    await user.type(titleInput, "Inline app");
+    fireEvent.focus(titleInput);
+    fireEvent.change(titleInput, { target: { value: "Inline app" } });
 
     const codeTextarea = await screen.findByPlaceholderText(
-      /Write your app markup \(HTML\) here\. It will run in a sandboxed iframe\./i,
+      /Write your app code here\. HTML stays client-static/i
     );
-    await user.type(codeTextarea, "<div>Hello</div>");
+    fireEvent.change(codeTextarea, { target: { value: "<div>Hello</div>" } });
 
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await user.click(shareButton);
@@ -395,7 +316,7 @@ describe("VibesComposer inline code mode", () => {
       }),
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
-      }),
+      })
     );
 
     await waitFor(() => {
@@ -422,17 +343,20 @@ describe("VibesComposer inline code mode", () => {
     await user.click(codeChip);
 
     const titleInput = screen.getByPlaceholderText("Title for your vibe");
-    await user.type(titleInput, "Inline app");
+    fireEvent.focus(titleInput);
+    fireEvent.change(titleInput, { target: { value: "Inline app" } });
 
     const codeTextarea = await screen.findByPlaceholderText(
-      /Write your app markup \(HTML\) here\. It will run in a sandboxed iframe\./i,
+      /Write your app code here\. HTML stays client-static/i
     );
-    await user.type(codeTextarea, "<div>oops</div>");
+    fireEvent.change(codeTextarea, { target: { value: "<div>oops</div>" } });
 
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await user.click(shareButton);
 
-    expect(capsulesPublishMock).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(capsulesPublishMock).toHaveBeenCalled();
+    });
 
     await waitFor(() => {
       expect(screen.getByText("Bad code")).toBeInTheDocument();
@@ -455,12 +379,13 @@ describe("VibesComposer inline code mode", () => {
     await user.click(codeChip);
 
     const titleInput = screen.getByPlaceholderText("Title for your vibe");
-    await user.type(titleInput, "Inline app");
+    fireEvent.focus(titleInput);
+    fireEvent.change(titleInput, { target: { value: "Inline app" } });
 
     const codeTextarea = await screen.findByPlaceholderText(
-      /Write your app markup \(HTML\) here\. It will run in a sandboxed iframe\./i,
+      /Write your app code here\. HTML stays client-static/i
     );
-    await user.type(codeTextarea, "<div>Hi</div>");
+    fireEvent.change(codeTextarea, { target: { value: "<div>Hi</div>" } });
 
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await user.click(shareButton);
@@ -494,16 +419,17 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     const { container } = render(<VibesComposer />);
 
-    // Switch to GitHub mode and expand
     const githubChip = screen.getByRole("button", { name: "GitHub" });
     await user.click(githubChip);
 
-    const mainInput = screen.getByPlaceholderText("https://github.com/user/repo");
-    await user.type(mainInput, "https://github.com/user/repo");
+    const [mainInput] = screen.getAllByPlaceholderText("https://github.com/user/repo");
+    fireEvent.focus(mainInput);
+    fireEvent.change(mainInput, { target: { value: "https://github.com/user/repo" } });
 
     const [, importInput] = screen.getAllByPlaceholderText("https://github.com/user/repo");
-    await user.clear(importInput);
-    await user.type(importInput, "https://github.com/user/repo");
+    fireEvent.change(importInput, { target: { value: "" } });
+    fireEvent.focus(importInput);
+    fireEvent.change(importInput, { target: { value: "https://github.com/user/repo" } });
 
     const importButton = screen.getByRole("button", { name: "Import Repository" });
     await user.click(importButton);
@@ -513,7 +439,6 @@ describe("VibesComposer inline code mode", () => {
       expect(screen.getByText("Repository imported successfully")).toBeInTheDocument();
     });
 
-    // Now the cover image section should be visible; select an image
     const fileInput = container.querySelector('input[type="file"][accept="image/*"]') as HTMLInputElement;
     const file = new File(["dummy"], "cover.png", { type: "image/png" });
     fireEvent.change(fileInput, { target: { files: [file] } });

@@ -13,10 +13,17 @@ import {
   type PublishWarning,
   PublishCapsuleError,
   enforceSafetyForFiles,
+  ensureUserStorageAccount,
 } from "./capsules";
-import { checkBundleSize, getUserPlan, getUserRunQuotaState } from "../storage/quotas";
+import {
+  checkBundleSize,
+  checkStorageQuota,
+  getUserRunQuotaState,
+  getUserStorageState,
+  incrementStorageUsage,
+} from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
-import { uploadCapsuleBundle } from "../storage/r2";
+import { uploadCapsuleBundle, deleteCapsuleBundle } from "../storage/r2";
 import { bundleWithEsbuild } from "../runtime/esbuildBundler";
 
 interface AnalysisResult {
@@ -40,6 +47,12 @@ type ImportResponse = {
   warnings?: PublishWarning[];
 };
 
+type ImportOutcome =
+  | { ok: true; status: number; body: ImportResponse }
+  | { ok: false; status: number; body: Record<string, unknown> };
+
+type ProgressEmitter = (step: string, progress?: number, detail?: Record<string, unknown>) => void;
+
 /**
  * POST /import/github
  * Import from GitHub repository via archive download
@@ -55,6 +68,12 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
 
     const runQuota = await getUserRunQuotaState(user.userId, env);
     if (!runQuota.result.allowed) {
+      writeImportAnalytics(env, {
+        outcome: "error",
+        code: "run_quota_exceeded",
+        plan: runQuota.plan,
+        userId: user.userId,
+      });
       return json(
         {
           error: "Run quota exceeded",
@@ -100,7 +119,7 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
       analysis.warnings.push("Server-side code detected. Only client-side code will run.");
     }
 
-    return await processImport(env, user, analysis);
+    return await respondWithImportProgress(req, (emit) => processImport(env, user, analysis, emit));
   } catch (error) {
     console.error("GitHub import error:", error);
     return json(
@@ -179,7 +198,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
       analysis.warnings.push("Server-side code detected. Only client-side code will run.");
     }
 
-    return await processImport(env, user, analysis);
+    return await respondWithImportProgress(req, (emit) => processImport(env, user, analysis, emit));
   } catch (error) {
     console.error("ZIP import error:", error);
     return json(
@@ -370,6 +389,33 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
   });
 }
 
+function writeImportAnalytics(
+  env: Env,
+  payload: {
+    outcome: "success" | "error";
+    plan?: string;
+    totalSize?: number;
+    fileCount?: number;
+    warnings?: number;
+    code?: string;
+    userId?: string;
+  }
+) {
+  try {
+    const analytics = (env as any).vibecodr_analytics_engine;
+    if (!analytics || typeof analytics.writeDataPoint !== "function") return;
+    analytics.writeDataPoint({
+      blobs: ["import", payload.outcome, payload.plan ?? "", payload.code ?? ""],
+      doubles: [payload.totalSize ?? 0, payload.fileCount ?? 0, payload.warnings ?? 0],
+      indexes: [payload.userId ?? ""],
+    });
+  } catch (err) {
+    console.error("E-VIBECODR-0801 import analytics failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 function toPublishWarnings(
   analysisWarnings: string[],
   bundlerWarnings: string[],
@@ -512,25 +558,37 @@ async function persistDraftCapsule(params: {
 async function processImport(
   env: Env,
   user: AuthenticatedUser,
-  analysis: AnalysisResult
-): Promise<Response> {
-  const plan = await getUserPlan(user.userId, env);
+  analysis: AnalysisResult,
+  onProgress?: ProgressEmitter
+): Promise<ImportOutcome> {
+  onProgress?.("analyzing", 0.1, { totalSize: analysis.totalSize });
+  const storageState = await getUserStorageState(user.userId, env);
+  const plan = storageState.plan;
 
-  const preBundleSizeCheck = checkBundleSize(plan, analysis.totalSize);
-  if (!preBundleSizeCheck.allowed) {
-    return json(
-      {
-        error: "Bundle size limit exceeded",
+    const preBundleSizeCheck = checkBundleSize(plan, analysis.totalSize);
+    if (!preBundleSizeCheck.allowed) {
+      writeImportAnalytics(env, {
+        outcome: "error",
+        code: "bundle_limit",
+        plan,
+        totalSize: analysis.totalSize,
+        userId: user.userId,
+      });
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: "Bundle size limit exceeded",
         reason: preBundleSizeCheck.reason,
         plan,
         limits: preBundleSizeCheck.limits,
         usage: { bundleSize: analysis.totalSize },
       },
-      400
-    );
+    };
   }
 
   // Bundle with esbuild (same helper used for artifacts)
+  onProgress?.("bundling", 0.25);
   const {
     files: bundledFiles,
     entryPoint: bundledEntryPoint,
@@ -545,14 +603,15 @@ async function processImport(
   const manifestDraft = await generateManifest(bundledFiles, analysisForManifest);
   const validation = validateManifest(manifestDraft);
   if (!validation.valid) {
-    return json(
-      {
+    return {
+      ok: false,
+      status: 400,
+      body: {
         error: "Invalid manifest",
         errors: validation.errors,
         warnings: validation.warnings,
       },
-      400
-    );
+    };
   }
 
   // Convert bundled files for storage
@@ -560,10 +619,11 @@ async function processImport(
 
   // Safety + optional HTML sanitization
   try {
+    onProgress?.("safety", 0.45);
     await enforceSafetyForFiles(env, manifestDraft, bundledCapsuleFiles);
   } catch (err) {
     if (err instanceof PublishCapsuleError) {
-      return json(err.body, err.status);
+      return { ok: false, status: err.status, body: err.body };
     }
     throw err;
   }
@@ -574,18 +634,27 @@ async function processImport(
 
   const bundleSizeCheck = checkBundleSize(plan, totalSize);
   if (!bundleSizeCheck.allowed) {
-    return json(
-      {
+    writeImportAnalytics(env, {
+      outcome: "error",
+      code: "bundle_limit",
+      plan,
+      totalSize,
+      userId: user.userId,
+    });
+    return {
+      ok: false,
+      status: 400,
+      body: {
         error: "Bundle size limit exceeded",
         reason: bundleSizeCheck.reason,
         plan,
         limits: bundleSizeCheck.limits,
         usage: { bundleSize: totalSize },
       },
-      400
-    );
+    };
   }
 
+  onProgress?.("manifest", 0.6);
   const { manifest, manifestText, manifestFile } = await buildManifestWithMetadata(
     manifestDraft,
     filesForUpload,
@@ -597,29 +666,65 @@ async function processImport(
 
   const finalSizeCheck = checkBundleSize(plan, totalSize);
   if (!finalSizeCheck.allowed) {
-    return json(
-      {
+    writeImportAnalytics(env, {
+      outcome: "error",
+      code: "bundle_limit",
+      plan,
+      totalSize,
+      userId: user.userId,
+    });
+    return {
+      ok: false,
+      status: 400,
+      body: {
         error: "Bundle size limit exceeded",
         reason: finalSizeCheck.reason,
         plan,
         limits: finalSizeCheck.limits,
         usage: { bundleSize: totalSize },
       },
-      400
-    );
+    };
   }
 
   const validationWithMeta = validateManifest(manifest);
   if (!validationWithMeta.valid) {
-    return json(
-      {
+    return {
+      ok: false,
+      status: 400,
+      body: {
         error: "Invalid manifest",
         errors: validationWithMeta.errors,
         warnings: validationWithMeta.warnings,
       },
-      400
-    );
+    };
   }
+
+  const storageCheck = checkStorageQuota(plan, storageState.storageUsageBytes, totalSize);
+  if (!storageCheck.allowed) {
+    writeImportAnalytics(env, {
+      outcome: "error",
+      code: "storage_limit",
+      plan,
+      totalSize,
+      userId: user.userId,
+    });
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: "Storage quota exceeded",
+        reason: storageCheck.reason,
+        plan,
+        limits: storageCheck.limits,
+        usage: {
+          storage: storageState.storageUsageBytes,
+          additional: totalSize,
+        },
+      },
+    };
+  }
+
+  await ensureUserStorageAccount(env, user, plan);
 
   const warnings = toPublishWarnings(
     analysisForManifest.warnings,
@@ -627,6 +732,7 @@ async function processImport(
     validationWithMeta.warnings ?? validation.warnings
   );
 
+  onProgress?.("persisting", 0.8);
   const result = await persistDraftCapsule({
     env,
     user,
@@ -636,5 +742,121 @@ async function processImport(
     warnings,
   });
 
-  return json(result, 201);
+  try {
+    await incrementStorageUsage(user.userId, env, totalSize);
+  } catch (err) {
+    await cleanupDraftCapsule(env, result.capsuleId, result.filesSummary.contentHash);
+    writeImportAnalytics(env, {
+      outcome: "error",
+      code: "storage_accounting",
+      plan,
+      totalSize,
+      userId: user.userId,
+    });
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "Failed to record storage usage",
+        code: "E-VIBECODR-0406",
+        details: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+
+  writeImportAnalytics(env, {
+    outcome: "success",
+    plan,
+    totalSize,
+    fileCount: result.filesSummary.fileCount,
+    warnings: warnings?.length ?? 0,
+    userId: user.userId,
+  });
+
+  onProgress?.("done", 1);
+  return { ok: true, status: 201, body: result };
+}
+
+async function cleanupDraftCapsule(env: Env, capsuleId: string, contentHash: string) {
+  try {
+    await env.DB.prepare("DELETE FROM assets WHERE capsule_id = ?").bind(capsuleId).run();
+  } catch (err) {
+    console.error("E-VIBECODR-0407 cleanup draft assets failed", {
+      capsuleId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    await env.DB.prepare("DELETE FROM capsules WHERE id = ?").bind(capsuleId).run();
+  } catch (err) {
+    console.error("E-VIBECODR-0408 cleanup draft capsule failed", {
+      capsuleId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    await deleteCapsuleBundle(env.R2, contentHash);
+  } catch (err) {
+    console.error("E-VIBECODR-0409 cleanup draft R2 bundle failed", {
+      capsuleId,
+      contentHash,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+function shouldStreamProgress(req: Request): boolean {
+  const url = new URL(req.url);
+  const progressFlag = url.searchParams.get("progress");
+  const accept = req.headers.get("accept") || "";
+  return progressFlag === "1" || accept.includes("application/x-ndjson");
+}
+
+async function respondWithImportProgress(
+  req: Request,
+  runner: (emit: ProgressEmitter) => Promise<ImportOutcome>
+): Promise<Response> {
+  if (!shouldStreamProgress(req)) {
+    try {
+      const outcome = await runner(() => {});
+      return outcome.ok ? json(outcome.body, outcome.status) : json(outcome.body, outcome.status);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Import failed";
+      return json({ error: message }, 500);
+    }
+  }
+
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+
+  const write = async (obj: Record<string, unknown>) => {
+    await writer.write(encoder.encode(`${JSON.stringify(obj)}\n`));
+  };
+
+  (async () => {
+    try {
+      await write({ type: "progress", step: "start", progress: 0 });
+      const outcome = await runner((step, progress, detail) =>
+        write({ type: "progress", step, progress, detail })
+      );
+      if (outcome.ok) {
+        await write({ type: "result", status: outcome.status, result: outcome.body });
+      } else {
+        await write({ type: "error", status: outcome.status, body: outcome.body });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Import failed";
+      await write({ type: "error", status: 500, body: { error: message } });
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(readable, {
+    status: 200,
+    headers: { "content-type": "application/x-ndjson" },
+  });
 }

@@ -532,12 +532,19 @@ export const capsulesApi = {
       ...(init || {}),
     });
   },
+  publishDraft(capsuleId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/capsules/${capsuleId}/publish`), {
+      method: "POST",
+      ...(init || {}),
+    });
+  },
 } as const;
 
 export const artifactsApi = {
   manifest(artifactId: string, init?: RequestInit) {
     const encodedId = encodeURIComponent(artifactId);
-    return fetch(workerUrl(`/artifacts/${encodedId}/manifest`), init);
+    const url = workerUrl(`/artifacts/${encodedId}/manifest`);
+    return init ? fetch(url, init) : fetch(url);
   },
   bundleSrc(artifactId: string) {
     const encodedId = encodeURIComponent(artifactId);

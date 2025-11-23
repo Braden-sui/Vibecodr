@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Env } from "../index";
 import { netProxy, isHostAllowed, isAllowedProtocol, getBlockedAddressReason } from "./proxy";
+import { Plan } from "../storage/quotas";
 
 vi.mock("../auth", () => {
   return {
@@ -31,27 +32,93 @@ const createKv = () => {
   } as any;
 };
 
-const createEnv = (options?: { manifestHosts?: string[]; envAllowlist?: string[]; ownerId?: string; runtimeKv?: boolean; proxyEnabled?: boolean }) => {
+const createEnv = (options?: {
+  manifestHosts?: string[];
+  envAllowlist?: string[];
+  ownerId?: string;
+  runtimeKv?: boolean;
+  proxyEnabled?: boolean;
+  plan?: Plan;
+}) => {
   const manifest = {
     ...baseManifest,
     capabilities: options?.manifestHosts ? { net: options.manifestHosts } : undefined,
   };
 
-  const stmt = {
-    bind: vi.fn().mockReturnThis(),
-    first: vi.fn().mockResolvedValue({
-      owner_id: options?.ownerId ?? "user-1",
-      manifest_json: JSON.stringify(manifest),
-    }),
-  };
+  const rateLimits = new Map<string, { count: number; resetAt: number }>();
+  const ownerId = options?.ownerId ?? "user-1";
+  const plan = options?.plan ?? Plan.PRO;
+
+  const prepare = vi.fn((sql: string) => {
+    const stmt: any = {
+      bindArgs: [] as any[],
+      bind(...args: any[]) {
+        this.bindArgs = args;
+        return this;
+      },
+      async first() {
+        if (sql.includes("FROM capsules")) {
+          return {
+            owner_id: ownerId,
+            manifest_json: JSON.stringify(manifest),
+          };
+        }
+        if (sql.includes("FROM users")) {
+          return { plan };
+        }
+        if (sql.includes("SELECT count, reset_at FROM proxy_rate_limits")) {
+          const key = this.bindArgs[0];
+          const row = rateLimits.get(key);
+          return row ? { count: row.count, reset_at: row.resetAt } : undefined;
+        }
+        return undefined;
+      },
+      async all() {
+        if (sql.includes("FROM users")) {
+          return {
+            results: [
+              {
+                plan,
+                storage_usage_bytes: 0,
+                storage_version: 0,
+              },
+            ],
+          };
+        }
+        return { results: [] };
+      },
+      async run() {
+        if (sql.startsWith("CREATE TABLE IF NOT EXISTS proxy_rate_limits")) {
+          return { meta: { changes: 0 } };
+        }
+        if (sql.startsWith("INSERT INTO proxy_rate_limits")) {
+          const [key, count, resetAt, updateCount, updateResetAt] = this.bindArgs;
+          if (rateLimits.has(key)) {
+            rateLimits.set(key, { count: updateCount, resetAt: updateResetAt });
+          } else {
+            rateLimits.set(key, { count, resetAt });
+          }
+          return { meta: { changes: 1 } };
+        }
+        if (sql.startsWith("UPDATE proxy_rate_limits SET count = ? WHERE key = ?")) {
+          const [count, key] = this.bindArgs;
+          const existing = rateLimits.get(key) || { count: 0, resetAt: Math.floor(Date.now() / 1000) + 60 };
+          rateLimits.set(key, { ...existing, count });
+          return { meta: { changes: 1 } };
+        }
+        return { meta: { changes: 1 } };
+      },
+    };
+    return stmt;
+  });
 
   return {
     DB: {
-      prepare: vi.fn().mockReturnValue(stmt),
+      prepare,
     },
     R2: {} as any,
     RUNTIME_MANIFEST_KV: options?.runtimeKv === false ? undefined : createKv(),
-    ALLOWLIST_HOSTS: JSON.stringify(options?.envAllowlist ?? []),
+    ALLOWLIST_HOSTS: JSON.stringify(options?.envAllowlist ?? options?.manifestHosts ?? []),
     NET_PROXY_ENABLED: options?.proxyEnabled ? "true" : undefined,
   } as unknown as Env;
 };
@@ -108,6 +175,18 @@ describe("netProxy integration", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it("rejects when ALLOWLIST_HOSTS is empty", async () => {
+    const env = createEnv({ manifestHosts: ["api.github.com"], envAllowlist: [], proxyEnabled: true });
+    vi.stubGlobal("fetch", vi.fn());
+
+    const request = new Request("https://worker.test/proxy?url=https://api.github.com/repos&capsuleId=caps1");
+    const response = await netProxy(request, env as Env, {} as any, {} as any);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "E-VIBECODR-0306" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("proxies requests for allowlisted hosts", async () => {
     const env = createEnv({ manifestHosts: ["api.github.com"], proxyEnabled: true });
     const fetchMock = vi.fn(async () => new Response("ok", {
@@ -121,6 +200,18 @@ describe("netProxy integration", () => {
 
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects free plan users when proxy is not enabled for free tier", async () => {
+    const env = createEnv({ manifestHosts: ["api.github.com"], proxyEnabled: true, plan: Plan.FREE });
+    vi.stubGlobal("fetch", vi.fn());
+
+    const request = new Request("https://worker.test/proxy?url=https://api.github.com/repos&capsuleId=caps1");
+    const response = await netProxy(request, env as Env, {} as any, {} as any);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "E-VIBECODR-0305" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("rejects hosts that are not in the allowlist", async () => {

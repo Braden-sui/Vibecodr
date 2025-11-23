@@ -4,6 +4,7 @@
 import type { Env, Handler } from "../index";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { requireUser } from "../auth";
+import { getUserPlan, Plan } from "../storage/quotas";
 
 interface RateLimitState {
   count: number;
@@ -15,6 +16,16 @@ const RATE_LIMIT_MAX_REQUESTS = 100;
 const RATE_LIMIT_KEY_PREFIX = "proxy:rate:";
 let rateLimitStorageMisconfiguredWarned = false;
 const inMemoryRateLimitStore = new Map<string, RateLimitState>();
+const RATE_LIMIT_TABLE = "proxy_rate_limits";
+const RATE_LIMIT_WINDOW_SEC = 60;
+const USER_RATE_LIMITS: Record<Plan, number> = {
+  [Plan.FREE]: 15,
+  [Plan.CREATOR]: 60,
+  [Plan.PRO]: 120,
+  [Plan.TEAM]: 200,
+};
+const IP_RATE_LIMIT = 120;
+let rateLimitTableInitialized = false;
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 const DEFAULT_ALLOWED_PORTS = new Set([80, 443]);
@@ -153,6 +164,79 @@ async function checkRateLimit(env: Env, capsuleId: string, host: string): Promis
   return { allowed: false, resetAt: state.resetAt };
 }
 
+type DbRateLimitResult = { allowed: boolean; remaining?: number; resetAt?: number };
+
+async function ensureRateLimitTable(env: Env) {
+  if (rateLimitTableInitialized) return;
+  try {
+    await env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS ${RATE_LIMIT_TABLE} (
+        key TEXT PRIMARY KEY,
+        count INTEGER NOT NULL,
+        reset_at INTEGER NOT NULL
+      )`
+    ).run();
+    rateLimitTableInitialized = true;
+  } catch (err) {
+    console.error("E-VIBECODR-0307 proxy rate limit table init failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function checkD1RateLimit(env: Env, key: string, limit: number, windowSec = RATE_LIMIT_WINDOW_SEC): Promise<DbRateLimitResult> {
+  if (limit <= 0) {
+    return { allowed: false, remaining: 0, resetAt: Date.now() + windowSec * 1000 };
+  }
+
+  try {
+    await ensureRateLimitTable(env);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const row = await env.DB.prepare(`SELECT count, reset_at FROM ${RATE_LIMIT_TABLE} WHERE key = ? LIMIT 1`)
+      .bind(key)
+      .first<{ count?: number; reset_at?: number }>();
+
+    if (!row || typeof row.reset_at !== "number" || nowSec >= row.reset_at) {
+      const nextReset = nowSec + windowSec;
+      await env.DB.prepare(
+        `INSERT INTO ${RATE_LIMIT_TABLE} (key, count, reset_at)
+         VALUES (?, 1, ?)
+         ON CONFLICT(key) DO UPDATE SET count = excluded.count, reset_at = excluded.reset_at`
+      )
+        .bind(key, nextReset)
+        .run();
+      return { allowed: true, remaining: Math.max(0, limit - 1), resetAt: nextReset * 1000 };
+    }
+
+    const currentCount = typeof row.count === "number" ? row.count : 0;
+    if (currentCount >= limit) {
+      return { allowed: false, remaining: 0, resetAt: row.reset_at * 1000 };
+    }
+
+    const nextCount = currentCount + 1;
+    await env.DB.prepare(`UPDATE ${RATE_LIMIT_TABLE} SET count = ? WHERE key = ?`).bind(nextCount, key).run();
+    return { allowed: true, remaining: Math.max(0, limit - nextCount), resetAt: row.reset_at * 1000 };
+  } catch (err) {
+    console.error("E-VIBECODR-0308 proxy D1 rate limit check failed", {
+      key,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { allowed: true };
+  }
+}
+
+function getClientIp(req: Request): string | null {
+  const cfIp = req.headers.get("cf-connecting-ip");
+  if (cfIp && cfIp.trim()) return cfIp.trim();
+
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded && forwarded.trim()) {
+    return forwarded.split(",")[0]?.trim() || null;
+  }
+
+  return null;
+}
+
 /**
  * GET /proxy?url=...&capsuleId=...
  * Proxy network requests with allowlist enforcement and rate limiting
@@ -219,6 +303,26 @@ export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, use
       return json({ error: "Forbidden" }, 403);
     }
 
+    const plan = await getUserPlan(capsule.owner_id, env);
+    const clientIp = getClientIp(req);
+
+    if (plan === Plan.FREE && String(env.NET_PROXY_FREE_ENABLED || "").trim().toLowerCase() !== "true") {
+      return json({ error: "Network proxy is disabled for free plan", code: "E-VIBECODR-0305" }, 403);
+    }
+
+    const userRate = await checkD1RateLimit(env, `user:${capsule.owner_id}`, USER_RATE_LIMITS[plan]);
+    if (!userRate.allowed) {
+      return rateLimitExceeded("user", userRate, USER_RATE_LIMITS[plan]);
+    }
+
+    let ipRate: DbRateLimitResult | null = null;
+    if (clientIp) {
+      ipRate = await checkD1RateLimit(env, `ip:${clientIp}`, IP_RATE_LIMIT);
+      if (!ipRate.allowed) {
+        return rateLimitExceeded("ip", ipRate, IP_RATE_LIMIT);
+      }
+    }
+
     const manifest = requireCapsuleManifest(capsule.manifest_json, {
       source: "proxyAllowlist",
       capsuleId,
@@ -226,7 +330,7 @@ export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, use
     const allowlist = buildAllowlist(manifest.capabilities?.net, env.ALLOWLIST_HOSTS);
 
     if (allowlist.length === 0) {
-      return json({ error: "No hosts are allowed for this capsule" }, 403);
+      return json({ error: "No hosts are allowed for this capsule", code: "E-VIBECODR-0306" }, 403);
     }
 
     if (!isHostAllowed(targetUrlObj, allowlist)) {
@@ -303,6 +407,12 @@ export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, use
     responseHeaders.set("X-RateLimit-Limit", RATE_LIMIT_MAX_REQUESTS.toString());
     responseHeaders.set("X-RateLimit-Remaining", rateLimitResult.remaining!.toString());
     responseHeaders.set("X-RateLimit-Reset", Math.floor(rateLimitResult.resetAt! / 1000).toString());
+    responseHeaders.set("X-RateLimit-User-Limit", USER_RATE_LIMITS[plan].toString());
+    responseHeaders.set("X-RateLimit-User-Remaining", (userRate.remaining ?? 0).toString());
+    if (ipRate) {
+      responseHeaders.set("X-RateLimit-IP-Limit", IP_RATE_LIMIT.toString());
+      responseHeaders.set("X-RateLimit-IP-Remaining", (ipRate.remaining ?? 0).toString());
+    }
 
     // Strip cookies (security: block cross-origin cookies)
     responseHeaders.delete("set-cookie");
@@ -321,18 +431,22 @@ export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, use
 });
 
 function buildAllowlist(manifestHosts: string[] | undefined, envAllowlistJson: string): string[] {
-  const merged = new Set<string>();
-  for (const host of manifestHosts ?? []) {
-    if (typeof host === "string" && host.trim().length > 0) {
-      merged.add(host.trim());
-    }
+  const envHosts = parseEnvAllowlist(envAllowlistJson).map(canonicalizeAllowlistEntry).filter((v): v is string => Boolean(v));
+  const envSet = new Set(envHosts);
+  const manifestEntries =
+    manifestHosts
+      ?.map(canonicalizeAllowlistEntry)
+      .filter((v): v is string => Boolean(v)) ?? [];
+
+  if (envSet.size === 0) {
+    return [];
   }
 
-  for (const host of parseEnvAllowlist(envAllowlistJson)) {
-    merged.add(host);
+  if (manifestEntries.length === 0) {
+    return Array.from(envSet);
   }
 
-  return Array.from(merged);
+  return manifestEntries.filter((entry) => envSet.has(entry));
 }
 
 function parseEnvAllowlist(rawAllowlist: string): string[] {
@@ -400,6 +514,13 @@ function parseAllowlistRule(entry: string): AllowlistRule | null {
   }
 
   return { hostname, port, wildcard };
+}
+
+function canonicalizeAllowlistEntry(entry: string): string | null {
+  const rule = parseAllowlistRule(entry);
+  if (!rule) return null;
+  const hostPart = rule.wildcard ? `*.${rule.hostname}` : rule.hostname;
+  return typeof rule.port === "number" ? `${hostPart}:${rule.port}` : hostPart;
 }
 
 function normalizeHostname(value: string): string {
@@ -509,4 +630,31 @@ function readInMemoryRateLimitState(key: string, now: number): RateLimitState | 
 
 function writeInMemoryRateLimitState(key: string, state: RateLimitState): void {
   inMemoryRateLimitStore.set(key, state);
+}
+
+function rateLimitExceeded(scope: "user" | "ip", result: DbRateLimitResult, limit: number): Response {
+  const retryAfter = result.resetAt ? Math.ceil((result.resetAt - Date.now()) / 1000) : RATE_LIMIT_WINDOW_SEC;
+  const headers = {
+    "Retry-After": retryAfter.toString(),
+    "X-RateLimit-Limit": limit.toString(),
+    "X-RateLimit-Remaining": "0",
+    "X-RateLimit-Reset": Math.floor((result.resetAt ?? Date.now()) / 1000).toString(),
+    ...(scope === "user"
+      ? {
+          "X-RateLimit-User-Limit": limit.toString(),
+          "X-RateLimit-User-Remaining": "0",
+        }
+      : {
+          "X-RateLimit-IP-Limit": limit.toString(),
+          "X-RateLimit-IP-Remaining": "0",
+        }),
+  };
+  return json(
+    {
+      error: "Rate limit exceeded",
+      scope,
+    },
+    429,
+    { headers }
+  );
 }

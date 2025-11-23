@@ -1,7 +1,21 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { act } from "react-dom/test-utils";
 import userEvent from "@testing-library/user-event";
+
+vi.mock("@/lib/api", () => ({
+  moderationApi: {
+    report: vi.fn(),
+  },
+}));
+
+vi.mock("@clerk/clerk-react", () => ({
+  useAuth: () => ({
+    getToken: vi.fn(async () => "test-token"),
+  }),
+}));
+
+import { moderationApi } from "@/lib/api";
 import { ReportButton } from "../ReportButton";
 
 declare global {
@@ -40,11 +54,7 @@ if (!elementProto.releasePointerCapture) {
   elementProto.releasePointerCapture = () => {};
 }
 
-vi.mock("@clerk/clerk-react", () => ({
-  useAuth: () => ({
-    getToken: vi.fn(async () => "test-token"),
-  }),
-}));
+const reportMock = moderationApi.report as any;
 
 describe("ReportButton", () => {
   beforeEach(() => {
@@ -52,6 +62,12 @@ describe("ReportButton", () => {
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn(),
+    });
+    reportMock.mockReset();
+    reportMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
     });
   });
 
@@ -115,11 +131,6 @@ describe("ReportButton", () => {
 
   it("should submit report successfully", async () => {
     const user = userEvent.setup({ delay: null });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ok: true }),
-    });
-
     render(<ReportButton targetType="post" targetId="post1" />);
 
     await user.click(screen.getByRole("button"));
@@ -138,15 +149,15 @@ describe("ReportButton", () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
-      const match = calls.find(([url]) => typeof url === "string" && url.includes("/moderation/report"));
-      expect(match).toBeTruthy();
-      const [, init] = match!;
-      expect(init).toEqual(
+      expect(reportMock).toHaveBeenCalledWith(
+        {
+          targetType: "post",
+          targetId: "post1",
+          reason: "spam",
+          details: undefined,
+        },
         expect.objectContaining({
-          method: "POST",
-          body: expect.stringContaining("spam"),
+          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
         })
       );
     });
@@ -154,10 +165,6 @@ describe("ReportButton", () => {
 
   it("should show success message after submission", async () => {
     const user = userEvent.setup({ delay: null });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ok: true }),
-    });
 
     render(<ReportButton targetType="post" targetId="post1" />);
 
@@ -180,10 +187,6 @@ describe("ReportButton", () => {
 
   it("should auto-close after successful submission", async () => {
     const user = userEvent.setup({ delay: null });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ok: true }),
-    });
 
     render(<ReportButton targetType="post" targetId="post1" />);
 
@@ -212,9 +215,9 @@ describe("ReportButton", () => {
   it("should handle API errors gracefully", async () => {
     const user = userEvent.setup({ delay: null });
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    global.fetch = vi.fn().mockResolvedValue({
+    reportMock.mockResolvedValueOnce({
       ok: false,
+      status: 429,
       json: async () => ({ error: "Rate limit exceeded" }),
     });
 
@@ -243,9 +246,16 @@ describe("ReportButton", () => {
 
   it("should include optional details in submission", async () => {
     const user = userEvent.setup({ delay: null });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ok: true }),
+    let capturedPayload: any;
+    let capturedInit: any;
+    reportMock.mockImplementationOnce(async (payload, init) => {
+      capturedPayload = payload;
+      capturedInit = init;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      };
     });
 
     render(<ReportButton targetType="post" targetId="post1" />);
@@ -259,22 +269,22 @@ describe("ReportButton", () => {
     await user.click(copyrightOption);
 
     const textarea = screen.getByPlaceholderText(/Provide any additional context/i);
-    await user.type(textarea, "This violates my copyright");
+    fireEvent.change(textarea, { target: { value: "This violates my copyright" } });
 
     const submitButton = screen.getByRole("button", { name: /Submit Report/i });
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
-      const match = calls.find(([url]) => typeof url === "string" && url.includes("/moderation/report"));
-      expect(match).toBeTruthy();
-      const [, init] = match!;
-      expect(init).toEqual(
-        expect.objectContaining({
-          body: expect.stringContaining("This violates my copyright"),
-        })
-      );
+      expect(reportMock).toHaveBeenCalledTimes(1);
+      expect(capturedPayload).toMatchObject({
+        targetType: "post",
+        targetId: "post1",
+        reason: "copyright",
+        details: "This violates my copyright",
+      });
+      expect(capturedInit?.headers).toMatchObject({
+        Authorization: "Bearer test-token",
+      });
     });
   });
 
@@ -285,7 +295,7 @@ describe("ReportButton", () => {
       resolveSubmit = resolve;
     });
 
-    global.fetch = vi.fn().mockReturnValue(submitPromise);
+    reportMock.mockReturnValueOnce(submitPromise as any);
 
     render(<ReportButton targetType="post" targetId="post1" />);
 

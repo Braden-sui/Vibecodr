@@ -38,6 +38,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./"),
+      "@testing-library/user-event": path.resolve(__dirname, "./test-utils/user-event-stub.ts"),
     },
   },
 });

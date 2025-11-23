@@ -328,3 +328,10 @@ Client-side failures in Feed, Player, comments, and moderation must be observabl
     - Join with `feed_results_*` and `player_*` events on session or user to see how often errors affect core journeys.
   - For Workers Analytics:
     - Use the same `E-VIBECODR-####` codes to correlate backend failures (e.g., proxy, manifest, quotas) with client-side error events.
+
+## 11) Implementation map (where these invariants live)
+
+- **Public read endpoints rate limits:** enforced via Cloudflare WAF for `/api/*`; heavy paths also add per-request caps (see `/api/proxy` per-user/per-IP/per-capsule+host throttles in `workers/api/src/handlers/proxy.ts`).
+- **Expensive actions quota-limited:** bundle/storage/run limits defined in `workers/api/src/storage/quotas.ts` and enforced across publish/import (`workers/api/src/handlers/capsules.ts`, `workers/api/src/handlers/import.ts`), runs (`workers/api/src/handlers/runs.ts`), and artifact compile flows.
+- **Proxy not a free scraper:** strict host allowlist merged with `ALLOWLIST_HOSTS`, blocked localhost/IP ranges, and plan-aware disable for free tier in `workers/api/src/handlers/proxy.ts`; responses surface 403/429 with structured codes.
+- **Safety hooks on user code:** publish/import paths call `enforceSafetyForFiles` (safetyClient) and propagate structured `PublishCapsuleError` bodies to the SPA (`workers/api/src/handlers/capsules.ts`, `workers/api/src/handlers/import.ts`).

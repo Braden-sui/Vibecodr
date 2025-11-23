@@ -31,6 +31,7 @@ vi.mock("next/link", () => ({
   },
 }));
 
+
 // Mock Clerk hooks/components with safe defaults for tests.
 vi.mock("@clerk/clerk-react", () => {
   const mockUser = {

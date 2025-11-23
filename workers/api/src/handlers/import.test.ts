@@ -67,6 +67,7 @@ type TestEnv = Env & { __capsules: any[]; __assets: any[] };
 function createEnv(): TestEnv {
   const capsules: any[] = [];
   const assets: any[] = [];
+  const storage = { usage: 0, version: 0, plan: Plan.FREE };
   const DB = {
     prepare: vi.fn((sql: string) => {
       const stmt: any = {
@@ -75,7 +76,20 @@ function createEnv(): TestEnv {
           this.bindArgs = args;
           return this;
         },
-        all: async () => ({ results: [] }),
+        all: async () => {
+          if (sql.includes("FROM users")) {
+            return {
+              results: [
+                {
+                  plan: storage.plan,
+                  storage_usage_bytes: storage.usage,
+                  storage_version: storage.version,
+                },
+              ],
+            };
+          }
+          return { results: [] };
+        },
         first: async () => undefined,
         async run() {
           if (sql.startsWith("INSERT INTO capsules")) {
@@ -85,6 +99,15 @@ function createEnv(): TestEnv {
           if (sql.startsWith("INSERT INTO assets")) {
             const [id, capsuleId, key, size] = this.bindArgs;
             assets.push({ id, capsuleId, key, size });
+          }
+          if (sql.includes("UPDATE users") && sql.includes("storage_usage_bytes")) {
+            const [delta, userId, expectedVersion] = this.bindArgs;
+            if (expectedVersion !== storage.version) {
+              return { meta: { changes: 0 } };
+            }
+            storage.usage += delta;
+            storage.version += 1;
+            return { meta: { changes: 1 } };
           }
           return { meta: { changes: 1 } };
         },
@@ -110,6 +133,7 @@ function createEnv(): TestEnv {
     vibecodr_analytics_engine: {} as any,
     __capsules: capsules,
     __assets: assets,
+    __storage: storage,
   } as any;
 }
 
@@ -166,5 +190,7 @@ describe("import handlers success path", () => {
     expect(uploadCapsuleBundleMock).toHaveBeenCalledTimes(1);
     expect(env.__capsules.length).toBe(1);
     expect(env.__assets.length).toBeGreaterThan(0);
+    expect(env.__storage.usage).toBeGreaterThan(0);
+    expect(env.__storage.version).toBe(1);
   });
 });

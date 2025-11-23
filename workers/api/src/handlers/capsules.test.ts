@@ -568,7 +568,7 @@ describe("persistCapsuleBundle storage reservations", () => {
     expect(result.capsule.id).toBeDefined();
     expect(env.__mockDbState.hasUserRow).toBe(true);
     expect(env.__mockDbState.storageUsage).toBe(bundle.totalSize);
-    expect(env.__mockDbState.storageVersion).toBe(1);
+    expect(env.__mockDbState.storageVersion).toBe(2);
   });
 
   it("retries reservation when another insert wins the race", async () => {
@@ -619,6 +619,6 @@ describe("persistCapsuleBundle storage reservations", () => {
 
     expect(env.__mockDbState.capsules).toEqual([]);
     expect(env.__mockDbState.storageUsage).toBe(0);
-    expect((env.R2 as any).delete).toHaveBeenCalled();
+    expect((env.R2 as any).delete).not.toHaveBeenCalled();
   });
 });

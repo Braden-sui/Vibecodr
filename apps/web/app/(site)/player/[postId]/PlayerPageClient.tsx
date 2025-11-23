@@ -61,6 +61,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isUnquarantining, setIsUnquarantining] = useState(false);
   const iframeHandleRef = useRef<PlayerIframeHandle | null>(null);
   const currentRunRef = useRef<RunSession | null>(null);
+  const lastRunRef = useRef<RunSession | null>(null);
+  const finishedRunRef = useRef<{ runId: string; status: "completed" | "failed" } | null>(null);
   const runStartInFlightRef = useRef(false);
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
   const flushLogsTimeoutRef = useRef<number | null>(null);
@@ -435,6 +437,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         startedAt: Date.now(),
       };
       currentRunRef.current = session;
+      lastRunRef.current = session;
+      finishedRunRef.current = null;
       return session;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -459,9 +463,19 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       if (!session || !capsule) {
         return;
       }
+      if (finishedRunRef.current?.runId === session.id) {
+        const existingStatus = finishedRunRef.current.status;
+        if (existingStatus === status) {
+          return;
+        }
+        if (existingStatus === "failed" && status === "completed") {
+          return;
+        }
+      }
       const durationMs = Math.max(0, Date.now() - session.startedAt);
       flushLogBatch(session.id);
       currentRunRef.current = null;
+      finishedRunRef.current = { runId: session.id, status };
       const completePayload = {
         runId: session.id,
         capsuleId: capsule.id,
@@ -591,6 +605,9 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
   const handleRuntimeError = useCallback(
     (message?: string) => {
+      if (!currentRunRef.current && lastRunRef.current) {
+        currentRunRef.current = lastRunRef.current;
+      }
       finalizeRunSession("failed", message);
       setIsRunning(false);
       setStats({ fps: 0, memory: 0, bootTime: 0 });

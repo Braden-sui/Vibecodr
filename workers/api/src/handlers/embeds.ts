@@ -2,6 +2,7 @@
 // References: checklist.mdx Section 12 (Sharing, Embeds, and SEO)
 
 import type { Handler } from "../index";
+import { checkPublicRateLimit, getClientIp } from "../rateLimit";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -31,6 +32,24 @@ export const oEmbedHandler: Handler = async (req, env) => {
 
   if (format !== "json") {
     return json({ error: "Only JSON format is supported" }, 400);
+  }
+
+  const clientIp = getClientIp(req);
+  const rate = await checkPublicRateLimit(env, `oembed:${clientIp ?? "unknown"}`, 60);
+  if (!rate.allowed) {
+    const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
+    return json(
+      { error: "Rate limit exceeded", code: "E-VIBECODR-0313", scope: "oembed" },
+      429,
+      {
+        headers: {
+          "Retry-After": retryAfter.toString(),
+          "X-RateLimit-Limit": "60",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rate.resetAt ? Math.floor(rate.resetAt / 1000).toString() : "",
+        },
+      }
+    );
   }
 
   try {
@@ -246,6 +265,25 @@ export const ogImageHandler: Handler = async (req, env, ctx, params) => {
     title: string;
     author_handle: string;
   };
+
+  const clientIp = getClientIp(req);
+  const rate = await checkPublicRateLimit(env, `og:${clientIp ?? "unknown"}`, 60);
+  if (!rate.allowed) {
+    const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
+    return new Response(
+      JSON.stringify({ error: "Rate limit exceeded", code: "E-VIBECODR-0314", scope: "og-image" }),
+      {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "Retry-After": retryAfter.toString(),
+          "X-RateLimit-Limit": "60",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rate.resetAt ? Math.floor(rate.resetAt / 1000).toString() : "",
+        },
+      }
+    );
+  }
 
   try {
     // Fetch post details

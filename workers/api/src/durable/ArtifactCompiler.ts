@@ -81,6 +81,37 @@ export class ArtifactCompiler {
     this.env = env;
   }
 
+  private writeCompileAnalytics(payload: {
+    outcome: "success" | "error";
+    artifactId: string;
+    runtimeType?: string;
+    bundleSizeBytes?: number;
+    elapsedMs?: number;
+    warnings?: number;
+    errorCode?: string;
+  }) {
+    try {
+      const analytics = (this.env as any).vibecodr_analytics_engine;
+      if (!analytics || typeof analytics.writeDataPoint !== "function") return;
+      analytics.writeDataPoint({
+        blobs: [
+          "artifact_compile",
+          payload.outcome,
+          payload.runtimeType ?? "",
+          payload.errorCode ?? "",
+          payload.artifactId,
+        ],
+        doubles: [payload.bundleSizeBytes ?? 0, payload.elapsedMs ?? 0, payload.warnings ?? 0],
+        indexes: [payload.artifactId],
+      });
+    } catch (err) {
+      console.error("E-VIBECODR-1204 compile analytics failed", {
+        artifactId: payload.artifactId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
 
@@ -169,6 +200,7 @@ export class ArtifactCompiler {
     runtimeType: RuntimeArtifactType;
     bundleSizeBytes: number;
   }> {
+    const startedAt = Date.now();
     const row = (await this.env.DB.prepare(
       `
         SELECT
@@ -214,6 +246,13 @@ export class ArtifactCompiler {
     if (runtimeType === "html") {
       const htmlResult = compileHtmlArtifact({ html: entrySource });
       if (!htmlResult.ok) {
+        this.writeCompileAnalytics({
+          outcome: "error",
+          artifactId,
+          runtimeType,
+          errorCode: htmlResult.errorCode,
+          elapsedMs: Date.now() - startedAt,
+        });
         throw new ArtifactCompileError(400, {
           error: "compile_failed",
           code: htmlResult.errorCode,
@@ -235,6 +274,13 @@ export class ArtifactCompiler {
         additionalFiles,
       });
       if (!reactResult.ok) {
+        this.writeCompileAnalytics({
+          outcome: "error",
+          artifactId,
+          runtimeType,
+          errorCode: reactResult.errorCode,
+          elapsedMs: Date.now() - startedAt,
+        });
         throw new ArtifactCompileError(400, {
           error: "compile_failed",
           code: reactResult.errorCode,
@@ -328,6 +374,14 @@ export class ArtifactCompiler {
 
     this.recordWarnings(warnings);
     this.writeAnalytics("artifact_compile_success", [bundleBytes.byteLength], [runtimeType]);
+    this.writeCompileAnalytics({
+      outcome: "success",
+      artifactId,
+      runtimeType,
+      bundleSizeBytes: bundleBytes.byteLength,
+      warnings: warnings.length,
+      elapsedMs: Date.now() - startedAt,
+    });
 
     return {
       bundleKey,

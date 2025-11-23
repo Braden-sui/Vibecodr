@@ -33,34 +33,27 @@ export default function StudioImport() {
 
   const hasInput = useMemo(() => githubUrl.trim().length > 0 || zipFile, [githubUrl, zipFile]);
 
-  const pollProgress = useCallback(async (capsuleId: string) => {
-    // For now, simulate staged progress; backend does not expose a poll endpoint yet.
-    setState({ status: "running", step: "finalizing", progress: 0.8 });
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    setState({ status: "running", step: "finalizing", progress: 0.95 });
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    return capsuleId;
-  }, []);
-
   const submitImport = useCallback(async () => {
     if (!hasInput) return;
-    setState({ status: "running", step: "uploading", progress: 0.1 });
+    setState({ status: "running", step: "uploading", progress: 0.05 });
 
     try {
       let response: Response | null = null;
+      const acceptHeaders = { Accept: "application/x-ndjson,application/json" };
       if (zipFile) {
         const form = new FormData();
         form.append("file", zipFile);
         setState({ status: "running", step: "uploading ZIP", progress: 0.2 });
-        response = await fetch(workerUrl("/import/zip"), {
+        response = await fetch(workerUrl("/import/zip?progress=1"), {
           method: "POST",
           body: form,
+          headers: acceptHeaders,
         });
       } else {
         setState({ status: "running", step: "downloading repo", progress: 0.2 });
-        response = await fetch(workerUrl("/import/github"), {
+        response = await fetch(workerUrl("/import/github?progress=1"), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...acceptHeaders },
           body: JSON.stringify({ url: githubUrl }),
         });
       }
@@ -81,8 +74,54 @@ export default function StudioImport() {
         return;
       }
 
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/x-ndjson") && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalResult: ImportResult | null = null;
+        let sawError = false;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newlineIndex: number;
+          while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, newlineIndex).trim();
+            buffer = buffer.slice(newlineIndex + 1);
+            if (!line) continue;
+            try {
+              const event = JSON.parse(line) as
+                | { type: "progress"; step: string; progress?: number }
+                | { type: "result"; result: ImportResult; status: number }
+                | { type: "error"; status: number; body: { error?: string; reason?: string } };
+              if (event.type === "progress") {
+                setState({ status: "running", step: event.step, progress: event.progress });
+              } else if (event.type === "result") {
+                finalResult = event.result;
+              } else if (event.type === "error") {
+                const message = event.body?.reason || event.body?.error || "Import failed";
+                setState({ status: "error", message });
+                sawError = true;
+              }
+            } catch (err) {
+              console.warn("E-VIBECODR-0701 ndjson parse", err);
+            }
+          }
+        }
+        if (finalResult) {
+          setState({ status: "done", result: finalResult });
+          navigate(`/studio/files?capsuleId=${encodeURIComponent(finalResult.capsuleId)}`);
+          return;
+        }
+        // If we streamed but never saw a result, surface failure.
+        if (!sawError) {
+          setState({ status: "error", message: "Import did not finish" });
+        }
+        return;
+      }
+
       const payload = (await response.json()) as ImportResult;
-      await pollProgress(payload.capsuleId);
       setState({ status: "done", result: payload });
       navigate(`/studio/files?capsuleId=${encodeURIComponent(payload.capsuleId)}`);
     } catch (error) {
@@ -90,7 +129,7 @@ export default function StudioImport() {
       setState({ status: "error", message });
       trackClientError("E-VIBECODR-0701", { area: "studio.import", message });
     }
-  }, [githubUrl, hasInput, zipFile, navigate, pollProgress]);
+  }, [githubUrl, hasInput, zipFile, navigate]);
 
   return (
     <section className="mx-auto flex max-w-3xl flex-col gap-4 p-6">

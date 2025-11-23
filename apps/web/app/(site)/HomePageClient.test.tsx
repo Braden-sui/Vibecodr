@@ -93,17 +93,19 @@ describe("HomePageClient feed data source", () => {
     );
 
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
-    expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest");
+    await waitFor(() =>
+      expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest")
+    );
 
     const tagButton = screen.getByText("#canvas");
     fireEvent.click(tagButton);
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(mockList).toHaveBeenLastCalledWith(
         expect.objectContaining({ mode: "latest", tags: ["canvas"] })
-      )
-    );
-    expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest [canvas]");
+      );
+      expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest [canvas]");
+    });
     console.log("test:end passes tag filters");
   });
 

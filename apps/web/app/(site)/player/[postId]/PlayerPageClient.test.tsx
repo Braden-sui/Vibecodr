@@ -9,6 +9,10 @@ import PlayerPageClient from "./PlayerPageClient";
 const playerShellPropsRef: { current: any } = { current: null };
 
 const mockPostsGet = vi.fn();
+const mockRunsStart = vi.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({ runId: "run-123" }),
+});
 const mockRunsComplete = vi.fn().mockResolvedValue({ ok: true });
 const mockAppendLogs = vi.fn().mockResolvedValue({ ok: true });
 const mockMapPost = vi.fn();
@@ -18,6 +22,7 @@ vi.mock("@/lib/api", () => ({
     get: (...args: unknown[]) => mockPostsGet(...args),
   },
   runsApi: {
+    start: (...args: unknown[]) => mockRunsStart(...args),
     complete: (...args: unknown[]) => mockRunsComplete(...args),
     appendLogs: (...args: unknown[]) => mockAppendLogs(...args),
   },
@@ -26,6 +31,8 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/lib/analytics", () => ({
   trackEvent: vi.fn(),
+  trackClientError: vi.fn(),
+  trackRuntimeEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/handoff", () => ({
@@ -77,6 +84,7 @@ vi.mock("@vibecodr/shared", () => ({
 describe("PlayerPageClient", () => {
   beforeEach(() => {
     playerShellPropsRef.current = null;
+    mockRunsStart.mockClear();
     mockRunsComplete.mockClear();
     mockAppendLogs.mockClear();
     mockMapPost.mockClear();
@@ -146,14 +154,14 @@ describe("PlayerPageClient", () => {
     });
 
     await waitFor(() => expect(mockRunsComplete).toHaveBeenCalled());
-    const [payload, init] = mockRunsComplete.mock.calls[mockRunsComplete.mock.calls.length - 1];
-    expect(payload).toEqual(
+    const failedCall = mockRunsComplete.mock.calls.find(([payload]) => payload.status === "failed");
+    expect(failedCall?.[0]).toEqual(
       expect.objectContaining({
         status: "failed",
         errorMessage: "runtime_crash",
       })
     );
-    expect(init).toEqual(
+    expect(failedCall?.[1]).toEqual(
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
       })

@@ -90,7 +90,14 @@ import { completeRun, appendRunLogs, startRun } from "./handlers/runs";
 import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest, getArtifactBundle } from "./handlers/artifacts";
 import { joinLiveWaitlist } from "./handlers/live";
 import { recordRuntimeEvent, getRuntimeAnalyticsSummary } from "./handlers/runtimeEvents";
-import { getCapsuleFilesSummary, getCapsuleFile, updateCapsuleFile, updateCapsuleManifest, compileDraftArtifact } from "./handlers/studio";
+import {
+  getCapsuleFilesSummary,
+  getCapsuleFile,
+  updateCapsuleFile,
+  updateCapsuleManifest,
+  compileDraftArtifact,
+  publishCapsuleDraft,
+} from "./handlers/studio";
 import { getCapsuleFilesSummary, getCapsuleFile, updateCapsuleFile, updateCapsuleManifest } from "./handlers/studio";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
 export { ArtifactCompiler } from "./durable/ArtifactCompiler";
@@ -878,6 +885,7 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "PUT", pattern: /^\/capsules\/([^\/]+)\/files\/(.+)$/, handler: updateCapsuleFile },
   { method: "PATCH", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: updateCapsuleManifest },
   { method: "POST", pattern: /^\/capsules\/([^\/]+)\/compile-draft$/, handler: compileDraftArtifact },
+  { method: "POST", pattern: /^\/capsules\/([^\/]+)\/publish$/, handler: publishCapsuleDraft },
 
   // User & Quota
   { method: "GET", pattern: /^\/user\/quota$/, handler: getUserQuota },

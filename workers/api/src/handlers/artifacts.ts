@@ -16,6 +16,7 @@ import {
 import { invalidateLatestArtifactCache } from "../feed-artifacts";
 import { buildBundleCsp, normalizeBundleNetworkMode } from "../security/bundleCsp";
 import { guessContentType } from "../runtime/mime";
+import { checkPublicRateLimit, getClientIp } from "../rateLimit";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -442,6 +443,24 @@ export const getArtifactManifest: Handler = async (req, env, _ctx, params) => {
     return json({ error: "artifactId is required" }, 400);
   }
 
+  const clientIp = getClientIp(req);
+  const rate = await checkPublicRateLimit(env, `artifact-manifest:${clientIp ?? "unknown"}`, 120);
+  if (!rate.allowed) {
+    const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
+    return json(
+      { error: "Rate limit exceeded", code: "E-VIBECODR-0312", scope: "artifact-manifest" },
+      429,
+      {
+        headers: {
+          "Retry-After": retryAfter.toString(),
+          "X-RateLimit-Limit": "120",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rate.resetAt ? Math.floor(rate.resetAt / 1000).toString() : "",
+        },
+      }
+    );
+  }
+
   try {
     const manifestResult = await loadRuntimeManifestForArtifact(env, artifactId);
     if (!manifestResult.ok) {
@@ -476,6 +495,24 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
   const artifactId = params.p1;
   if (!artifactId) {
     return json({ error: "artifactId is required" }, 400);
+  }
+
+  const clientIp = getClientIp(_req);
+  const rate = await checkPublicRateLimit(env, `artifact-bundle:${clientIp ?? "unknown"}`, 120);
+  if (!rate.allowed) {
+    const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
+    return json(
+      { error: "Rate limit exceeded", code: "E-VIBECODR-0312", scope: "artifact-bundle" },
+      429,
+      {
+        headers: {
+          "Retry-After": retryAfter.toString(),
+          "X-RateLimit-Limit": "120",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rate.resetAt ? Math.floor(rate.resetAt / 1000).toString() : "",
+        },
+      }
+    );
   }
 
   const manifestResult = await loadRuntimeManifestForArtifact(env, artifactId);

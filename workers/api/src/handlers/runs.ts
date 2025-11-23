@@ -1,7 +1,7 @@
 import type { Env, Handler } from "../index";
 import { requireAuth, type AuthenticatedUser } from "../auth";
 import { incrementPostStats, incrementUserCounters } from "./counters";
-import { getUserRunQuotaState } from "../storage/quotas";
+import { getUserRunQuotaState, Plan } from "../storage/quotas";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -113,6 +113,41 @@ function incrementRunCounters(env: Env, userId: string, postId: string | null, r
   }
 }
 
+function writeRunAnalytics(
+  env: Env,
+  payload: {
+    event: "run_start" | "run_complete";
+    status?: "started" | "completed" | "failed" | "killed";
+    plan?: Plan;
+    runId?: string;
+    capsuleId?: string;
+    postId?: string | null;
+    durationMs?: number | null;
+    error?: string | null;
+  }
+) {
+  try {
+    const analytics = (env as any).vibecodr_analytics_engine;
+    if (!analytics || typeof analytics.writeDataPoint !== "function") return;
+    analytics.writeDataPoint({
+      blobs: [
+        payload.event,
+        payload.status ?? "",
+        payload.plan ?? "",
+        payload.capsuleId ?? "",
+        payload.postId ?? "",
+        payload.error ?? "",
+      ],
+      doubles: [payload.durationMs ?? 0],
+      indexes: [payload.runId ?? payload.capsuleId ?? ""],
+    });
+  } catch (err) {
+    console.error("E-VIBECODR-0609 run analytics write failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function recordRunQuotaObservation(env: Env, userId: string) {
   try {
     const { plan, runsThisMonth, result } = await getUserRunQuotaState(userId, env);
@@ -199,6 +234,14 @@ const startRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => 
 
   incrementRunCounters(env, user.userId, postId, runId);
   recordRunQuotaObservation(env, user.userId);
+  writeRunAnalytics(env, {
+    event: "run_start",
+    status: "started",
+    plan: quota.plan,
+    runId,
+    capsuleId,
+    postId,
+  });
 
   return json({
     ok: true,
@@ -276,15 +319,15 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       }
 
       recordRunQuotaObservation(env, user.userId);
-      return json({ ok: true, runId, idempotent: false });
-    }
+    return json({ ok: true, runId, idempotent: false });
+  }
 
-    const quota = await getUserRunQuotaState(user.userId, env);
-    if (!quota.result.allowed) {
-      return quotaExceededResponse(quota, "E-VIBECODR-0607");
-    }
+  const quota = await getUserRunQuotaState(user.userId, env);
+  if (!quota.result.allowed) {
+    return quotaExceededResponse(quota, "E-VIBECODR-0607");
+  }
 
-    const durationMs = normalizeDurationMs(body.durationMs, null);
+  const durationMs = normalizeDurationMs(body.durationMs, null);
 
     try {
       await env.DB.prepare(
@@ -302,15 +345,25 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
         return json({ ok: true, runId, idempotent: true });
       }
       throw e;
-    }
+  }
 
-    incrementRunCounters(env, user.userId, postId, runId);
-    recordRunQuotaObservation(env, user.userId);
+  incrementRunCounters(env, user.userId, postId, runId);
+  recordRunQuotaObservation(env, user.userId);
+  writeRunAnalytics(env, {
+    event: "run_complete",
+    status,
+    plan: quota.plan,
+    runId,
+    capsuleId,
+    postId,
+    durationMs,
+    error: errorMessage,
+  });
 
-    return json({ ok: true, runId, idempotent: false });
-  } catch (error) {
-    return json(
-      { error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" },
+  return json({ ok: true, runId, idempotent: false });
+} catch (error) {
+  return json(
+    { error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" },
       500
     );
   }

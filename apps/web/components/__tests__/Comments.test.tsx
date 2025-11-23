@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Comments } from "../Comments";
-
 const mockUseUser = vi.fn(() => ({
   user: {
     id: "viewer-123",
@@ -15,12 +13,31 @@ const mockUseUser = vi.fn(() => ({
   isSignedIn: true,
 }));
 
+vi.mock("@/lib/api", () => ({
+  commentsApi: {
+    fetch: vi.fn(),
+    create: vi.fn(),
+    delete: vi.fn(),
+  },
+  moderationApi: {
+    moderateComment: vi.fn(),
+  },
+}));
+
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
   useAuth: () => ({
     getToken: vi.fn(async () => "test-token"),
   }),
 }));
+
+import { Comments } from "../Comments";
+import { commentsApi, moderationApi } from "@/lib/api";
+
+const commentsFetchMock = commentsApi.fetch as any;
+const commentsCreateMock = commentsApi.create as any;
+const commentsDeleteMock = commentsApi.delete as any;
+const moderateCommentMock = moderationApi.moderateComment as any;
 
 describe("Comments", () => {
   const mockComments = [
@@ -60,10 +77,18 @@ describe("Comments", () => {
       } as any,
       isSignedIn: true,
     });
+    commentsFetchMock.mockReset();
+    commentsCreateMock.mockReset();
+    commentsDeleteMock.mockReset();
+    moderateCommentMock.mockReset();
+    commentsFetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ comments: [] }),
+    });
   });
 
   it("should display loading state initially", () => {
-    global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+    commentsFetchMock.mockReturnValue(new Promise(() => {}) as any);
 
     render(<Comments postId="post1" />);
 
@@ -71,10 +96,10 @@ describe("Comments", () => {
   });
 
   it("should load and display comments", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    commentsFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    }) as unknown as typeof fetch;
+    });
 
     render(<Comments postId="post1" />);
 
@@ -88,10 +113,10 @@ describe("Comments", () => {
   });
 
   it("should display empty state when no comments", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    commentsFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ comments: [] }),
-    }) as unknown as typeof fetch;
+    });
 
     render(<Comments postId="post1" />);
 
@@ -101,10 +126,10 @@ describe("Comments", () => {
   });
 
   it("should format relative time correctly", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    commentsFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    }) as unknown as typeof fetch;
+    });
 
     render(<Comments postId="post1" />);
 
@@ -115,10 +140,10 @@ describe("Comments", () => {
   });
 
   it("should display timestamp for timestamped comments", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    commentsFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    }) as unknown as typeof fetch;
+    });
 
     render(<Comments postId="post1" />);
 
@@ -134,15 +159,11 @@ describe("Comments", () => {
       resolveCreate = resolve;
     });
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ comments: [] }),
-      })
-      .mockImplementationOnce(() => createResponse as any);
-
-    global.fetch = fetchMock as unknown as typeof fetch;
+    commentsFetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ comments: [] }),
+    });
+    commentsCreateMock.mockImplementationOnce(() => createResponse as any);
 
     render(<Comments postId="post1" currentUserId="user3" />);
 
@@ -151,35 +172,25 @@ describe("Comments", () => {
     });
 
     const textarea = screen.getByPlaceholderText(/Add a comment/i);
-    await user.type(textarea, "New comment");
+    fireEvent.change(textarea, { target: { value: "New comment" } });
 
     const postButton = screen.getByRole("button", { name: /Post/i });
     await user.click(postButton);
 
-    await screen.findByText("New comment");
-    await screen.findByText(/Sending/i);
-
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
-      const calls = (fetchMock as any).mock.calls as [string, RequestInit?][];
-      const match = calls.find(
-        ([url, init]) =>
-          typeof url === "string" &&
-          url.includes("/posts/post1/comments") &&
-          (init as RequestInit | undefined)?.method === "POST",
-      );
-      expect(match).toBeTruthy();
-      const [, init] = match!;
-      expect(init).toEqual(
+      expect(commentsCreateMock).toHaveBeenCalledWith(
+        "post1",
+        "New comment",
+        undefined,
         expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-            Authorization: "Bearer test-token",
-          }),
-          body: expect.stringContaining("New comment"),
+          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
         })
       );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("New comment")).toBeInTheDocument();
+      expect(screen.getByText(/Sending/i)).toBeInTheDocument();
     });
 
     await act(async () => {
@@ -215,15 +226,11 @@ describe("Comments", () => {
       resolveCreate = resolve;
     });
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ comments: [parentComment] }),
-      })
-      .mockImplementationOnce(() => createResponse as any);
-
-    global.fetch = fetchMock as unknown as typeof fetch;
+    commentsFetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ comments: [parentComment] }),
+    });
+    commentsCreateMock.mockImplementationOnce(() => createResponse as any);
 
     render(<Comments postId="post1" currentUserId="viewer-123" />);
 
@@ -235,15 +242,20 @@ describe("Comments", () => {
     await user.click(replyButton);
 
     const textarea = screen.getByPlaceholderText(/Add a comment/i);
-    await user.type(textarea, "Child reply");
+    fireEvent.change(textarea, { target: { value: "Child reply" } });
 
     const postButton = screen.getByRole("button", { name: /Post/i });
     await user.click(postButton);
 
     await waitFor(() => {
-      const body = (fetchMock.mock.calls[1]?.[1] as any)?.body as string;
-      expect(body).toContain("Child reply");
-      expect(body).toContain('"parentCommentId":"comment1"');
+      expect(commentsCreateMock).toHaveBeenCalledWith(
+        "post1",
+        "Child reply",
+        { parentCommentId: "comment1" },
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+        })
+      );
     });
 
     await act(async () => {
@@ -263,12 +275,6 @@ describe("Comments", () => {
   });
 
   it("should enforce 2000 character limit", async () => {
-    const user = userEvent.setup();
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ comments: [] }),
-    }) as unknown as typeof fetch;
-
     render(<Comments postId="post1" />);
 
     await waitFor(() => {
@@ -278,12 +284,6 @@ describe("Comments", () => {
   });
 
   it("should display character count", async () => {
-    const user = userEvent.setup();
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ comments: [] }),
-    }) as unknown as typeof fetch;
-
     render(<Comments postId="post1" />);
 
     await waitFor(() => {
@@ -291,17 +291,12 @@ describe("Comments", () => {
     });
 
     const textarea = screen.getByPlaceholderText(/Add a comment/i);
-    await user.type(textarea, "Hello");
+    fireEvent.change(textarea, { target: { value: "Hello" } });
 
     expect(screen.getByText("5/2000")).toBeInTheDocument();
   });
 
   it("should disable post button when comment is empty", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ comments: [] }),
-    }) as unknown as typeof fetch;
-
     render(<Comments postId="post1" />);
 
     await waitFor(() => {
@@ -312,23 +307,17 @@ describe("Comments", () => {
 
   it("should clear textarea after posting", async () => {
     const user = userEvent.setup();
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ comments: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          comment: {
-            id: "comment1",
-            body: "Test",
-            createdAt: Math.floor(Date.now() / 1000),
-            user: { id: "user1", handle: "test" },
-          },
-        }),
-      }) as unknown as typeof fetch;
+    commentsCreateMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        comment: {
+          id: "comment1",
+          body: "Test",
+          createdAt: Math.floor(Date.now() / 1000),
+          user: { id: "user1", handle: "test" },
+        },
+      }),
+    });
 
     render(<Comments postId="post1" />);
 
@@ -338,7 +327,7 @@ describe("Comments", () => {
     });
 
     const textarea = screen.getByPlaceholderText(/Add a comment/i);
-    await user.type(textarea, "Test");
+    fireEvent.change(textarea, { target: { value: "Test" } });
 
     const postButton = screen.getByRole("button", { name: /Post/i });
     await user.click(postButton);
@@ -350,16 +339,15 @@ describe("Comments", () => {
 
   it("should allow deleting own comments", async () => {
     const user = userEvent.setup();
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ comments: mockComments }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({}),
-      }) as unknown as typeof fetch;
+    commentsFetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ comments: mockComments }),
+    });
+    commentsDeleteMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
 
     render(<Comments postId="post1" currentUserId="user1" />);
 
@@ -371,14 +359,10 @@ describe("Comments", () => {
     await user.click(deleteButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-      const calls = (global.fetch as any).mock.calls as [string, RequestInit?][];
-      const match = calls.find(([url]) => typeof url === "string" && url.includes("/comments/comment1"));
-      expect(match).toBeTruthy();
-      const [, init] = match!;
-      expect(init).toEqual(
+      expect(commentsDeleteMock).toHaveBeenCalledWith(
+        "comment1",
         expect.objectContaining({
-          method: "DELETE",
+          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
         })
       );
     });
@@ -389,10 +373,10 @@ describe("Comments", () => {
   });
 
   it("should not show delete button for other users' comments", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    commentsFetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ comments: mockComments }),
-    }) as unknown as typeof fetch;
+    });
 
     render(<Comments postId="post1" currentUserId="user3" />);
 
@@ -405,15 +389,12 @@ describe("Comments", () => {
 
   it("should handle fetch errors gracefully", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error")) as unknown as typeof fetch;
+    commentsFetchMock.mockRejectedValue(new Error("Network error"));
 
     render(<Comments postId="post1" />);
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith(
-        "Failed to fetch comments:",
-        expect.any(Error)
-      );
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to fetch comments:", expect.any(Error));
     });
 
     consoleSpy.mockRestore();
@@ -426,13 +407,7 @@ describe("Comments", () => {
       resolveSubmit = resolve;
     });
 
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ comments: [] }),
-      })
-      .mockReturnValueOnce(submitPromise) as unknown as typeof fetch;
+    commentsCreateMock.mockReturnValueOnce(submitPromise as any);
 
     render(<Comments postId="post1" />);
 
@@ -442,7 +417,7 @@ describe("Comments", () => {
     });
 
     const textarea = screen.getByPlaceholderText(/Add a comment/i);
-    await user.type(textarea, "Test");
+    fireEvent.change(textarea, { target: { value: "Test" } });
 
     const postButton = screen.getByRole("button", { name: /Post/i });
     await user.click(postButton);

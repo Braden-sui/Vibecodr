@@ -27,6 +27,8 @@ export default function StudioFiles() {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publishStatus, setPublishStatus] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
     if (!capsuleId) return;
@@ -138,12 +140,43 @@ export default function StudioFiles() {
           <h2 className="text-2xl font-semibold">Files</h2>
           <p className="text-sm text-muted-foreground">Edit draft files and manifest for capsule {capsuleId}.</p>
         </div>
-        <button
-          className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-          onClick={() => navigate(`/studio/params?capsuleId=${encodeURIComponent(capsuleId)}`)}
-        >
-          Edit Params
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+            onClick={() => navigate(`/studio/params?capsuleId=${encodeURIComponent(capsuleId)}`)}
+          >
+            Edit Params
+          </button>
+          <button
+            className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            onClick={async () => {
+              if (!capsuleId) return;
+              setPublishStatus("Publishing…");
+              setPublishError(null);
+              try {
+                const res = await capsulesApi.publishDraft(capsuleId);
+                if (!res.ok) {
+                  const body = (await safeJson(res)) as { error?: string };
+                  throw new Error(body?.error || `Publish failed (${res.status})`);
+                }
+                const data = (await res.json()) as { postId?: string };
+                setPublishStatus("Published");
+                if (data.postId) {
+                  navigate(`/player/${data.postId}`);
+                }
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                setPublishError(message);
+              } finally {
+                setTimeout(() => setPublishStatus(null), 1200);
+              }
+            }}
+          >
+            Publish
+          </button>
+          {publishStatus && <span className="text-xs text-muted-foreground">{publishStatus}</span>}
+          {publishError && <span className="text-xs text-destructive">{publishError}</span>}
+        </div>
       </header>
 
       <div className="grid grid-cols-[240px_1fr] gap-4">

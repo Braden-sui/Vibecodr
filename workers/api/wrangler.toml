@@ -37,7 +37,9 @@ id = "8f0dd0835dc44edd8acdbc1b96f6f394"
 directory = "./assets"
 
 [vars]
-ALLOWLIST_HOSTS = "[]" # JSON array of allowed network hosts per capsule is enforced per-request
+NET_PROXY_ENABLED = "true"
+NET_PROXY_FREE_ENABLED = "false"
+ALLOWLIST_HOSTS = "[\"vibecodr.space\",\"api.vibecodr.space\",\"vibecodr-api.braden-yig.workers.dev\",\"api.github.com\",\"raw.githubusercontent.com\"]"
 CLERK_JWT_ISSUER = "https://clerk.vibecodr.space"
 # Optional: comma-separated audiences (https origins or app identifiers) to require on Clerk tokens
 CLERK_JWT_AUDIENCE = ""

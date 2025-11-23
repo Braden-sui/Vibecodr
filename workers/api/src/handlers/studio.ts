@@ -2,11 +2,12 @@ import { requireAuth, type AuthenticatedUser } from "../auth";
 import type { Env, Handler } from "../index";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
-import { getCapsuleKey, listCapsuleFiles } from "../storage/r2";
-import { checkBundleSize, getUserPlan } from "../storage/quotas";
-import { PublishCapsuleError } from "./capsules";
+import { CapsuleFile, getCapsuleKey, listCapsuleFiles } from "../storage/r2";
+import { checkBundleSize, getUserPlan, getUserRunQuotaState } from "../storage/quotas";
+import { PublishCapsuleError, createRuntimeArtifactForCapsule, resolveRuntimeArtifactType } from "./capsules";
 import { buildRuntimeManifest } from "../runtime/runtimeManifest";
 import { bundleInlineJs } from "./inlineBundle";
+import { createPostSchema } from "../schema";
 
 type CapsuleRow = { id: string; owner_id: string; manifest_json: string; hash: string };
 
@@ -37,6 +38,26 @@ async function hashUint8(data: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function loadCapsuleFilesWithContent(env: Env, contentHash: string): Promise<CapsuleFile[]> {
+  const files = await listCapsuleFiles(env.R2, contentHash);
+  const results: CapsuleFile[] = [];
+  for (const f of files) {
+    const obj = await env.R2.get(getCapsuleKey(contentHash, f.path));
+    if (!obj) {
+      continue;
+    }
+    const body = await obj.arrayBuffer();
+    const contentType = obj.httpMetadata?.contentType || "application/octet-stream";
+    results.push({
+      path: f.path,
+      content: body,
+      contentType,
+      size: body.byteLength,
+    });
+  }
+  return results;
 }
 
 export const getCapsuleFilesSummary: Handler = requireAuth(async (req, env, _ctx, params, user) => {
@@ -192,6 +213,22 @@ export const compileDraftArtifact: Handler = requireAuth(async (req, env, _ctx, 
   }
 
   try {
+    const runQuota = await getUserRunQuotaState(user.userId, env);
+    if (!runQuota.result.allowed) {
+      return json(
+        {
+          error: "Run quota exceeded",
+          reason: runQuota.result.reason,
+          plan: runQuota.plan,
+          limits: runQuota.result.limits,
+          usage:
+            runQuota.result.usage ??
+            ({ bundleSize: 0, runs: runQuota.runsThisMonth, storage: 0, liveMinutes: 0 } as const),
+        },
+        429
+      );
+    }
+
     const capsule = await loadOwnedCapsule(env, capsuleId, user.userId);
     const manifest = requireCapsuleManifest(capsule.manifest_json, { source: "compileDraft", capsuleId });
 
@@ -277,6 +314,98 @@ export const compileDraftArtifact: Handler = requireAuth(async (req, env, _ctx, 
       return json(err.body, err.status);
     }
     return json({ error: err instanceof Error ? err.message : "Failed to compile draft" }, 500);
+  }
+});
+
+export const publishCapsuleDraft: Handler = requireAuth(async (req, env, _ctx, params, user) => {
+  if (req.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405);
+  }
+  const capsuleId = params.p1;
+  if (!capsuleId) {
+    return json({ error: "capsuleId required" }, 400);
+  }
+
+  try {
+    const capsule = await loadOwnedCapsule(env, capsuleId, user.userId);
+    const manifest = requireCapsuleManifest(capsule.manifest_json, { source: "publish", capsuleId });
+    const validation = validateManifest(manifest);
+    if (!validation.valid) {
+      return json({ error: "Invalid manifest", errors: validation.errors, warnings: validation.warnings }, 400);
+    }
+
+    const plan = await getUserPlan(user.userId, env);
+    const { results: assetRows } = await env.DB.prepare("SELECT size FROM assets WHERE capsule_id = ?").bind(capsuleId).all();
+    const totalSize = totalAssetSize(assetRows || []);
+    const sizeCheck = checkBundleSize(plan, totalSize);
+    if (!sizeCheck.allowed) {
+      return json(
+        { error: "Bundle size limit exceeded", reason: sizeCheck.reason, plan, limits: sizeCheck.limits, usage: { bundleSize: totalSize } },
+        400
+      );
+    }
+
+    const files = await loadCapsuleFilesWithContent(env, capsule.hash);
+    const entryExists = files.some((f) => f.path === manifest.entry);
+    if (!entryExists) {
+      return json({ error: "Entry file missing", entry: manifest.entry }, 404);
+    }
+
+    const artifact = await createRuntimeArtifactForCapsule({
+      env,
+      manifest,
+      files,
+      uploadResult: { contentHash: capsule.hash, totalSize, fileCount: files.length },
+      capsuleId,
+      userId: user.userId,
+      artifactType: resolveRuntimeArtifactType(manifest),
+    });
+
+    const postId = crypto.randomUUID();
+    const title = typeof manifest.title === "string" && manifest.title.trim() ? manifest.title.trim() : "Untitled Capsule";
+    const description = typeof manifest.description === "string" ? manifest.description : null;
+    const payload = {
+      authorId: user.userId,
+      type: "app",
+      capsuleId,
+      title,
+      description: description ?? undefined,
+      tags: [] as string[],
+      visibility: "public",
+    };
+    const parsed = createPostSchema.parse(payload);
+
+    await env.DB.prepare(
+      `INSERT INTO posts (id, author_id, type, capsule_id, title, description, tags, visibility, report_md, cover_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        postId,
+        parsed.authorId,
+        parsed.type,
+        parsed.capsuleId ?? null,
+        parsed.title,
+        parsed.description ?? null,
+        parsed.tags && parsed.tags.length > 0 ? JSON.stringify(parsed.tags) : null,
+        parsed.visibility,
+        null,
+        null
+      )
+      .run();
+
+    return json({
+      ok: true,
+      postId,
+      capsuleId,
+      artifactId: artifact.id,
+      runtimeVersion: artifact.runtimeVersion,
+      warnings: validation.warnings,
+    });
+  } catch (err) {
+    if (err instanceof PublishCapsuleError) {
+      return json(err.body, err.status);
+    }
+    return json({ error: err instanceof Error ? err.message : "Failed to publish capsule" }, 500);
   }
 });
 

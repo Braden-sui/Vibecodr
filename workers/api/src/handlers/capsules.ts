@@ -16,6 +16,7 @@ import {
   getUserStorageState,
   checkBundleSize,
   checkStorageQuota,
+  incrementStorageUsage,
   Plan,
 } from "../storage/quotas";
 import { requireAuth, type AuthenticatedUser } from "../auth";
@@ -25,6 +26,35 @@ import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
 import { recordBundleWarningMetrics } from "../runtime/bundleTelemetry";
 import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClient";
 import { bundleInlineJs } from "./inlineBundle";
+import { checkPublicRateLimit, getClientIp } from "../rateLimit";
+
+function writePublishAnalytics(
+  env: Env,
+  payload: {
+    outcome: "success" | "error";
+    plan?: string;
+    totalSize?: number;
+    fileCount?: number;
+    warnings?: number;
+    code?: string;
+    capsuleId?: string;
+    userId?: string;
+  }
+) {
+  try {
+    const analytics = (env as any).vibecodr_analytics_engine;
+    if (!analytics || typeof analytics.writeDataPoint !== "function") return;
+    analytics.writeDataPoint({
+      blobs: ["publish", payload.outcome, payload.plan ?? "", payload.code ?? "", payload.capsuleId ?? ""],
+      doubles: [payload.totalSize ?? 0, payload.fileCount ?? 0, payload.warnings ?? 0],
+      indexes: [payload.userId ?? ""],
+    });
+  } catch (err) {
+    console.error("E-VIBECODR-0802 publish analytics failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 async function hashUint8(data: Uint8Array): Promise<string> {
   const buffer =
@@ -111,7 +141,7 @@ function isRuntimeArtifactRunner(manifest: Manifest): boolean {
   return RUNTIME_ARTIFACT_RUNNERS.has(manifest.runner as Manifest["runner"]);
 }
 
-function resolveRuntimeArtifactType(manifest: Manifest): RuntimeArtifactType {
+export function resolveRuntimeArtifactType(manifest: Manifest): RuntimeArtifactType {
   if (manifest.runner === "client-static") {
     return manifest.entry.toLowerCase().endsWith(".html") || manifest.entry.toLowerCase().endsWith(".htm")
       ? "html"
@@ -468,7 +498,7 @@ async function createCapsuleBackedArtifactRecord(params: {
   };
 }
 
-async function createRuntimeArtifactForCapsule(params: {
+export async function createRuntimeArtifactForCapsule(params: {
   env: Env;
   manifest: Manifest;
   files: CapsuleFile[];
@@ -588,11 +618,35 @@ async function createRuntimeArtifactForCapsule(params: {
   };
 }
 
+export async function ensureUserStorageAccount(env: Env, user: AuthenticatedUser, plan: Plan): Promise<void> {
+  const existing = await env.DB.prepare("SELECT storage_version FROM users WHERE id = ? LIMIT 1")
+    .bind(user.userId)
+    .first<{ storage_version?: number }>();
+
+  if (existing) {
+    return;
+  }
+
+  const outcome = await bootstrapUserStorageAccount({
+    env,
+    user,
+    plan,
+    storageDelta: 0,
+    nextVersion: 1,
+  });
+
+  if (outcome === "retry") {
+    return;
+  }
+}
+
 export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<PersistCapsuleResult> {
   const { env, user, manifest, manifestText, files, totalSize, warnings } = input;
   recordBundleWarningMetrics(env, warnings, "capsulePublish");
 
-  const { plan, storageUsageBytes, storageVersion } = await getUserStorageState(user.userId, env);
+  const initialStorageState = await getUserStorageState(user.userId, env);
+  const plan = initialStorageState.plan;
+
   const sizeCheck = checkBundleSize(plan, totalSize);
   if (!sizeCheck.allowed) {
     throw new PublishCapsuleError(400, {
@@ -603,16 +657,18 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
     });
   }
 
-  const storageCheck = checkStorageQuota(plan, storageUsageBytes, totalSize);
+  const storageCheck = checkStorageQuota(plan, initialStorageState.storageUsageBytes, totalSize);
   if (!storageCheck.allowed) {
     throw new PublishCapsuleError(400, {
       error: "Storage quota exceeded",
       reason: storageCheck.reason,
-      currentUsage: storageUsageBytes,
+      currentUsage: initialStorageState.storageUsageBytes,
       additionalSize: totalSize,
       limit: storageCheck.limits?.maxStorage,
     });
   }
+
+  await ensureUserStorageAccount(env, user, plan);
 
   const uploadResult = await uploadCapsuleBundle(env.R2, files, manifest, user.userId);
   const integrityOk = await verifyCapsuleIntegrity(env.R2, uploadResult.contentHash, uploadResult.contentHash);
@@ -633,7 +689,7 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
       .run();
   }
 
-  const cleanupFailedReservation = async () => {
+  const cleanupPersistedCapsule = async () => {
     try {
       await env.DB.prepare("DELETE FROM assets WHERE capsule_id = ?").bind(capsuleId).run();
     } catch (err) {
@@ -680,66 +736,56 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
     }
   };
 
-  const storageReservationSql = `
-    UPDATE users
-    SET
-      storage_usage_bytes = storage_usage_bytes + ?,
-      storage_version = storage_version + 1
-    WHERE id = ? AND storage_version = ?
-    `;
+  try {
+    const latestState = await getUserStorageState(user.userId, env);
+    const latestStorageCheck = checkStorageQuota(latestState.plan, latestState.storageUsageBytes, totalSize);
+    if (!latestStorageCheck.allowed) {
+      await cleanupPersistedCapsule();
+      throw new PublishCapsuleError(400, {
+        error: "Storage quota exceeded",
+        reason: latestStorageCheck.reason,
+        currentUsage: latestState.storageUsageBytes,
+        additionalSize: totalSize,
+        limit: latestStorageCheck.limits?.maxStorage,
+      });
+    }
 
-  const storageUpdateResult = await env.DB.prepare(storageReservationSql)
-    .bind(totalSize, user.userId, storageVersion)
-    .run();
-
-  let storageUpdates = storageUpdateResult?.meta?.changes ?? 0;
-
-  if (storageUpdates === 0) {
-    const abortReservation = async (error?: unknown) => {
-      await cleanupFailedReservation();
-      if (error) {
-        throw error;
-      }
+    await incrementStorageUsage(user.userId, env, totalSize, { expectedVersion: latestState.storageVersion });
+  } catch (err) {
+    await cleanupPersistedCapsule();
+    if (err instanceof PublishCapsuleError) {
+      throw err;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("E-VIBECODR-0405")) {
+      throw new PublishCapsuleError(400, {
+        error: "Storage quota exceeded",
+        code: "E-VIBECODR-0405",
+        details: message,
+      });
+    }
+    if (message.includes("E-VIBECODR-0406")) {
       throw new PublishCapsuleError(409, {
         error: "Concurrent upload detected. Please retry.",
         code: "E-VIBECODR-CONCURRENT-UPLOAD",
       });
-    };
-
-    try {
-      const existingUser = await env.DB.prepare(
-        "SELECT storage_version FROM users WHERE id = ? LIMIT 1"
-      )
-        .bind(user.userId)
-        .first<{ storage_version?: number }>();
-
-      if (!existingUser) {
-        const bootstrapOutcome = await bootstrapUserStorageAccount({
-          env,
-          user,
-          plan,
-          storageDelta: totalSize,
-          nextVersion: Math.max(storageVersion, 0) + 1,
-        });
-
-        if (bootstrapOutcome === "inserted") {
-          storageUpdates = 1;
-        } else {
-          const latestState = await getUserStorageState(user.userId, env);
-          const retryResult = await env.DB.prepare(storageReservationSql)
-            .bind(totalSize, user.userId, latestState.storageVersion)
-            .run();
-          storageUpdates = retryResult?.meta?.changes ?? 0;
-        }
-      }
-
-      if (storageUpdates === 0) {
-        await abortReservation();
-      }
-    } catch (err) {
-      await abortReservation(err);
     }
+    throw new PublishCapsuleError(500, {
+      error: "Failed to record storage usage",
+      code: "E-VIBECODR-0406",
+      details: message,
+    });
   }
+
+  writePublishAnalytics(env, {
+    outcome: "success",
+    plan,
+    totalSize,
+    fileCount: uploadResult.fileCount,
+    warnings: warnings?.length ?? 0,
+    capsuleId,
+    userId: user.userId,
+  });
 
   let artifactSummary:
     | {
@@ -967,6 +1013,24 @@ function buildHandleVariant(base: string): string {
 export const getCapsule: Handler = async (req, env, ctx, params) => {
   const capsuleId = params.p1;
 
+  const clientIp = getClientIp(req);
+  const rate = await checkPublicRateLimit(env, `capsule:${clientIp ?? "unknown"}`, 60);
+  if (!rate.allowed) {
+    const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
+    return json(
+      { error: "Rate limit exceeded", code: "E-VIBECODR-0311", scope: "capsule-read" },
+      429,
+      {
+        headers: {
+          "Retry-After": retryAfter.toString(),
+          "X-RateLimit-Limit": "60",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rate.resetAt ? Math.floor(rate.resetAt / 1000).toString() : "",
+        },
+      }
+    );
+  }
+
   try {
     // Get from D1
     const { results } = await env.DB.prepare(
@@ -1032,6 +1096,24 @@ export const getCapsule: Handler = async (req, env, ctx, params) => {
  */
 export const verifyCapsule: Handler = async (req, env, ctx, params) => {
   const capsuleId = params.p1;
+
+  const clientIp = getClientIp(req);
+  const rate = await checkPublicRateLimit(env, `capsule-verify:${clientIp ?? "unknown"}`, 60);
+  if (!rate.allowed) {
+    const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
+    return json(
+      { error: "Rate limit exceeded", code: "E-VIBECODR-0311", scope: "capsule-verify" },
+      429,
+      {
+        headers: {
+          "Retry-After": retryAfter.toString(),
+          "X-RateLimit-Limit": "60",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rate.resetAt ? Math.floor(rate.resetAt / 1000).toString() : "",
+        },
+      }
+    );
+  }
 
   try {
     const { results } = await env.DB.prepare(
