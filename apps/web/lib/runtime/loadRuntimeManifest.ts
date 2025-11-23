@@ -1,4 +1,4 @@
-import { getWorkerApiBase } from "@/lib/worker-api";
+import { artifactsApi } from "@/lib/api";
 
 export type ClientRuntimeType = "react-jsx" | "html";
 
@@ -52,31 +52,43 @@ function toAbsoluteAssetPath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function getRuntimeManifestUrl(artifactId: string): string {
-  const base = getWorkerApiBase();
-  const encodedId = encodeURIComponent(artifactId);
-  return `${base}/artifacts/${encodedId}/manifest`;
+function normalizeRuntimeType(value: unknown): ClientRuntimeType {
+  if (typeof value !== "string") {
+    return "react-jsx";
+  }
+  return value === "html" ? "html" : "react-jsx";
+}
+
+function requireAssetPath(path: string, label: string, artifactId: string): string {
+  if (!path.trim()) {
+    throw new Error(`E-VIBECODR-2110 runtime manifest missing ${label} asset for ${artifactId}`);
+  }
+  return path;
 }
 
 export async function loadRuntimeManifest(artifactId: string): Promise<ClientRuntimeManifest> {
-  const res = await fetch(getRuntimeManifestUrl(artifactId));
+  const res = await artifactsApi.manifest(artifactId);
 
   if (!res.ok) {
-    throw new Error(`Failed to load runtime manifest for ${artifactId}: ${res.status}`);
+    throw new Error(`E-VIBECODR-2109 failed to load runtime manifest for ${artifactId}: ${res.status}`);
   }
 
   const data = (await res.json()) as WorkerRuntimeManifestResponse;
 
-  const type: ClientRuntimeType = data.type === "html" ? "html" : "react-jsx";
   const serverManifest = data.manifest ?? {};
+  const type: ClientRuntimeType = normalizeRuntimeType(data.type ?? serverManifest.type);
 
   const runtimeVersion =
     data.runtimeVersion || serverManifest.runtime?.version || "v0.1.0";
 
   const assets = serverManifest.runtime?.assets ?? {};
-  const bridgePath = String(assets.bridge?.path ?? "");
-  const guardPath = String(assets.guard?.path ?? "");
-  const runtimeScriptPath = String(assets.runtimeScript?.path ?? "");
+  const bridgePath = requireAssetPath(String(assets.bridge?.path ?? ""), "bridge", artifactId);
+  const guardPath = requireAssetPath(String(assets.guard?.path ?? ""), "guard", artifactId);
+  const runtimeScriptPath = requireAssetPath(
+    String(assets.runtimeScript?.path ?? ""),
+    "runtime script",
+    artifactId
+  );
 
   const bundle = serverManifest.bundle ?? {};
 

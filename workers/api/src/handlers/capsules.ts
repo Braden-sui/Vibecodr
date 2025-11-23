@@ -8,6 +8,7 @@ import {
   deleteCapsuleBundle,
   type CapsuleFile,
   getCapsuleKey,
+  listCapsuleFiles,
 } from "../storage/r2";
 import {
   getUserPlan,

@@ -495,11 +495,53 @@ export const capsulesApi = {
       ...init,
     });
   },
+  filesSummary(capsuleId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/capsules/${capsuleId}/files-summary`), init);
+  },
+  getFile(capsuleId: string, path: string, init?: RequestInit) {
+    const encoded = encodeURIComponent(path);
+    return fetch(workerUrl(`/capsules/${capsuleId}/files/${encoded}`), init);
+  },
+  putFile(capsuleId: string, path: string, body: BodyInit, contentType?: string, init?: RequestInit) {
+    const encoded = encodeURIComponent(path);
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) };
+    if (contentType) {
+      headers["Content-Type"] = contentType;
+    }
+    return fetch(workerUrl(`/capsules/${capsuleId}/files/${encoded}`), {
+      method: "PUT",
+      headers,
+      body,
+      ...init,
+    });
+  },
+  updateManifest(capsuleId: string, manifest: unknown, init?: RequestInit) {
+    return fetch(workerUrl(`/capsules/${capsuleId}/manifest`), {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify(manifest),
+      ...init,
+    });
+  },
+  compileDraft(capsuleId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/capsules/${capsuleId}/compile-draft`), {
+      method: "POST",
+      ...(init || {}),
+    });
+  },
 } as const;
 
 export const artifactsApi = {
+  manifest(artifactId: string, init?: RequestInit) {
+    const encodedId = encodeURIComponent(artifactId);
+    return fetch(workerUrl(`/artifacts/${encodedId}/manifest`), init);
+  },
   bundleSrc(artifactId: string) {
-    return workerUrl(`/artifacts/${artifactId}/bundle`);
+    const encodedId = encodeURIComponent(artifactId);
+    return workerUrl(`/artifacts/${encodedId}/bundle`);
   },
 } as const;
 
@@ -521,6 +563,25 @@ export const liveApi = {
 } as const;
 
 export const runsApi = {
+  start(
+    input: {
+      capsuleId: string;
+      postId?: string | null;
+      runId?: string;
+    },
+    init?: RequestInit,
+  ) {
+    return fetch(workerUrl("/runs/start"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify(input),
+      keepalive: true,
+      ...init,
+    });
+  },
   complete(
     input: {
       capsuleId: string;

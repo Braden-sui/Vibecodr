@@ -10,6 +10,7 @@ import {
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
+import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
 
 export interface SandboxFrameProps {
   manifest: ClientRuntimeManifest;
@@ -149,7 +150,8 @@ export const SandboxFrame = forwardRef<HTMLIFrameElement, SandboxFrameProps>(fun
     <iframe
       title={title}
       srcDoc={srcDoc}
-      sandbox="allow-scripts"
+      sandbox={RUNTIME_IFRAME_SANDBOX}
+      allow={RUNTIME_IFRAME_PERMISSIONS}
       referrerPolicy="no-referrer"
       className={combinedClassName}
       data-runtime-artifact={manifest.artifactId}

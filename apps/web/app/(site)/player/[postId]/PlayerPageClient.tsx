@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sliders } from "lucide-react";
 import { postsApi, runsApi, moderationApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
-import { trackClientError, trackEvent } from "@/lib/analytics";
+import { trackClientError, trackEvent, trackRuntimeEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
@@ -26,6 +26,8 @@ type PlayerPageClientProps = {
 const MAX_CONSOLE_LOGS = 120;
 const LOG_SAMPLE_RATE = 0.2;
 const LOG_BATCH_TARGET = 10;
+const PERF_SAMPLE_RATE = 0.25;
+const PERF_EVENT_MIN_INTERVAL_MS = 2000;
 
 type RunSession = {
   id: string;
@@ -59,8 +61,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isUnquarantining, setIsUnquarantining] = useState(false);
   const iframeHandleRef = useRef<PlayerIframeHandle | null>(null);
   const currentRunRef = useRef<RunSession | null>(null);
+  const runStartInFlightRef = useRef(false);
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
   const flushLogsTimeoutRef = useRef<number | null>(null);
+  const lastPerfEventRef = useRef<number>(0);
   const handoffPrefillAppliedRef = useRef(false);
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -262,10 +266,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
   const maybeSendLogAnalytics = useCallback(
     (entry: PlayerConsoleEntry) => {
-      if (!post?.capsule?.id || !post?.id) {
-        return;
-      }
-      if (!currentRunRef.current) {
+      const runId = currentRunRef.current?.id;
+      if (!post?.capsule?.id || !post?.id || !runId) {
         return;
       }
       const forced = entry.level === "error";
@@ -274,17 +276,62 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         return;
       }
       const sampleRate = forced ? 1 : LOG_SAMPLE_RATE;
-      trackEvent("player_console_log", {
-        postId: post.id,
+      trackRuntimeEvent("player_console_log", {
         capsuleId: post.capsule.id,
-        runId: currentRunRef.current.id,
-        level: entry.level,
-        source: entry.source,
-        sampleRate,
+        artifactId: post.capsule.artifactId ?? null,
+        runtimeType: post.capsule.runner ?? null,
+        message: entry.message,
+        properties: {
+          postId: post.id,
+          runId,
+          level: entry.level,
+          source: entry.source,
+          sampleRate,
+        },
+        timestamp: entry.timestamp,
       });
       enqueueAnalyticsLog(entry, sampleRate);
     },
     [enqueueAnalyticsLog, post?.capsule?.id, post?.id]
+  );
+
+  const maybeSendPerfAnalytics = useCallback(
+    (stats: { fps: number; memory: number }) => {
+      const runId = currentRunRef.current?.id;
+      if (!post?.capsule?.id || !post?.id || !runId) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastPerfEventRef.current < PERF_EVENT_MIN_INTERVAL_MS) {
+        return;
+      }
+      const shouldSample = Math.random() < PERF_SAMPLE_RATE;
+      if (!shouldSample) {
+        return;
+      }
+      lastPerfEventRef.current = now;
+      trackRuntimeEvent("player_perf_sample", {
+        capsuleId: post.capsule.id,
+        artifactId: post.capsule.artifactId ?? null,
+        runtimeType: post.capsule.runner ?? null,
+        properties: {
+          postId: post.id,
+          runId,
+          fps: stats.fps,
+          memory: stats.memory,
+        },
+        timestamp: now,
+      });
+    },
+    [post?.capsule?.artifactId, post?.capsule?.id, post?.capsule?.runner, post?.id]
+  );
+
+  const handleStatsUpdate = useCallback(
+    (s: { fps: number; memory: number }) => {
+      setStats((prev) => ({ ...prev, ...s }));
+      maybeSendPerfAnalytics(s);
+    },
+    [maybeSendPerfAnalytics]
   );
 
   const handleConsoleLog = useCallback(
@@ -318,12 +365,91 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     setConsoleEntries([]);
   }, []);
 
-  const startRunSession = useCallback(() => {
-    currentRunRef.current = {
-      id: createStableId("run"),
-      startedAt: Date.now(),
-    };
-  }, []);
+  const startRunSession = useCallback(async (): Promise<RunSession | null> => {
+    if (!post?.capsule?.id || !post?.id) {
+      return null;
+    }
+    if (runStartInFlightRef.current) {
+      return currentRunRef.current;
+    }
+    runStartInFlightRef.current = true;
+    const provisionalRunId = createStableId("run");
+    try {
+      const init = await buildAuthInit();
+      if (!init) {
+        trackClientError("E-VIBECODR-0517", {
+          area: "player.startRun",
+          runId: provisionalRunId,
+          capsuleId: post.capsule.id,
+          postId: post.id,
+          message: "Missing auth token for run start",
+        });
+        return null;
+      }
+
+      const response = await runsApi.start(
+        { runId: provisionalRunId, capsuleId: post.capsule.id, postId: post.id },
+        init
+      );
+
+      if (!response.ok) {
+        let reason = `status=${response.status}`;
+        try {
+          const body = (await response.json()) as { reason?: string };
+          if (typeof body?.reason === "string") {
+            reason = body.reason;
+          }
+          if (response.status === 429) {
+            toast({
+              title: "Run limit reached",
+              description: body?.reason ?? "Monthly run quota exceeded. Try again after upgrading your plan.",
+              variant: "error",
+            });
+          }
+        } catch {
+          // ignore parse failures
+        }
+        trackClientError("E-VIBECODR-0517", {
+          area: "player.startRun",
+          runId: provisionalRunId,
+          capsuleId: post.capsule.id,
+          postId: post.id,
+          message: reason,
+          status: response.status,
+        });
+        return null;
+      }
+
+      let resolvedRunId = provisionalRunId;
+      try {
+        const payload = (await response.json()) as { runId?: string | null };
+        if (payload?.runId && typeof payload.runId === "string") {
+          resolvedRunId = payload.runId;
+        }
+      } catch {
+        // keep provisional run id if parsing fails
+      }
+
+      const session: RunSession = {
+        id: resolvedRunId,
+        startedAt: Date.now(),
+      };
+      currentRunRef.current = session;
+      return session;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      trackClientError("E-VIBECODR-0517", {
+        area: "player.startRun",
+        runId: provisionalRunId,
+        capsuleId: post?.capsule?.id,
+        postId: post?.id,
+        message,
+      });
+      return null;
+    } finally {
+      runStartInFlightRef.current = false;
+    }
+  }, [buildAuthInit, post?.capsule?.id, post?.id]);
 
   const finalizeRunSession = useCallback(
     (status: "completed" | "failed", errorMessage?: string) => {
@@ -333,8 +459,18 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       if (!session || !capsule) {
         return;
       }
+      const durationMs = Math.max(0, Date.now() - session.startedAt);
       flushLogBatch(session.id);
       currentRunRef.current = null;
+      const completePayload = {
+        runId: session.id,
+        capsuleId: capsule.id,
+        postId: currentPost.id,
+        durationMs,
+        status,
+        errorMessage,
+      };
+
       buildAuthInit()
         .then((init) => {
           if (!init) {
@@ -348,25 +484,36 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             });
             return;
           }
-          return runsApi.complete(
-            {
+          return runsApi.complete(completePayload, init);
+        })
+        .then((response) => {
+          if (!response) return;
+          if (!response.ok) {
+            trackClientError("E-VIBECODR-0516", {
+              area: "player.completeRun",
               runId: session.id,
               capsuleId: capsule.id,
-              postId: currentPost.id,
-              durationMs: Math.max(0, Date.now() - session.startedAt),
+              postId: currentPost?.id,
               status,
-              errorMessage,
-            },
-            init
-          );
+              message: `status=${response.status}`,
+            });
+          }
+          trackRuntimeEvent("player_run_completed", {
+            capsuleId: capsule.id,
+            artifactId: capsule.artifactId ?? null,
+            runtimeType: capsule.runner ?? null,
+            properties: { postId: currentPost.id, runId: session.id, status },
+            message: errorMessage ?? undefined,
+            timestamp: Date.now(),
+          });
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
           if (typeof console !== "undefined" && typeof console.error === "function") {
             console.error("E-VIBECODR-0516 player complete run failed", {
               runId: session.id,
-              capsuleId: post?.capsule?.id,
-              postId: post?.id,
+              capsuleId: capsule.id,
+              postId: currentPost?.id,
               status,
               error: message,
             });
@@ -374,14 +521,14 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           trackClientError("E-VIBECODR-0516", {
             area: "player.completeRun",
             runId: session.id,
-            capsuleId: post?.capsule?.id,
-            postId: post?.id,
+            capsuleId: capsule.id,
+            postId: currentPost?.id,
             status,
             message,
           });
         });
     },
-    [flushLogBatch, post?.capsule, post?.id]
+    [buildAuthInit, flushLogBatch, post]
   );
 
   useEffect(() => {
@@ -392,26 +539,50 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   }, [finalizeRunSession, flushLogBatch]);
 
   const handleRunnerReady = useCallback(() => {
-    startRunSession();
-    setIsRunning(true);
-    if (post?.capsule) {
-      trackEvent("player_run_started", {
-        postId: post.id,
-        capsuleId: post.capsule.id,
-        runner: post.capsule.runner,
-      });
-    }
+    void (async () => {
+      const session = await startRunSession();
+      if (!session) {
+        setIsRunning(false);
+        setStats({ fps: 0, memory: 0, bootTime: 0 });
+        iframeHandleRef.current?.kill();
+        return;
+      }
+      setIsRunning(true);
+      lastPerfEventRef.current = 0;
+      if (post?.capsule) {
+        trackEvent("player_run_started", {
+          postId: post.id,
+          capsuleId: post.capsule.id,
+          runner: post.capsule.runner,
+          });
+          trackRuntimeEvent("player_run_started", {
+            capsuleId: post.capsule.id,
+            artifactId: post.capsule.artifactId ?? null,
+            runtimeType: post.capsule.runner ?? null,
+            properties: { postId: post.id, runId: session.id },
+          });
+      }
+    })();
   }, [post, startRunSession]);
 
   const handleBootMetrics = useCallback(
     (metrics: { bootTimeMs: number }) => {
       setStats((prev) => ({ ...prev, bootTime: metrics.bootTimeMs }));
       if (post?.capsule) {
+        const runId = currentRunRef.current?.id;
         trackEvent("player_boot_time", {
           postId: post.id,
           capsuleId: post.capsule.id,
           runner: post.capsule.runner,
           bootTimeMs: metrics.bootTimeMs,
+        });
+        trackRuntimeEvent("player_boot_time", {
+          capsuleId: post.capsule.id,
+          artifactId: post.capsule.artifactId ?? null,
+          runtimeType: post.capsule.runner ?? null,
+          properties: { postId: post.id, runId },
+          timestamp: Date.now(),
+          message: `boot_time_ms=${metrics.bootTimeMs}`,
         });
       }
     },
@@ -781,7 +952,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           onReady={handleRunnerReady}
           onError={handleRuntimeError}
           onLog={handleConsoleLog}
-          onStats={(s) => setStats((prev) => ({ ...prev, ...s }))}
+          onStats={handleStatsUpdate}
           onBoot={handleBootMetrics}
           isLoading={isLoading}
           loadError={error}

@@ -24,11 +24,12 @@ type RunRow = {
   capsule_id: string;
   post_id: string | null;
   user_id: string | null;
+  started_at: number | null;
 };
 
 async function findRunById(env: Env, runId: string): Promise<RunRow | null> {
   const { results } = await env.DB.prepare(
-    "SELECT id, capsule_id, post_id, user_id FROM runs WHERE id = ? LIMIT 1"
+    "SELECT id, capsule_id, post_id, user_id, started_at FROM runs WHERE id = ? LIMIT 1"
   )
     .bind(runId)
     .all();
@@ -39,6 +40,7 @@ async function findRunById(env: Env, runId: string): Promise<RunRow | null> {
         capsule_id?: string;
         post_id?: string | null;
         user_id?: string | null;
+        started_at?: number | null;
       }
     | undefined;
 
@@ -51,15 +53,177 @@ async function findRunById(env: Env, runId: string): Promise<RunRow | null> {
     capsule_id: row.capsule_id,
     post_id: row.post_id ?? null,
     user_id: row.user_id ?? null,
+    started_at:
+      typeof row.started_at === "number" && Number.isFinite(row.started_at)
+        ? row.started_at
+        : null,
   };
 }
 
+function quotaExceededResponse(
+  quota: Awaited<ReturnType<typeof getUserRunQuotaState>>,
+  code: string
+): Response {
+  const usage =
+    quota.result.usage ??
+    ({ bundleSize: 0, runs: quota.runsThisMonth, storage: 0, liveMinutes: 0 } as const);
+
+  return json(
+    {
+      error: "Run quota exceeded",
+      code,
+      plan: quota.plan,
+      reason: quota.result.reason,
+      limits: quota.result.limits,
+      usage,
+      runsThisMonth: quota.runsThisMonth,
+      percentUsed: quota.result.percentUsed ?? null,
+    },
+    429
+  );
+}
+
+function normalizeDurationMs(candidate: unknown, startedAtSec: number | null): number | null {
+  if (typeof candidate === "number" && Number.isFinite(candidate)) {
+    return Math.max(0, candidate);
+  }
+  if (startedAtSec) {
+    return Math.max(0, Date.now() - startedAtSec * 1000);
+  }
+  return null;
+}
+
+function incrementRunCounters(env: Env, userId: string, postId: string | null, runId: string) {
+  incrementUserCounters(env, userId, { runsDelta: 1 }).catch((err) => {
+    console.error("E-VIBECODR-0601 run counter increment failed", {
+      userId,
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+
+  if (postId) {
+    incrementPostStats(env, postId, { runsDelta: 1 }).catch((err) => {
+      console.error("E-VIBECODR-0602 post run counter increment failed", {
+        postId,
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+}
+
+async function recordRunQuotaObservation(env: Env, userId: string) {
+  try {
+    const { plan, runsThisMonth, result } = await getUserRunQuotaState(userId, env);
+
+    try {
+      const analytics = env.vibecodr_analytics_engine;
+      if (analytics && typeof analytics.writeDataPoint === "function") {
+        analytics.writeDataPoint({
+          blobs: ["run_quota_observation", plan, userId],
+          doubles: [runsThisMonth, result.percentUsed ?? 0],
+        });
+      }
+    } catch (err) {
+      console.error("E-VIBECODR-0603 run quota analytics write failed", {
+        userId,
+        runsThisMonth,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } catch (err) {
+    console.error("E-VIBECODR-0604 run quota snapshot failed", {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * POST /runs/start
+ * Body: { capsuleId: string; postId?: string; runId?: string }
+ */
+const startRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => {
+  if (req.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await req.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const body = payload as { capsuleId?: string; postId?: string | null; runId?: string | null };
+  const capsuleId = body.capsuleId?.trim();
+  const postId = body.postId?.trim() || null;
+  const requestedRunId = body.runId?.trim() || null;
+
+  if (!capsuleId) {
+    return json({ error: "capsuleId is required" }, 400);
+  }
+
+  const runId = requestedRunId || crypto.randomUUID();
+  const existingRun = await findRunById(env, runId);
+  if (existingRun) {
+    if (existingRun.user_id !== user.userId) {
+      return json({ error: "Run id is already used by another user" }, 403);
+    }
+    return json({ ok: true, runId, idempotent: true });
+  }
+
+  const quota = await getUserRunQuotaState(user.userId, env);
+  if (!quota.result.allowed) {
+    return quotaExceededResponse(quota, "E-VIBECODR-0605");
+  }
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO runs (id, capsule_id, post_id, user_id, started_at, status)
+       VALUES (?, ?, ?, ?, strftime('%s','now'), ?)`
+    )
+      .bind(runId, capsuleId, postId, user.userId, "started")
+      .run();
+  } catch (e: any) {
+    if (e?.message?.includes("UNIQUE")) {
+      const conflictingRun = await findRunById(env, runId);
+      if (conflictingRun && conflictingRun.user_id !== user.userId) {
+        return json({ error: "Run id is already used by another user" }, 403);
+      }
+      return json({ ok: true, runId, idempotent: true });
+    }
+    throw e;
+  }
+
+  incrementRunCounters(env, user.userId, postId, runId);
+  recordRunQuotaObservation(env, user.userId);
+
+  return json({
+    ok: true,
+    runId,
+    plan: quota.plan,
+    limits: quota.result.limits,
+    usage:
+      quota.result.usage ??
+      ({ bundleSize: 0, runs: quota.runsThisMonth, storage: 0, liveMinutes: 0 } as const),
+    runsThisMonth: quota.runsThisMonth,
+    percentUsed: quota.result.percentUsed ?? null,
+  });
+};
+
+export const startRun: Handler = requireAuth(startRunHandler);
+
 /**
  * POST /runs/complete
- * Minimal run logging endpoint
  * Body: { capsuleId: string; postId?: string; runId?: string; durationMs?: number; status?: 'completed'|'failed'; errorMessage?: string }
  */
 const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => {
+  if (req.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405);
+  }
+
   try {
     const body = (await req.json()) as {
       capsuleId?: string;
@@ -72,7 +236,6 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
 
     const capsuleId = body.capsuleId?.trim();
     const postId = body.postId?.trim() || null;
-    const durationMs = typeof body.durationMs === "number" ? Math.max(0, body.durationMs) : null;
     const status = body.status === "failed" ? "failed" : "completed";
     const errorMessage = status === "failed" ? (body.errorMessage || null) : null;
 
@@ -80,7 +243,6 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       return json({ error: "capsuleId is required" }, 400);
     }
 
-    // Idempotency: allow client-specified runId; otherwise generate
     const runId = (body.runId && body.runId.trim()) || crypto.randomUUID();
 
     const existingRun = await findRunById(env, runId);
@@ -88,23 +250,42 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       if (existingRun.user_id !== user.userId) {
         return json({ error: "Run id is already used by another user" }, 403);
       }
-      return json({ ok: true, runId, idempotent: true });
+      if (existingRun.capsule_id !== capsuleId) {
+        return json({ error: "capsuleId does not match run" }, 400);
+      }
+      if (existingRun.post_id && postId && existingRun.post_id !== postId) {
+        return json({ error: "postId does not match run" }, 400);
+      }
+
+      const durationMs = normalizeDurationMs(body.durationMs, existingRun.started_at);
+      try {
+        await env.DB.prepare(
+          `UPDATE runs
+           SET duration_ms = ?, status = ?, error_message = ?, post_id = COALESCE(post_id, ?)
+           WHERE id = ?`
+        )
+          .bind(durationMs, status, errorMessage, postId, runId)
+          .run();
+      } catch (err: any) {
+        console.error("E-VIBECODR-0606 completeRun update failed", {
+          runId,
+          userId: user.userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return json({ error: "Failed to log run" }, 500);
+      }
+
+      recordRunQuotaObservation(env, user.userId);
+      return json({ ok: true, runId, idempotent: false });
     }
 
     const quota = await getUserRunQuotaState(user.userId, env);
     if (!quota.result.allowed) {
-      return json(
-        {
-          error: "Run quota exceeded",
-          reason: quota.result.reason,
-          limits: quota.result.limits,
-          usage: quota.result.usage,
-        },
-        429
-      );
+      return quotaExceededResponse(quota, "E-VIBECODR-0607");
     }
 
-    // Insert run row, handle duplicate runId gracefully
+    const durationMs = normalizeDurationMs(body.durationMs, null);
+
     try {
       await env.DB.prepare(
         `INSERT INTO runs (id, capsule_id, post_id, user_id, started_at, duration_ms, status, error_message)
@@ -123,56 +304,15 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       throw e;
     }
 
-    // Best-effort counters
-    incrementUserCounters(env, user.userId, { runsDelta: 1 }).catch((err) => {
-      console.error("E-VIBECODR-0601 completeRun user runs counter failed", {
-        userId: user.userId,
-        runId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+    incrementRunCounters(env, user.userId, postId, runId);
+    recordRunQuotaObservation(env, user.userId);
 
-    if (postId) {
-      // No post denormalized counters yet; keep API for future
-      incrementPostStats(env, postId, { runsDelta: 1 }).catch((err) => {
-        console.error("E-VIBECODR-0602 completeRun post runs counter failed", {
-          postId,
-          runId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    }
-
-    (async () => {
-      try {
-        const { plan, runsThisMonth, result } = await getUserRunQuotaState(user.userId, env);
-
-        try {
-          const analytics = env.vibecodr_analytics_engine;
-          if (analytics && typeof analytics.writeDataPoint === "function") {
-            analytics.writeDataPoint({
-              blobs: ["run_quota_observation", plan, user.userId],
-              doubles: [runsThisMonth, result.percentUsed ?? 0],
-            });
-          }
-        } catch (err) {
-          console.error("E-VIBECODR-0603 completeRun run quota analytics write failed", {
-            userId: user.userId,
-            runsThisMonth,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      } catch (err) {
-        console.error("E-VIBECODR-0604 completeRun run quota snapshot failed", {
-          userId: user.userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    })();
-
-    return json({ ok: true, runId });
+    return json({ ok: true, runId, idempotent: false });
   } catch (error) {
-    return json({ error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" }, 500);
+    return json(
+      { error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" },
+      500
+    );
   }
 };
 

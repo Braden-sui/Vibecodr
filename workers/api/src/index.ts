@@ -86,16 +86,12 @@ import {
   embedIframeHandler,
   ogImageHandler,
 } from "./handlers/embeds";
-import { completeRun, appendRunLogs } from "./handlers/runs";
-import {
-  createArtifactUpload,
-  uploadArtifactSources,
-  completeArtifact,
-  getArtifactManifest,
-  getArtifactBundle,
-} from "./handlers/artifacts";
+import { completeRun, appendRunLogs, startRun } from "./handlers/runs";
+import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest, getArtifactBundle } from "./handlers/artifacts";
 import { joinLiveWaitlist } from "./handlers/live";
 import { recordRuntimeEvent, getRuntimeAnalyticsSummary } from "./handlers/runtimeEvents";
+import { getCapsuleFilesSummary, getCapsuleFile, updateCapsuleFile, updateCapsuleManifest, compileDraftArtifact } from "./handlers/studio";
+import { getCapsuleFilesSummary, getCapsuleFile, updateCapsuleFile, updateCapsuleManifest } from "./handlers/studio";
 export { BuildCoordinator } from "./durable/BuildCoordinator";
 export { ArtifactCompiler } from "./durable/ArtifactCompiler";
 
@@ -877,6 +873,11 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/verify$/, handler: verifyCapsule },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: getManifest },
   { method: "GET", pattern: /^\/capsules\/([^\/]+)\/bundle$/, handler: getCapsuleBundle },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/files-summary$/, handler: getCapsuleFilesSummary },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/files\/(.+)$/, handler: getCapsuleFile },
+  { method: "PUT", pattern: /^\/capsules\/([^\/]+)\/files\/(.+)$/, handler: updateCapsuleFile },
+  { method: "PATCH", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: updateCapsuleManifest },
+  { method: "POST", pattern: /^\/capsules\/([^\/]+)\/compile-draft$/, handler: compileDraftArtifact },
 
   // User & Quota
   { method: "GET", pattern: /^\/user\/quota$/, handler: getUserQuota },
@@ -927,6 +928,7 @@ export const routes: Array<{ method: string; pattern: RegExp; handler: Handler }
   { method: "GET", pattern: /^\/runtime-analytics\/summary$/, handler: getRuntimeAnalyticsSummary },
 
   // Runs & Logs
+  { method: "POST", pattern: /^\/runs\/start$/, handler: startRun },
   { method: "POST", pattern: /^\/runs\/([^\/]+)\/logs$/, handler: appendRunLogs },
   { method: "POST", pattern: /^\/runs\/complete$/, handler: completeRun },
 

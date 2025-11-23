@@ -9,14 +9,14 @@ import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import type { Env, Handler } from "../index";
 import { requireAuth, type AuthenticatedUser } from "../auth";
 import {
-  persistCapsuleBundle,
   sanitizeHtmlEntryIfNeeded,
   type PublishWarning,
   PublishCapsuleError,
   enforceSafetyForFiles,
 } from "./capsules";
-import { getUserRunQuotaState } from "../storage/quotas";
+import { checkBundleSize, getUserPlan, getUserRunQuotaState } from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
+import { uploadCapsuleBundle } from "../storage/r2";
 import { bundleWithEsbuild } from "../runtime/esbuildBundler";
 
 interface AnalysisResult {
@@ -27,6 +27,18 @@ interface AnalysisResult {
   hasServerCode: boolean;
   warnings: string[];
 }
+
+type ImportResponse = {
+  capsuleId: string;
+  manifest: Manifest;
+  filesSummary: {
+    contentHash: string;
+    totalSize: number;
+    fileCount: number;
+    entryPoint: string;
+  };
+  warnings?: PublishWarning[];
+};
 
 /**
  * POST /import/github
@@ -84,109 +96,15 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
       stripPrefix: `${repoName}-${branch}/`,
     });
 
-    if (analysis.totalSize > 25 * 1024 * 1024) {
-      return json(
-        {
-          success: false,
-          error: "Bundle size exceeds 25 MB limit (Free/Creator plan)",
-          totalSize: analysis.totalSize,
-        },
-        400
-      );
-    }
-
     if (analysis.hasServerCode) {
       analysis.warnings.push("Server-side code detected. Only client-side code will run.");
     }
 
-    // Bundle with esbuild-wasm
-    const {
-      files: bundledFiles,
-      entryPoint: bundledEntryPoint,
-      warnings: bundlerWarnings,
-    } = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
-
-    const analysisForManifest: AnalysisResult = {
-      ...analysis,
-      entryPoint: bundledEntryPoint,
-    };
-
-    // Generate manifest
-    const manifest = await generateManifest(bundledFiles, analysisForManifest);
-
-    // Validate manifest
-    const validation = validateManifest(manifest);
-    if (!validation.valid) {
-      return json(
-        {
-          success: false,
-          errors: validation.errors,
-          warnings: validation.warnings,
-        },
-        400
-      );
-    }
-
-    const manifestText = JSON.stringify(manifest, null, 2);
-    const files = convertBundledMapToCapsuleFiles(bundledFiles);
-    const manifestBytes = new TextEncoder().encode(manifestText);
-    files.push({
-      path: "manifest.json",
-      content: manifestBytes.buffer as ArrayBuffer,
-      contentType: "application/json",
-      size: manifestBytes.byteLength,
-    });
-
-    const validationWarnings = validation.warnings ?? [];
-    const analysisWarnings =
-      analysisForManifest.warnings?.map<PublishWarning>((message, index) => ({
-        path: `analysis.${index}`,
-        message,
-      })) ?? [];
-    const bundlerWarningEntries = bundlerWarnings.map<PublishWarning>((message, index) => ({
-      path: `bundle.${index}`,
-      message,
-    }));
-    const combinedWarnings =
-      validationWarnings.length === 0 &&
-      analysisWarnings.length === 0 &&
-      bundlerWarningEntries.length === 0
-        ? undefined
-        : [...analysisWarnings, ...bundlerWarningEntries, ...validationWarnings];
-
-    let publishResult;
-    try {
-      await enforceSafetyForFiles(env, manifest, files);
-      const sanitized = sanitizeHtmlEntryIfNeeded(files, manifest);
-      publishResult = await persistCapsuleBundle({
-        env,
-        user,
-        manifest,
-        manifestText,
-        files: sanitized.files,
-        totalSize: sanitized.totalSize,
-        warnings: combinedWarnings,
-      });
-    } catch (err) {
-      if (err instanceof PublishCapsuleError) {
-        return json(err.body, err.status);
-      }
-      throw err;
-    }
-
-    return json({
-      success: true,
-      capsuleId: publishResult.capsule.id,
-      capsule: publishResult.capsule,
-      artifact: publishResult.artifact,
-      warnings: publishResult.warnings,
-      manifest,
-    });
+    return await processImport(env, user, analysis);
   } catch (error) {
     console.error("GitHub import error:", error);
     return json(
       {
-        success: false,
         error: error instanceof Error ? error.message : "Import failed",
       },
       500
@@ -249,7 +167,6 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
     if (zipBuffer.byteLength > 250 * 1024 * 1024) {
       return json(
         {
-          success: false,
           error: "ZIP file exceeds 250 MB limit",
         },
         400
@@ -258,106 +175,15 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
 
     // Analyze ZIP contents
     const analysis = await analyzeArchive(new Uint8Array(zipBuffer));
-
-    if (analysis.totalSize > 25 * 1024 * 1024) {
-      return json(
-        {
-          success: false,
-          error: "Extracted bundle size exceeds 25 MB limit (Free/Creator plan)",
-          totalSize: analysis.totalSize,
-        },
-        400
-      );
+    if (analysis.hasServerCode) {
+      analysis.warnings.push("Server-side code detected. Only client-side code will run.");
     }
 
-    // Bundle with esbuild-wasm
-    const {
-      files: bundledFiles,
-      entryPoint: bundledEntryPoint,
-      warnings: bundlerWarnings,
-    } = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
-
-    const analysisForManifest: AnalysisResult = {
-      ...analysis,
-      entryPoint: bundledEntryPoint,
-    };
-
-    // Generate manifest
-    const manifest = await generateManifest(bundledFiles, analysisForManifest);
-
-    // Validate manifest
-    const validation = validateManifest(manifest);
-    if (!validation.valid) {
-      return json(
-        {
-          success: false,
-          errors: validation.errors,
-          warnings: validation.warnings,
-        },
-        400
-      );
-    }
-
-    const manifestText = JSON.stringify(manifest, null, 2);
-    const files = convertBundledMapToCapsuleFiles(bundledFiles);
-    const manifestBytes = new TextEncoder().encode(manifestText);
-    files.push({
-      path: "manifest.json",
-      content: manifestBytes.buffer as ArrayBuffer,
-      contentType: "application/json",
-      size: manifestBytes.byteLength,
-    });
-
-    const validationWarnings = validation.warnings ?? [];
-    const analysisWarnings =
-      analysisForManifest.warnings?.map<PublishWarning>((message, index) => ({
-        path: `analysis.${index}`,
-        message,
-      })) ?? [];
-    const bundlerWarningEntries = bundlerWarnings.map<PublishWarning>((message, index) => ({
-      path: `bundle.${index}`,
-      message,
-    }));
-    const combinedWarnings =
-      validationWarnings.length === 0 &&
-      analysisWarnings.length === 0 &&
-      bundlerWarningEntries.length === 0
-        ? undefined
-        : [...analysisWarnings, ...bundlerWarningEntries, ...validationWarnings];
-
-    let publishResult;
-    try {
-      await enforceSafetyForFiles(env, manifest, files);
-      const sanitized = sanitizeHtmlEntryIfNeeded(files, manifest);
-      publishResult = await persistCapsuleBundle({
-        env,
-        user,
-        manifest,
-        manifestText,
-        files: sanitized.files,
-        totalSize: sanitized.totalSize,
-        warnings: combinedWarnings,
-      });
-    } catch (err) {
-      if (err instanceof PublishCapsuleError) {
-        return json(err.body, err.status);
-      }
-      throw err;
-    }
-
-    return json({
-      success: true,
-      capsuleId: publishResult.capsule.id,
-      capsule: publishResult.capsule,
-      artifact: publishResult.artifact,
-      warnings: publishResult.warnings,
-      manifest,
-    });
+    return await processImport(env, user, analysis);
   } catch (error) {
     console.error("ZIP import error:", error);
     return json(
       {
-        success: false,
         error: error instanceof Error ? error.message : "Import failed",
       },
       500
@@ -442,41 +268,6 @@ async function analyzeArchive(
 }
 
 /**
- * Detect entry point from file list
- */
-function detectEntryPoint(files: Map<string, Uint8Array>): string | null {
-  // Priority order for entry points
-  const candidates = [
-    "index.html",
-    "main.html",
-    "index.htm",
-    "main.js",
-    "index.js",
-    "app.js",
-    "bundle.js",
-    "dist/index.html",
-    "dist/main.html",
-    "build/index.html",
-    "public/index.html",
-  ];
-
-  for (const candidate of candidates) {
-    if (files.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Fallback: find any HTML file
-  for (const path of files.keys()) {
-    if (path.endsWith(".html") || path.endsWith(".htm")) {
-      return path;
-    }
-  }
-
-  return null;
-}
-
-/**
  * Detect SPDX license identifier from license text
  */
 function detectSPDXLicense(text: string): string | undefined {
@@ -552,6 +343,9 @@ function getContentType(filename: string): string {
     htm: "text/html",
     js: "application/javascript",
     mjs: "application/javascript",
+    ts: "application/typescript",
+    tsx: "application/typescript",
+    jsx: "application/javascript",
     css: "text/css",
     json: "application/json",
     png: "image/png",
@@ -574,4 +368,273 @@ function json(data: unknown, status = 200, init?: ResponseInit) {
     headers: { "content-type": "application/json" },
     ...init,
   });
+}
+
+function toPublishWarnings(
+  analysisWarnings: string[],
+  bundlerWarnings: string[],
+  validationWarnings?: { path: string; message: string }[]
+): PublishWarning[] | undefined {
+  const mappedAnalysis = analysisWarnings.map<PublishWarning>((message, idx) => ({
+    path: `analysis.${idx}`,
+    message,
+  }));
+  const mappedBundler = bundlerWarnings.map<PublishWarning>((message, idx) => ({
+    path: `bundle.${idx}`,
+    message,
+  }));
+  const mappedValidation =
+    validationWarnings?.map<PublishWarning>((warning) => ({
+      path: warning.path,
+      message: warning.message,
+    })) ?? [];
+
+  const combined = [...mappedAnalysis, ...mappedBundler, ...mappedValidation];
+  return combined.length > 0 ? combined : undefined;
+}
+
+function detectEntryPoint(files: Map<string, Uint8Array>): string | null {
+  const candidates = [
+    "index.html",
+    "main.html",
+    "index.htm",
+    "main.tsx",
+    "index.tsx",
+    "main.ts",
+    "index.ts",
+    "main.jsx",
+    "index.jsx",
+    "main.js",
+    "index.js",
+    "app.tsx",
+    "app.jsx",
+    "app.js",
+    "bundle.js",
+    "dist/index.html",
+    "dist/main.html",
+    "build/index.html",
+    "public/index.html",
+    "src/main.tsx",
+    "src/index.tsx",
+  ];
+
+  for (const candidate of candidates) {
+    if (files.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  for (const path of files.keys()) {
+    if (path.endsWith(".html") || path.endsWith(".htm")) {
+      return path;
+    }
+  }
+
+  return null;
+}
+
+function summarizeFiles(files: CapsuleFile[], entryPoint: string, contentHash: string) {
+  const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+  return {
+    contentHash,
+    totalSize,
+    fileCount: files.length,
+    entryPoint,
+  };
+}
+
+async function buildManifestWithMetadata(
+  manifest: Manifest,
+  files: CapsuleFile[],
+  analysis: AnalysisResult
+): Promise<{ manifest: Manifest; manifestText: string; manifestFile: CapsuleFile }> {
+  const assetSummaries =
+    files
+      .filter((f) => f.path !== "manifest.json")
+      .map((f) => ({
+        path: f.path,
+        size: f.size,
+      })) ?? [];
+  const bundleSize = files.reduce((acc, f) => (f.path === "manifest.json" ? acc : acc + f.size), 0);
+  const manifestWithMeta: Manifest = {
+    ...manifest,
+    bundleSize,
+    assets: assetSummaries,
+    license: manifest.license ?? analysis.detectedLicense,
+  };
+
+  const manifestText = JSON.stringify(manifestWithMeta, null, 2);
+  const bytes = new TextEncoder().encode(manifestText);
+  const manifestFile: CapsuleFile = {
+    path: "manifest.json",
+    content: bytes.buffer as ArrayBuffer,
+    contentType: "application/json",
+    size: bytes.byteLength,
+  };
+
+  return { manifest: manifestWithMeta, manifestText, manifestFile };
+}
+
+async function persistDraftCapsule(params: {
+  env: Env;
+  user: AuthenticatedUser;
+  manifest: Manifest;
+  manifestText: string;
+  files: CapsuleFile[];
+  warnings?: PublishWarning[];
+}): Promise<ImportResponse> {
+  const { env, user, manifest, manifestText, files, warnings } = params;
+  const uploadResult = await uploadCapsuleBundle(env.R2, files, manifest, user.userId);
+  const capsuleId = crypto.randomUUID();
+
+  await env.DB.prepare(
+    "INSERT INTO capsules (id, owner_id, manifest_json, hash, created_at) VALUES (?, ?, ?, ?, ?)"
+  )
+    .bind(capsuleId, user.userId, manifestText, uploadResult.contentHash, Math.floor(Date.now() / 1000))
+    .run();
+
+  for (const file of files) {
+    await env.DB.prepare("INSERT INTO assets (id, capsule_id, key, size) VALUES (?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), capsuleId, file.path, file.size)
+      .run();
+  }
+
+  const filesSummary = summarizeFiles(files, manifest.entry, uploadResult.contentHash);
+
+  return {
+    capsuleId,
+    manifest,
+    filesSummary,
+    warnings,
+  };
+}
+
+async function processImport(
+  env: Env,
+  user: AuthenticatedUser,
+  analysis: AnalysisResult
+): Promise<Response> {
+  const plan = await getUserPlan(user.userId, env);
+
+  const preBundleSizeCheck = checkBundleSize(plan, analysis.totalSize);
+  if (!preBundleSizeCheck.allowed) {
+    return json(
+      {
+        error: "Bundle size limit exceeded",
+        reason: preBundleSizeCheck.reason,
+        plan,
+        limits: preBundleSizeCheck.limits,
+        usage: { bundleSize: analysis.totalSize },
+      },
+      400
+    );
+  }
+
+  // Bundle with esbuild (same helper used for artifacts)
+  const {
+    files: bundledFiles,
+    entryPoint: bundledEntryPoint,
+    warnings: bundlerWarnings,
+  } = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
+
+  const analysisForManifest: AnalysisResult = {
+    ...analysis,
+    entryPoint: bundledEntryPoint,
+  };
+
+  const manifestDraft = await generateManifest(bundledFiles, analysisForManifest);
+  const validation = validateManifest(manifestDraft);
+  if (!validation.valid) {
+    return json(
+      {
+        error: "Invalid manifest",
+        errors: validation.errors,
+        warnings: validation.warnings,
+      },
+      400
+    );
+  }
+
+  // Convert bundled files for storage
+  const bundledCapsuleFiles = convertBundledMapToCapsuleFiles(bundledFiles);
+
+  // Safety + optional HTML sanitization
+  try {
+    await enforceSafetyForFiles(env, manifestDraft, bundledCapsuleFiles);
+  } catch (err) {
+    if (err instanceof PublishCapsuleError) {
+      return json(err.body, err.status);
+    }
+    throw err;
+  }
+
+  const sanitized = sanitizeHtmlEntryIfNeeded(bundledCapsuleFiles, manifestDraft);
+  let filesForUpload = sanitized.files;
+  let totalSize = sanitized.totalSize;
+
+  const bundleSizeCheck = checkBundleSize(plan, totalSize);
+  if (!bundleSizeCheck.allowed) {
+    return json(
+      {
+        error: "Bundle size limit exceeded",
+        reason: bundleSizeCheck.reason,
+        plan,
+        limits: bundleSizeCheck.limits,
+        usage: { bundleSize: totalSize },
+      },
+      400
+    );
+  }
+
+  const { manifest, manifestText, manifestFile } = await buildManifestWithMetadata(
+    manifestDraft,
+    filesForUpload,
+    analysisForManifest
+  );
+
+  filesForUpload = [...filesForUpload, manifestFile];
+  totalSize += manifestFile.size;
+
+  const finalSizeCheck = checkBundleSize(plan, totalSize);
+  if (!finalSizeCheck.allowed) {
+    return json(
+      {
+        error: "Bundle size limit exceeded",
+        reason: finalSizeCheck.reason,
+        plan,
+        limits: finalSizeCheck.limits,
+        usage: { bundleSize: totalSize },
+      },
+      400
+    );
+  }
+
+  const validationWithMeta = validateManifest(manifest);
+  if (!validationWithMeta.valid) {
+    return json(
+      {
+        error: "Invalid manifest",
+        errors: validationWithMeta.errors,
+        warnings: validationWithMeta.warnings,
+      },
+      400
+    );
+  }
+
+  const warnings = toPublishWarnings(
+    analysisForManifest.warnings,
+    bundlerWarnings,
+    validationWithMeta.warnings ?? validation.warnings
+  );
+
+  const result = await persistDraftCapsule({
+    env,
+    user,
+    manifest,
+    manifestText,
+    files: filesForUpload,
+    warnings,
+  });
+
+  return json(result, 201);
 }

@@ -11,7 +11,8 @@
       "Bash(dir /b \"c:\\Users\\brade\\Desktop\\vibecodr\" 2)",
       "Bash(nul)",
       "Bash(dir /s /b c:UsersbradeDesktopvibecodrapps 2)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(gh pr list:*)"
     ],
     "deny": [],
     "ask": []

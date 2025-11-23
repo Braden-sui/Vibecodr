@@ -1,10 +1,12 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "../index";
-import { appendRunLogs, completeRun } from "./runs";
+import { appendRunLogs, completeRun, startRun } from "./runs";
 import { Plan, PLAN_LIMITS } from "../storage/quotas";
 
 const mockGetUserRunQuotaState = vi.fn();
+const incrementUserCountersMock = vi.fn();
+const incrementPostStatsMock = vi.fn();
 
 vi.mock("../auth", () => ({
   requireAuth:
@@ -15,6 +17,13 @@ vi.mock("../auth", () => ({
         sessionId: "sess1",
         claims: {} as any,
       }),
+}));
+
+vi.mock("./counters", () => ({
+  incrementUserCounters: (...args: Parameters<typeof incrementUserCountersMock>) =>
+    incrementUserCountersMock(...args),
+  incrementPostStats: (...args: Parameters<typeof incrementPostStatsMock>) =>
+    incrementPostStatsMock(...args),
 }));
 
 vi.mock("../storage/quotas", async () => {
@@ -50,7 +59,7 @@ function createEnv(runs: RunRow[] = []): TestEnv {
         return this;
       },
       async all() {
-        if (sql.includes("SELECT id, capsule_id, post_id, user_id FROM runs WHERE id = ?")) {
+        if (sql.includes("FROM runs WHERE id = ?")) {
           const runId = this.bindArgs[0];
           const run = state.runs.get(runId);
           return { results: run ? [run] : [] };
@@ -59,20 +68,37 @@ function createEnv(runs: RunRow[] = []): TestEnv {
       },
       async run() {
         if (sql.startsWith("INSERT INTO runs")) {
-          const [id, capsuleId, postId, userId, durationMs, status, errorMessage] = this.bindArgs;
-          if (state.runs.has(id)) {
-            const err: any = new Error("UNIQUE constraint failed: runs.id");
-            throw err;
+          if (sql.includes("duration_ms")) {
+            const [id, capsuleId, postId, userId, durationMs, status, errorMessage] = this.bindArgs;
+            if (state.runs.has(id)) {
+              const err: any = new Error("UNIQUE constraint failed: runs.id");
+              throw err;
+            }
+            state.runs.set(id, {
+              id,
+              capsule_id: capsuleId,
+              post_id: postId ?? null,
+              user_id: userId,
+              started_at: Math.floor(Date.now() / 1000),
+              duration_ms: durationMs ?? null,
+              status: status ?? errorMessage ?? null,
+            });
+          } else {
+            const [id, capsuleId, postId, userId, status] = this.bindArgs;
+            if (state.runs.has(id)) {
+              const err: any = new Error("UNIQUE constraint failed: runs.id");
+              throw err;
+            }
+            state.runs.set(id, {
+              id,
+              capsule_id: capsuleId,
+              post_id: postId ?? null,
+              user_id: userId,
+              started_at: Math.floor(Date.now() / 1000),
+              duration_ms: null,
+              status: status ?? null,
+            });
           }
-          state.runs.set(id, {
-            id,
-            capsule_id: capsuleId,
-            post_id: postId ?? null,
-            user_id: userId,
-            started_at: Math.floor(Date.now() / 1000),
-            duration_ms: durationMs ?? null,
-            status: status ?? errorMessage ?? null,
-          });
         }
         return { success: true };
       },
@@ -98,6 +124,66 @@ beforeEach(() => {
     plan: Plan.FREE,
     runsThisMonth: 0,
     result: { allowed: true, percentUsed: 0, limits: PLAN_LIMITS[Plan.FREE] },
+  });
+  incrementUserCountersMock.mockReset();
+  incrementPostStatsMock.mockReset();
+  incrementUserCountersMock.mockResolvedValue(undefined as any);
+  incrementPostStatsMock.mockResolvedValue(undefined as any);
+});
+
+describe("startRun", () => {
+  it("rejects when run quota is exceeded with structured payload", async () => {
+    const env = createEnv();
+    mockGetUserRunQuotaState.mockResolvedValueOnce({
+      plan: Plan.FREE,
+      runsThisMonth: 6000,
+      result: {
+        allowed: false,
+        reason: "Monthly run quota exceeded",
+        limits: PLAN_LIMITS[Plan.FREE],
+        usage: { bundleSize: 0, runs: 6000, storage: 0, liveMinutes: 0 },
+        percentUsed: 120,
+      },
+    });
+
+    const res = await startRun(
+      new Request("https://example.com/api/runs/start", {
+        method: "POST",
+        body: JSON.stringify({ capsuleId: "cap-1", postId: "post-1", runId: "run-limit" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: string; plan?: string; limits?: any; usage?: any };
+    expect(body.error).toBe("Run quota exceeded");
+    expect(body.plan).toBe(Plan.FREE);
+    expect(body.limits?.maxRuns).toBe(PLAN_LIMITS[Plan.FREE].maxRuns);
+    expect(body.usage?.runs).toBe(6000);
+    expect(env.__state.runs.size).toBe(0);
+  });
+
+  it("creates a run and increments counters", async () => {
+    const env = createEnv();
+
+    const res = await startRun(
+      new Request("https://example.com/api/runs/start", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-start", capsuleId: "cap-start", postId: "post-start" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as { runId?: string };
+    expect(payload.runId).toBe("run-start");
+    expect(env.__state.runs.get("run-start")?.user_id).toBe("user-auth-1");
+    expect(incrementUserCountersMock).toHaveBeenCalledTimes(1);
+    expect(incrementPostStatsMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -126,8 +212,11 @@ describe("completeRun", () => {
     );
 
     expect(res.status).toBe(429);
-    const body = (await res.json()) as { error: string };
+    const body = (await res.json()) as { error: string; plan?: string; limits?: any; usage?: any };
     expect(body.error).toBe("Run quota exceeded");
+    expect(body.plan).toBe(Plan.FREE);
+    expect(body.limits?.maxRuns).toBe(PLAN_LIMITS[Plan.FREE].maxRuns);
+    expect(body.usage?.runs).toBe(6000);
     expect(env.__state.runs.size).toBe(0);
     expect(mockGetUserRunQuotaState).toHaveBeenCalledWith("user-auth-1", env);
   });
@@ -149,6 +238,35 @@ describe("completeRun", () => {
     expect(res.status).toBe(200);
     const run = env.__state.runs.get("run-auth");
     expect(run?.user_id).toBe("user-auth-1");
+  });
+
+  it("does not increment counters again when completing an existing run", async () => {
+    const env = createEnv();
+    await startRun(
+      new Request("https://example.com/api/runs/start", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-existing-complete", capsuleId: "cap-1", postId: "post-1" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+    incrementUserCountersMock.mockClear();
+    incrementPostStatsMock.mockClear();
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-existing-complete", capsuleId: "cap-1", postId: "post-1" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(200);
+    expect(incrementUserCountersMock).not.toHaveBeenCalled();
+    expect(incrementPostStatsMock).not.toHaveBeenCalled();
   });
 
   it("returns 403 when a run id is already owned by a different user", async () => {

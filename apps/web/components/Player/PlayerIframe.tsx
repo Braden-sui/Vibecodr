@@ -19,6 +19,10 @@ import { loadRuntime } from "@/lib/runtime/registry";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
+import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
+
+export const RUNTIME_EVENT_LIMIT = 120;
+export const RUNTIME_LOG_LIMIT = 200;
 
 export interface PlayerIframeProps {
   capsuleId: string;
@@ -84,25 +88,15 @@ function toOrigin(url: string | null | undefined): string | null {
   }
 }
 
-function resolveRunnerOrigins(capsuleId: string, artifactId?: string | null): string[] {
+function resolveRunnerOrigins(bundleUrl: string | null | undefined, includeNullOrigin: boolean): string[] {
   const origins = new Set<string>();
-  const bundleOrigin = toOrigin(
-    artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)
-  );
-  const runtimeCdnOrigin = toOrigin(process.env.NEXT_PUBLIC_RUNTIME_CDN_ORIGIN);
+  const bundleOrigin = toOrigin(bundleUrl);
 
-  if (bundleOrigin) {
+  if (includeNullOrigin) {
+    origins.add("null");
+  } else if (bundleOrigin) {
     origins.add(bundleOrigin);
   }
-  if (runtimeCdnOrigin) {
-    origins.add(runtimeCdnOrigin);
-  }
-
-  if (typeof window !== "undefined" && window.location?.origin) {
-    origins.add(window.location.origin);
-  }
-
-  origins.add("null");
 
   return Array.from(origins);
 }
@@ -116,45 +110,80 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
     const [errorMessage, setErrorMessage] = useState<string>("");
     const pauseStateRef = useRef<"paused" | "running">("running");
-    const runnerOrigins = useMemo(
-      () => resolveRunnerOrigins(capsuleId, artifactId),
-      [artifactId, capsuleId]
-    );
-    const [runtimeManifest, setRuntimeManifest] = useState<ClientRuntimeManifest | null>(null);
-    const [runtimeFrame, setRuntimeFrame] = useState<ReactElement | null>(null);
-    const heartbeatTrackedRef = useRef(false);
     const bundleUrl = useMemo(
       () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)),
       [artifactId, capsuleId]
     );
+    const runnerOrigins = useMemo(
+      () => resolveRunnerOrigins(bundleUrl, Boolean(artifactId)),
+      [artifactId, bundleUrl]
+    );
+    const [runtimeManifest, setRuntimeManifest] = useState<ClientRuntimeManifest | null>(null);
+    const [runtimeFrame, setRuntimeFrame] = useState<ReactElement | null>(null);
+    const heartbeatTrackedRef = useRef(false);
+    const runtimeEventCountRef = useRef(0);
+    const runtimeEventLimitHitRef = useRef(false);
+    const runtimeLogCountRef = useRef(0);
+    const runtimeLogLimitHitRef = useRef(false);
     const paramsRef = useRef(params);
     useEffect(() => {
       paramsRef.current = params;
     }, [params]);
+    const resetRuntimeBudgets = useCallback(() => {
+      runtimeEventCountRef.current = 0;
+      runtimeEventLimitHitRef.current = false;
+      runtimeLogCountRef.current = 0;
+      runtimeLogLimitHitRef.current = false;
+      heartbeatTrackedRef.current = false;
+    }, []);
+    useEffect(() => {
+      resetRuntimeBudgets();
+    }, [artifactId, capsuleId, resetRuntimeBudgets]);
     const telemetryArtifactId = runtimeManifest?.artifactId ?? artifactId;
+    const emitRuntimeEvent = useCallback(
+      (event: string, payload?: Record<string, unknown>) => {
+        if (runtimeEventCountRef.current >= RUNTIME_EVENT_LIMIT) {
+          if (!runtimeEventLimitHitRef.current) {
+            runtimeEventLimitHitRef.current = true;
+            console.warn("E-VIBECODR-0524 runtime events capped for this session", {
+              capsuleId,
+              artifactId: telemetryArtifactId,
+            });
+            trackRuntimeEvent("runtime_events_capped", {
+              capsuleId,
+              artifactId: telemetryArtifactId,
+            });
+          }
+          return;
+        }
+
+        runtimeEventCountRef.current += 1;
+        trackRuntimeEvent(event, {
+          capsuleId,
+          artifactId: telemetryArtifactId,
+          ...(payload ?? {}),
+        });
+      },
+      [capsuleId, telemetryArtifactId]
+    );
     const postOrigins = useMemo(() => {
-      // INVARIANT: keep the sandboxed "null" origin so srcDoc iframe runtimes can receive commands.
+      // INVARIANT: only allow explicit runtime origins; sandboxed runtimes use the null origin.
       return runnerOrigins.filter((origin): origin is string => Boolean(origin));
     }, [runnerOrigins]);
     const handleSandboxReady = useCallback(() => {
-      trackRuntimeEvent("runtime_frame_loaded", {
-        capsuleId,
-        artifactId: telemetryArtifactId,
-      });
-    }, [capsuleId, telemetryArtifactId]);
+      emitRuntimeEvent("runtime_frame_loaded");
+    }, [emitRuntimeEvent]);
 
     const handleSandboxError = useCallback(
       (message: string) => {
-        trackRuntimeEvent("runtime_frame_error", {
-          capsuleId,
-          artifactId: telemetryArtifactId,
+        emitRuntimeEvent("runtime_frame_error", {
           message,
         });
         setStatus("error");
         setErrorMessage(message);
         onError?.(message);
       },
-      [capsuleId, telemetryArtifactId, onError]
+      [emitRuntimeEvent, onError]
     );
 
     const handlePolicyViolation = useCallback(
@@ -162,14 +191,12 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         setStatus("error");
         setErrorMessage(violation.message);
         onError?.(violation.message);
-        trackRuntimeEvent("runtime_policy_violation", {
-          capsuleId,
-          artifactId: telemetryArtifactId,
+        emitRuntimeEvent("runtime_policy_violation", {
           message: violation.message,
           code: violation.code,
         });
       },
-      [capsuleId, telemetryArtifactId, onError]
+      [emitRuntimeEvent, onError]
     );
 
     const sendToIframe = useCallback(
@@ -208,6 +235,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       () => ({
         postMessage: (type: string, payload?: unknown) => sendToIframe(type, payload),
         restart: () => {
+          resetRuntimeBudgets();
           const sent = sendToIframe("restart");
           if (!sent) {
             const iframe = iframeRef.current;
@@ -221,6 +249,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return sent;
         },
         kill: () => {
+          resetRuntimeBudgets();
           const sent = sendToIframe("kill");
           if (!sent) {
             const iframe = iframeRef.current;
@@ -232,7 +261,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return sent;
         },
       }),
-      [bundleUrl, capsuleId, sendToIframe]
+      [bundleUrl, resetRuntimeBudgets, sendToIframe]
     );
 
     useEffect(() => {
@@ -284,7 +313,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
               onBoot?.({ bootTimeMs: bootTime });
             }
             onReady?.();
-            trackRuntimeEvent("runtime_ready", {
+            emitRuntimeEvent("runtime_ready", {
               ...telemetryBase,
               bootTime: bootTime ?? null,
             });
@@ -294,13 +323,29 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           case "heartbeat": {
             if (!heartbeatTrackedRef.current) {
               heartbeatTrackedRef.current = true;
-              trackRuntimeEvent("runtime_heartbeat", telemetryBase);
+              emitRuntimeEvent("runtime_heartbeat", telemetryBase);
             }
             break;
           }
 
           case "log":
             if (isRuntimeLogPayload(payload)) {
+              if (runtimeLogCountRef.current >= RUNTIME_LOG_LIMIT) {
+                if (!runtimeLogLimitHitRef.current) {
+                  runtimeLogLimitHitRef.current = true;
+                  console.warn("E-VIBECODR-0525 runtime logs capped for this session", {
+                    capsuleId,
+                    artifactId: telemetryArtifactId,
+                    cappedAt: RUNTIME_LOG_LIMIT,
+                  });
+                  emitRuntimeEvent("runtime_logs_capped", {
+                    ...telemetryBase,
+                    cappedAt: RUNTIME_LOG_LIMIT,
+                  });
+                }
+                break;
+              }
+              runtimeLogCountRef.current += 1;
               onLog?.(payload);
             }
             break;
@@ -316,7 +361,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             setStatus("error");
             setErrorMessage(message);
             onError?.(message);
-            trackRuntimeEvent("runtime_error", {
+            emitRuntimeEvent("runtime_error", {
               ...telemetryBase,
               message,
               code: (isRecord(payload) && typeof payload.code === "string" ? payload.code : undefined) ?? undefined,
@@ -329,7 +374,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             setStatus("error");
             setErrorMessage(violationMessage);
             onError?.(violationMessage);
-            trackRuntimeEvent("runtime_policy_violation", {
+            emitRuntimeEvent("runtime_policy_violation", {
               ...telemetryBase,
               message: violationMessage,
               code,
@@ -344,7 +389,17 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       return () => {
         window.removeEventListener("message", handleMessage);
       };
-    }, [capsuleId, onReady, onLog, onStats, onBoot, onError, runnerOrigins]);
+    }, [
+      capsuleId,
+      emitRuntimeEvent,
+      onBoot,
+      onError,
+      onLog,
+      onReady,
+      onStats,
+      runnerOrigins,
+      telemetryArtifactId,
+    ]);
 
     // Send params to iframe when they change
     useEffect(() => {
@@ -377,7 +432,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           const manifest = await loadRuntimeManifest(artifactId);
           if (cancelled) return;
           setRuntimeManifest(manifest);
-          trackRuntimeEvent("runtime_manifest_loaded", {
+          emitRuntimeEvent("runtime_manifest_loaded", {
             capsuleId,
             artifactId: manifest.artifactId ?? artifactId,
             runtimeVersion: manifest.runtimeVersion,
@@ -394,18 +449,19 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           });
           setStatus("error");
           setErrorMessage(errorMessageText);
-          trackRuntimeEvent("runtime_manifest_error", {
+          emitRuntimeEvent("runtime_manifest_error", {
             capsuleId,
             artifactId,
             error: err instanceof Error ? err.message : String(err),
           });
+          onError?.(errorMessageText);
         }
       })();
 
       return () => {
         cancelled = true;
       };
-    }, [artifactId, capsuleId]);
+    }, [artifactId, capsuleId, emitRuntimeEvent, onError]);
 
     useEffect(() => {
       if (!runtimeManifest) {
@@ -432,7 +488,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           artifactId: runtimeManifest.artifactId,
           error: error instanceof Error ? error.message : String(error),
         });
-        trackRuntimeEvent("runtime_loader_error", {
+        emitRuntimeEvent("runtime_loader_error", {
           capsuleId,
           artifactId: runtimeManifest.artifactId ?? artifactId,
           error: error instanceof Error ? error.message : String(error),
@@ -447,6 +503,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       handleSandboxReady,
       handleSandboxError,
       handlePolicyViolation,
+      emitRuntimeEvent,
       capsuleId,
       artifactId,
     ]);
@@ -476,23 +533,44 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       };
     }, [sendToIframe, status]);
 
-    const runtimeRender = runtimeFrame ?? (
-      <iframe
-        ref={iframeRef}
-        src={bundleUrl}
-        data-capsule-id={capsuleId}
-        data-runtime-network-mode={getRuntimeBundleNetworkMode()}
-        className="h-full w-full"
-        sandbox="allow-scripts allow-same-origin"
-        allow=""
-        title="Vibe Runner"
-        style={{
-          border: "none",
-          width: "100%",
-          height: "100%",
-        }}
-      />
-    );
+    const runtimeNetworkMode = getRuntimeBundleNetworkMode();
+    const runtimeRender =
+      runtimeFrame ??
+      (artifactId ? (
+        <iframe
+          ref={iframeRef}
+          src="about:blank"
+          data-capsule-id={capsuleId}
+          data-runtime-network-mode={runtimeNetworkMode}
+          className="h-full w-full"
+          sandbox={RUNTIME_IFRAME_SANDBOX}
+          allow={RUNTIME_IFRAME_PERMISSIONS}
+          referrerPolicy="no-referrer"
+          title="Vibe Runner"
+          style={{
+            border: "none",
+            width: "100%",
+            height: "100%",
+          }}
+        />
+      ) : (
+        <iframe
+          ref={iframeRef}
+          src={bundleUrl}
+          data-capsule-id={capsuleId}
+          data-runtime-network-mode={runtimeNetworkMode}
+          className="h-full w-full"
+          sandbox={RUNTIME_IFRAME_SANDBOX}
+          allow={RUNTIME_IFRAME_PERMISSIONS}
+          referrerPolicy="no-referrer"
+          title="Vibe Runner"
+          style={{
+            border: "none",
+            width: "100%",
+            height: "100%",
+          }}
+        />
+      ));
 
     return (
       <div className="relative h-full w-full overflow-hidden rounded-lg border bg-background">
