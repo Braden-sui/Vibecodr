@@ -183,8 +183,8 @@ const EtheriaSkyBackground = () => {
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geometry.setAttribute("opacity", new THREE.BufferAttribute(opacities, 1));
-    geometry.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("aOpacity", new THREE.BufferAttribute(opacities, 1));
+    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
 
     // Custom shader to support per-particle opacity and size attenuation
     const material = new THREE.ShaderMaterial({
@@ -193,17 +193,17 @@ const EtheriaSkyBackground = () => {
         scale: { value: height / (2 * Math.tan((35 * Math.PI) / 360)) } // Perspective scale for fov 35
       },
       vertexShader: `
-        attribute float opacity;
-        attribute float size;
+        attribute float aOpacity;
+        attribute float aSize;
         varying float vOpacity;
         varying vec3 vColor;
         void main() {
-          vOpacity = opacity;
+          vOpacity = aOpacity;
           vColor = color;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_Position = projectionMatrix * mvPosition;
           // Size attenuation matches THREE.PointsMaterial
-          gl_PointSize = size * (scale / -mvPosition.z);
+          gl_PointSize = aSize * (scale / -mvPosition.z);
         }
       `,
       fragmentShader: `
@@ -246,7 +246,7 @@ const EtheriaSkyBackground = () => {
 
       // 3. Infinite Cloud Looping
       const currentPositions = geometry.attributes.position.array as Float32Array;
-      const currentOpacities = geometry.attributes.opacity.array as Float32Array;
+      const currentOpacities = geometry.attributes.aOpacity.array as Float32Array;
       const tunnelLength = 2000; // Depth of the cloud tunnel
       const tunnelStart = 800;   // Where particles "start" relative to camera (behind)
       const tunnelEnd = -1200;   // Where particles "end" (far distance)
@@ -293,7 +293,7 @@ const EtheriaSkyBackground = () => {
       }
       
       geometry.attributes.position.needsUpdate = true;
-      geometry.attributes.opacity.needsUpdate = true;
+      geometry.attributes.aOpacity.needsUpdate = true;
 
       renderer.render(scene, camera);
     };
