@@ -65,18 +65,18 @@ const EtheriaSkyBackground = () => {
     renderer.domElement.setAttribute("aria-hidden", "true");
     mount.appendChild(renderer.domElement);
 
-    const ambientLight = new THREE.AmbientLight(new THREE.Color("#1b133b"), 0.82);
+    const ambientLight = new THREE.AmbientLight(new THREE.Color("#1b2440"), 0.9);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(new THREE.Color(palette.ember), 1.1);
-    sunLight.position.set(0.35, 0.65, 0.9);
+    const sunLight = new THREE.DirectionalLight(new THREE.Color(palette.ember), 0.92);
+    sunLight.position.set(0.45, 0.75, 0.8);
     scene.add(sunLight);
 
-    const rimLight = new THREE.DirectionalLight(new THREE.Color("#6b32ff"), 0.35);
-    rimLight.position.set(-0.55, 0.25, 0.4);
+    const rimLight = new THREE.DirectionalLight(new THREE.Color("#6b32ff"), 0.3);
+    rimLight.position.set(-0.65, 0.3, 0.35);
     scene.add(rimLight);
 
-    const hemi = new THREE.HemisphereLight(new THREE.Color(palette.top), new THREE.Color(palette.orange), 0.65);
+    const hemi = new THREE.HemisphereLight(new THREE.Color("#1f3a6a"), new THREE.Color(palette.orange), 0.55);
     scene.add(hemi);
 
     const generateCloudTexture = () => {
@@ -89,7 +89,7 @@ const EtheriaSkyBackground = () => {
         return new THREE.Texture();
       }
 
-      const gridSize = 64;
+      const gridSize = 96;
       const grid = new Float32Array((gridSize + 1) * (gridSize + 1));
       for (let i = 0; i < grid.length; i++) {
         grid[i] = Math.random();
@@ -111,12 +111,12 @@ const EtheriaSkyBackground = () => {
 
       const fbm = (nx: number, ny: number) => {
         let value = 0;
-        let amplitude = 0.6;
+        let amplitude = 0.65;
         let frequency = 1;
         for (let i = 0; i < 5; i++) {
           value += amplitude * sampleNoise(nx * frequency, ny * frequency);
           frequency *= 2;
-          amplitude *= 0.45;
+          amplitude *= 0.5;
         }
         return value;
       };
@@ -127,24 +127,21 @@ const EtheriaSkyBackground = () => {
           const nx = x / canvas.width;
           const ny = y / canvas.height;
 
-          const billow = fbm(nx * 3.2, ny * 2.4);
-          const structure = fbm(nx * 1.4 + 20, ny * 1.2 + 40);
-          const densityBase = billow * 0.7 + structure * 0.45;
-          let density = Math.max(0, densityBase - 0.42);
-          density = Math.pow(density, 2.1);
+          const billow = fbm(nx * 2.6, ny * 2.0);
+          const structure = fbm(nx * 1.0 + 14, ny * 1.0 + 28);
+          const densityBase = billow * 0.65 + structure * 0.55;
+          let density = Math.max(0, densityBase - 0.38);
+          density = Math.pow(density, 1.8);
 
-          const heightMask = Math.max(0, 1 - Math.pow(ny * 1.25, 2.4));
+          const heightMask = Math.max(0, 1 - Math.pow(ny * 1.12, 2.2));
           density *= heightMask;
 
-          const streak = Math.max(0, Math.sin(nx * Math.PI * 6 + ny * 2.2) * 0.18);
-          density = Math.min(1, density + streak * heightMask);
+          const softness = Math.pow(1 - ny, 2.2) * 0.25;
+          const light = 0.62 + density * 0.32 + softness;
 
-          const warmTop = Math.pow(1 - ny, 3) * 0.35;
-          const light = 0.65 + density * 0.35 + warmTop;
-
-          const r = 255;
-          const g = 245 - ny * 35;
-          const b = 240 - ny * 48;
+          const r = 242;
+          const g = 248 - ny * 22;
+          const b = 255 - ny * 18;
 
           const alpha = Math.min(255, Math.max(0, density * 255));
           const idx = (y * canvas.width + x) * 4;
@@ -168,38 +165,40 @@ const EtheriaSkyBackground = () => {
     };
 
     const cloudTexture = generateCloudTexture();
+    cloudTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    cloudTexture.generateMipmaps = true;
     // 3D volumetric-ish clouds built from clustered puffs (instanced spheres).
     const puffGeometry = new THREE.SphereGeometry(18, 18, 14);
     const puffMaterial = new THREE.MeshPhysicalMaterial({
       map: cloudTexture,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
       depthWrite: false,
       roughness: 0.85,
       metalness: 0,
-      clearcoat: 0.2,
-      clearcoatRoughness: 0.7,
+      clearcoat: 0.08,
+      clearcoatRoughness: 0.8,
       transmission: 0.02,
       ior: 1.1,
-      color: new THREE.Color("#fff8f1"),
-      emissive: new THREE.Color("#2b1f43"),
-      emissiveIntensity: 0.08,
+      color: new THREE.Color("#f8fbff"),
+      emissive: new THREE.Color("#1f2340"),
+      emissiveIntensity: 0.06,
     });
 
     const puffHighlightMaterial = new THREE.MeshPhysicalMaterial({
       map: cloudTexture,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.22,
       depthWrite: false,
-      roughness: 0.35,
+      roughness: 0.45,
       metalness: 0,
-      clearcoat: 0.6,
-      clearcoatRoughness: 0.35,
-      transmission: 0.08,
-      ior: 1.12,
-      color: new THREE.Color("#ffd9a8"),
-      emissive: new THREE.Color("#ff8a42"),
-      emissiveIntensity: 0.35,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.5,
+      transmission: 0.05,
+      ior: 1.08,
+      color: new THREE.Color("#e6f2ff"),
+      emissive: new THREE.Color("#6fb5ff"),
+      emissiveIntensity: 0.16,
       blending: THREE.AdditiveBlending,
     });
 
