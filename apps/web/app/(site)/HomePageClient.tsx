@@ -248,8 +248,10 @@ export default function FeedPage() {
       viewport={{ once: true, amount: 0.4 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-vc-glow blur-2xl" aria-hidden />
-      <VibesComposer onPostCreated={handlePostCreated} className="mb-6" />
+      <VibesComposer
+        onPostCreated={handlePostCreated}
+        className="mb-6 !bg-white/70 !backdrop-blur-none dark:!bg-slate-900/60"
+      />
     </motion.div>
   );
 

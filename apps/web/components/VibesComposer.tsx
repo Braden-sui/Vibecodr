@@ -686,7 +686,6 @@ mount.render(React.createElement(UserApp));
         initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
         animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-        className={className}
       >
         <Card className={cn("mb-6", className)}>
           <CardContent className="flex items-center justify-center py-8 text-center">
@@ -706,7 +705,6 @@ mount.render(React.createElement(UserApp));
       initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
       animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className={className}
     >
       <Card className={cn("mb-6 overflow-hidden rounded-2xl vc-surface bg-transparent shadow-none", className)}>
         <CardHeader className="pb-3">
