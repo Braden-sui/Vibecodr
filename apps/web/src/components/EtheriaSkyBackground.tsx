@@ -39,8 +39,10 @@ const EtheriaSkyBackground = () => {
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(new THREE.Color(palette.midBlue), 180, 1100);
 
-    const camera = new THREE.PerspectiveCamera(30, width / height, 1, 3000);
-    camera.position.z = 620;
+    // WHY: Frame slightly higher and widen FOV so ~15% more of the cloud bank stays visible without distortion.
+    const camera = new THREE.PerspectiveCamera(34, width / height, 1, 3000);
+    camera.position.set(0, 180, 620);
+    camera.lookAt(new THREE.Vector3(0, 280, -240));
 
     let renderer: THREE.WebGLRenderer;
     try {
