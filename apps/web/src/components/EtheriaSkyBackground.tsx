@@ -168,54 +168,137 @@ const EtheriaSkyBackground = () => {
     };
 
     const cloudTexture = generateCloudTexture();
-    const geometry = new THREE.PlaneGeometry(160, 140);
-    const baseMaterial = new THREE.MeshLambertMaterial({
+    // 3D volumetric-ish clouds built from clustered puffs (instanced spheres).
+    const puffGeometry = new THREE.SphereGeometry(18, 18, 14);
+    const puffMaterial = new THREE.MeshPhysicalMaterial({
       map: cloudTexture,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.85,
       depthWrite: false,
-      side: THREE.DoubleSide,
-      color: new THREE.Color("#fff8f0"),
+      roughness: 0.85,
+      metalness: 0,
+      clearcoat: 0.2,
+      clearcoatRoughness: 0.7,
+      transmission: 0.02,
+      ior: 1.1,
+      color: new THREE.Color("#fff8f1"),
+      emissive: new THREE.Color("#2b1f43"),
+      emissiveIntensity: 0.08,
     });
 
-    const clouds: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>[] = [];
-    const cloudCount = 180;
+    const puffHighlightMaterial = new THREE.MeshPhysicalMaterial({
+      map: cloudTexture,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+      roughness: 0.35,
+      metalness: 0,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.35,
+      transmission: 0.08,
+      ior: 1.12,
+      color: new THREE.Color("#ffd9a8"),
+      emissive: new THREE.Color("#ff8a42"),
+      emissiveIntensity: 0.35,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const clusters: {
+      x: number;
+      y: number;
+      z: number;
+      drift: number;
+      puffIndices: number[];
+      rotation: number;
+    }[] = [];
+
+    const clusterCount = 95;
+    const puffsPerCluster = 10;
+    const totalPuffs = clusterCount * puffsPerCluster;
+    const puffMesh = new THREE.InstancedMesh(puffGeometry, puffMaterial, totalPuffs);
+    const puffHighlightMesh = new THREE.InstancedMesh(puffGeometry, puffHighlightMaterial, totalPuffs);
+    puffMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    puffHighlightMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(puffMesh);
+    scene.add(puffHighlightMesh);
+
+    const temp = new THREE.Object3D();
     const yMin = 140;
     const yMax = 520;
 
-    for (let i = 0; i < cloudCount; i++) {
-      const material = baseMaterial.clone();
-      const cloud = new THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>(geometry, material);
+    for (let c = 0; c < clusterCount; c++) {
+      const baseX = Math.random() * 1100 - 550;
+      const baseY = Math.random() * (yMax - yMin) + yMin;
+      const baseZ = c * 1.8 - 320;
+      const drift = 0.11 + Math.random() * 0.09;
+      const rotation = (Math.random() - 0.5) * 0.35;
 
-      cloud.position.x = Math.random() * 1100 - 550;
-      const yPos = Math.random() * (yMax - yMin) + yMin;
-      cloud.position.y = yPos;
-      cloud.position.z = i * 1.6 - 280;
+      const puffIndices: number[] = [];
+      for (let p = 0; p < puffsPerCluster; p++) {
+        const idx = c * puffsPerCluster + p;
+        puffIndices.push(idx);
 
-      const verticalWeight = Math.max(0, Math.min(1, (yPos - yMin) / (yMax - yMin)));
-      const fadeFloor = Math.max(0, Math.min(1, (yPos - yMin) / 110));
-      material.opacity = 0.92 * Math.pow(verticalWeight, 0.78) * fadeFloor;
+        const offsetX = (Math.random() - 0.5) * 140;
+        const offsetY = (Math.random() - 0.1) * 60 + Math.max(0, (baseY - yMin) * 0.15);
+        const offsetZ = (Math.random() - 0.5) * 30;
+        const scale = 1.15 + Math.random() * 1.9;
+        const flatten = 0.6 + Math.random() * 0.3;
 
-      cloud.rotation.z = Math.random() * (Math.PI * 0.6) - Math.PI * 0.3;
-      const scale = Math.random() * 2.4 + 1.2;
-      cloud.scale.set(scale * 1.35, scale, 1);
+        temp.position.set(baseX + offsetX, baseY + offsetY, baseZ + offsetZ);
+        temp.scale.set(scale * 1.2, scale * flatten, scale * 1.05);
+        temp.rotation.set(0, 0, (Math.random() - 0.5) * 0.6);
+        temp.updateMatrix();
+        puffMesh.setMatrixAt(idx, temp.matrix);
 
-      scene.add(cloud);
-      clouds.push(cloud);
+        const highlightScale = scale * 1.15;
+        temp.scale.set(highlightScale * 1.3, highlightScale * flatten, highlightScale * 1.05);
+        temp.rotation.set(0, 0, (Math.random() - 0.5) * 0.4);
+        temp.updateMatrix();
+        puffHighlightMesh.setMatrixAt(idx, temp.matrix);
+
+        const opacityWeight = Math.max(0, Math.min(1, (baseY - yMin) / (yMax - yMin)));
+        const opacity = 0.75 + opacityWeight * 0.2;
+        puffMesh.setColorAt(idx, new THREE.Color().setScalar(opacity));
+        puffHighlightMesh.setColorAt(idx, new THREE.Color().setScalar(opacity));
+      }
+
+      clusters.push({ x: baseX, y: baseY, z: baseZ, drift, puffIndices, rotation });
     }
+
+    puffMesh.instanceMatrix.needsUpdate = true;
+    puffHighlightMesh.instanceMatrix.needsUpdate = true;
 
     let frameId: number;
     const animate = () => {
       frameId = requestAnimationFrame(animate);
 
-      clouds.forEach((cloud, idx) => {
-        const driftSpeed = 0.12 + cloud.scale.x * 0.04 + (idx % 7) * 0.002;
-        cloud.position.x -= driftSpeed;
-        if (cloud.position.x < -720) {
-          cloud.position.x = 720;
+      clusters.forEach((cluster, clusterIdx) => {
+        cluster.x -= cluster.drift * (1 + (clusterIdx % 5) * 0.02);
+        cluster.rotation += 0.00012;
+
+        if (cluster.x < -760) {
+          cluster.x = 760;
         }
-        cloud.rotation.z += 0.0004;
+
+        cluster.puffIndices.forEach((idx) => {
+          const jitter = Math.sin((idx + clusterIdx) * 0.13 + performance.now() * 0.00012) * 2.5;
+          const wobble = Math.cos((idx + clusterIdx * 2) * 0.17 + performance.now() * 0.0001) * 1.5;
+
+          temp.position.set(cluster.x + jitter, cluster.y + wobble, cluster.z);
+          temp.rotation.set(0, 0, cluster.rotation + (idx % 3) * 0.05);
+          const baseScale = 1.1 + ((idx % puffsPerCluster) / puffsPerCluster) * 1.3;
+          temp.scale.set(baseScale * 1.25, baseScale * 0.7, baseScale * 1.15);
+          temp.updateMatrix();
+          puffMesh.setMatrixAt(idx, temp.matrix);
+
+          temp.scale.set(baseScale * 1.35, baseScale * 0.75, baseScale * 1.18);
+          temp.updateMatrix();
+          puffHighlightMesh.setMatrixAt(idx, temp.matrix);
+        });
       });
+
+      puffMesh.instanceMatrix.needsUpdate = true;
+      puffHighlightMesh.instanceMatrix.needsUpdate = true;
 
       renderer.render(scene, camera);
     };
@@ -236,14 +319,14 @@ const EtheriaSkyBackground = () => {
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(frameId);
 
-      clouds.forEach((cloud) => {
-        cloud.material.dispose();
-        scene.remove(cloud);
-      });
+      puffMesh.geometry.dispose();
+      puffMesh.material.dispose();
+      puffHighlightMesh.geometry.dispose();
+      puffHighlightMesh.material.dispose();
+      scene.remove(puffMesh);
+      scene.remove(puffHighlightMesh);
 
-      baseMaterial.dispose();
       cloudTexture.dispose();
-      geometry.dispose();
       renderer.dispose();
 
       if (renderer.domElement.parentElement === mount) {
