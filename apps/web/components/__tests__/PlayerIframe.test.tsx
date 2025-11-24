@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { act } from "react-dom/test-utils";
 import { artifactsApi, capsulesApi } from "@/lib/api";
 import { trackRuntimeEvent } from "@/lib/analytics";
@@ -289,5 +289,13 @@ describe("PlayerIframe", () => {
     const cappedCall = trackRuntimeEventMock.mock.calls.find(([eventName]) => eventName === "runtime_events_capped");
     expect(cappedCall).toBeDefined();
     expect(trackRuntimeEventMock).toHaveBeenCalledTimes(RUNTIME_EVENT_LIMIT + 1);
+  });
+
+  it("notifies when the iframe enters loading state", async () => {
+    const onLoading = vi.fn();
+
+    render(<PlayerIframe capsuleId="capsule1" onLoading={onLoading} />);
+
+    await waitFor(() => expect(onLoading).toHaveBeenCalled());
   });
 });

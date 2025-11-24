@@ -3,6 +3,9 @@ import { requireAuth, type AuthenticatedUser } from "../auth";
 import { incrementPostStats, incrementUserCounters } from "./counters";
 import { getUserRunQuotaState, Plan } from "../storage/quotas";
 
+const DEFAULT_MAX_CONCURRENT_ACTIVE = 2;
+const DEFAULT_RUNTIME_SESSION_MAX_MS = 60_000;
+
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
     status,
@@ -26,6 +29,24 @@ type RunRow = {
   user_id: string | null;
   started_at: number | null;
 };
+
+function parseRuntimeLimits(env: Env): { maxConcurrent: number; maxSessionMs: number } {
+  const maxConcurrentRaw = Number(env.RUNTIME_MAX_CONCURRENT_ACTIVE ?? DEFAULT_MAX_CONCURRENT_ACTIVE);
+  const sessionMsRaw = Number(env.RUNTIME_SESSION_MAX_MS ?? DEFAULT_RUNTIME_SESSION_MAX_MS);
+
+  const maxConcurrent = Number.isFinite(maxConcurrentRaw)
+    ? Math.min(Math.max(Math.trunc(maxConcurrentRaw), 1), 10)
+    : DEFAULT_MAX_CONCURRENT_ACTIVE;
+  const maxSessionMs = Number.isFinite(sessionMsRaw)
+    ? Math.min(Math.max(Math.trunc(sessionMsRaw), 1_000), 300_000)
+    : DEFAULT_RUNTIME_SESSION_MAX_MS;
+
+  return { maxConcurrent, maxSessionMs };
+}
+
+function getActiveWindowSeconds(maxSessionMs: number): number {
+  return Math.max(120, Math.ceil(maxSessionMs / 1000) * 2);
+}
 
 async function findRunById(env: Env, runId: string): Promise<RunRow | null> {
   const { results } = await env.DB.prepare(
@@ -58,6 +79,21 @@ async function findRunById(env: Env, runId: string): Promise<RunRow | null> {
         ? row.started_at
         : null,
   };
+}
+
+async function countActiveRuns(env: Env, userId: string, windowSeconds: number): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT COUNT(*) as count
+     FROM runs
+     WHERE user_id = ?
+       AND status = 'started'
+       AND started_at >= strftime('%s','now') - ?`
+  )
+    .bind(userId, windowSeconds)
+    .all();
+
+  const row = results?.[0] as { count?: number } | undefined;
+  return Number.isFinite(row?.count) ? Number(row?.count ?? 0) : 0;
 }
 
 function quotaExceededResponse(
@@ -209,6 +245,21 @@ const startRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => 
     return json({ ok: true, runId, idempotent: true });
   }
 
+  const limits = parseRuntimeLimits(env);
+  const activeWindowSeconds = getActiveWindowSeconds(limits.maxSessionMs);
+  const activeRuns = await countActiveRuns(env, user.userId, activeWindowSeconds);
+  if (activeRuns >= limits.maxConcurrent) {
+    return json(
+      {
+        error: "Active run limit reached",
+        code: "E-VIBECODR-0608",
+        limit: limits.maxConcurrent,
+        activeRuns,
+      },
+      429
+    );
+  }
+
   const quota = await getUserRunQuotaState(user.userId, env);
   if (!quota.result.allowed) {
     return quotaExceededResponse(quota, "E-VIBECODR-0605");
@@ -267,6 +318,8 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
     return json({ error: "Method not allowed" }, 405);
   }
 
+  const limits = parseRuntimeLimits(env);
+
   try {
     const body = (await req.json()) as {
       capsuleId?: string;
@@ -301,13 +354,18 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       }
 
       const durationMs = normalizeDurationMs(body.durationMs, existingRun.started_at);
+      const budgetExceeded =
+        durationMs != null && Number.isFinite(durationMs) && durationMs > limits.maxSessionMs;
+      const cappedDuration = durationMs != null ? Math.min(durationMs, limits.maxSessionMs) : durationMs;
+      const finalStatus = budgetExceeded ? "failed" : status;
+      const finalError = budgetExceeded ? "runtime_budget_exceeded" : errorMessage;
       try {
         await env.DB.prepare(
           `UPDATE runs
            SET duration_ms = ?, status = ?, error_message = ?, post_id = COALESCE(post_id, ?)
            WHERE id = ?`
         )
-          .bind(durationMs, status, errorMessage, postId, runId)
+          .bind(cappedDuration, finalStatus, finalError, postId, runId)
           .run();
       } catch (err: any) {
         console.error("E-VIBECODR-0606 completeRun update failed", {
@@ -319,22 +377,49 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       }
 
       recordRunQuotaObservation(env, user.userId);
-    return json({ ok: true, runId, idempotent: false });
-  }
+      if (budgetExceeded) {
+        writeRunAnalytics(env, {
+          event: "run_complete",
+          status: "killed",
+          plan: undefined,
+          runId,
+          capsuleId,
+          postId,
+          durationMs: cappedDuration,
+          error: "runtime_budget_exceeded",
+        });
+        return json(
+          {
+            error: "Run exceeded max duration",
+            code: "E-VIBECODR-0609",
+            limitMs: limits.maxSessionMs,
+            durationMs,
+            runId,
+          },
+          400
+        );
+      }
+      return json({ ok: true, runId, idempotent: false });
+    }
 
-  const quota = await getUserRunQuotaState(user.userId, env);
-  if (!quota.result.allowed) {
-    return quotaExceededResponse(quota, "E-VIBECODR-0607");
-  }
+    const quota = await getUserRunQuotaState(user.userId, env);
+    if (!quota.result.allowed) {
+      return quotaExceededResponse(quota, "E-VIBECODR-0607");
+    }
 
-  const durationMs = normalizeDurationMs(body.durationMs, null);
+    const durationMs = normalizeDurationMs(body.durationMs, null);
+    const budgetExceeded =
+      durationMs != null && Number.isFinite(durationMs) && durationMs > limits.maxSessionMs;
+    const cappedDuration = durationMs != null ? Math.min(durationMs, limits.maxSessionMs) : durationMs;
+    const finalStatus = budgetExceeded ? "failed" : status;
+    const finalError = budgetExceeded ? "runtime_budget_exceeded" : errorMessage;
 
     try {
       await env.DB.prepare(
         `INSERT INTO runs (id, capsule_id, post_id, user_id, started_at, duration_ms, status, error_message)
          VALUES (?, ?, ?, ?, strftime('%s','now'), ?, ?, ?)`
       )
-        .bind(runId, capsuleId, postId, user.userId, durationMs, status, errorMessage)
+        .bind(runId, capsuleId, postId, user.userId, cappedDuration, finalStatus, finalError)
         .run();
     } catch (e: any) {
       if (e?.message?.includes("UNIQUE")) {
@@ -345,22 +430,35 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
         return json({ ok: true, runId, idempotent: true });
       }
       throw e;
-  }
+    }
 
-  incrementRunCounters(env, user.userId, postId, runId);
-  recordRunQuotaObservation(env, user.userId);
-  writeRunAnalytics(env, {
-    event: "run_complete",
-    status,
-    plan: quota.plan,
-    runId,
-    capsuleId,
-    postId,
-    durationMs,
-    error: errorMessage,
-  });
+    incrementRunCounters(env, user.userId, postId, runId);
+    recordRunQuotaObservation(env, user.userId);
+    writeRunAnalytics(env, {
+      event: "run_complete",
+      status: finalStatus,
+      plan: quota.plan,
+      runId,
+      capsuleId,
+      postId,
+      durationMs: cappedDuration,
+      error: finalError,
+    });
 
-  return json({ ok: true, runId, idempotent: false });
+    if (budgetExceeded) {
+      return json(
+        {
+          error: "Run exceeded max duration",
+          code: "E-VIBECODR-0609",
+          limitMs: limits.maxSessionMs,
+          durationMs,
+          runId,
+        },
+        400
+      );
+    }
+
+    return json({ ok: true, runId, idempotent: false });
 } catch (error) {
   return json(
     { error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" },

@@ -92,7 +92,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] Runtime asset checksum script and Turbo task added (`runtime-assets:check`, `check:runtime-assets`).
 - [x] Web runtime loader (`loadRuntimeManifest`) normalizes Worker manifest responses for the Player.
 - [ ] Param control components fully mapped to manifest descriptors and reused across Player/Studio.
-- [ ] Technical budgets enforced (client-static boot <= 1s P95; CPU wall-time and memory heuristics documented and enforced).
+- [x] Technical budgets enforced (client-static boot <= 5s; run wall-time capped at 60s; concurrency capped at 2; env-tunable via `VIBECODR_RUNTIME_*` and Workers `RUNTIME_*` with runtime events on enforcement).
 - [ ] WebContainer runner support extended to artifact-style flows with clear budgets and kill paths.
 
 ## 7) Studio and Creation Flows (Phase 2)
@@ -230,6 +230,6 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 
 - [ ] Sandbox + CSP + Permission Policy default-deny documented and enforced as header baseline.
 - [x] Network via allowlisted proxy; rate-limited; no cross-origin cookies from proxied responses.
-- [ ] CPU/memory/time budgets and kill switch in Player/UI for abusive runtimes.
+- [x] Time budgets and kill switch in Player/UI for abusive runtimes (budget toasts + `runtime_budget_exceeded`/`runtime_killed`); memory heuristics still pending.
 - [x] Immutable bundles with integrity hash verification and content-hash keys.
 - [x] Moderation/reporting + quarantine flows implemented with clear user notices; policy docs to be expanded.

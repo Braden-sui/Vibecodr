@@ -151,7 +151,20 @@ function resolveClerkImageOrigins() {
   return origins.length > 0 ? uniqueSources(origins) : [...CLERK_IMAGE_DEFAULT_ORIGINS];
 }
 
-function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
+function normalizeSourceList(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((v) => (typeof v === "string" ? v.trim() : "")).filter((v) => v.length > 0);
+  }
+
+  return [];
+}
+
+function buildContentSecurityPolicy({ allowEmbedding = false, frameAncestors } = {}) {
   const runtimeCdnSource = resolveRuntimeCdnSource();
   const playerOrigin = resolvePlayerOrigin();
   const workerApiOrigin = resolveWorkerApiOrigin();
@@ -195,13 +208,17 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
     ...clerkImageOrigins,
   ]);
 
+  const frameAncestorsSources = normalizeSourceList(frameAncestors);
+  const resolvedFrameAncestors =
+    frameAncestorsSources.length > 0 ? frameAncestorsSources.join(" ") : allowEmbedding ? "*" : "'none'";
+
   const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
     `font-src ${fontSrc.join(" ")}`,
     `form-action 'self'`,
     `frame-src ${playerOrigin}`,
-    `frame-ancestors ${allowEmbedding ? "*" : "'none'"}`,
+    `frame-ancestors ${resolvedFrameAncestors}`,
     `img-src ${imgSrc.join(" ")}`,
     `object-src 'none'`,
     `script-src ${scriptSrc.join(" ")} 'unsafe-inline'`,
@@ -214,12 +231,27 @@ function buildContentSecurityPolicy({ allowEmbedding = false } = {}) {
   return directives.join("; ").replace(/\s{2,}/g, " ").trim();
 }
 
-function buildSecurityHeaders({ allowEmbedding = false } = {}) {
-  const csp = buildContentSecurityPolicy({ allowEmbedding });
+function buildSecurityHeaders({ allowEmbedding = false, frameAncestors, crossOriginEmbedderPolicy } = {}) {
+  const csp = buildContentSecurityPolicy({ allowEmbedding, frameAncestors });
   const headers = [
     { key: "Content-Security-Policy", value: csp },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-    { key: "Cross-Origin-Embedder-Policy", value: allowEmbedding ? "credentialless" : "require-corp" },
+  ];
+
+  const coep =
+    crossOriginEmbedderPolicy === null
+      ? null
+      : typeof crossOriginEmbedderPolicy === "string"
+        ? crossOriginEmbedderPolicy
+        : allowEmbedding
+          ? "credentialless"
+          : "require-corp";
+
+  if (coep) {
+    headers.push({ key: "Cross-Origin-Embedder-Policy", value: coep });
+  }
+
+  headers.push(
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
     { key: "X-Content-Type-Options", value: "nosniff" },
@@ -227,8 +259,8 @@ function buildSecurityHeaders({ allowEmbedding = false } = {}) {
       key: "Permissions-Policy",
       value:
         "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), microphone=(), midi=(), payment=(), usb=()",
-    },
-  ];
+    }
+  );
 
   return headers;
 }

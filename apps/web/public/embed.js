@@ -13,6 +13,8 @@
   'use strict';
 
   const EMBED_BASE_URL = 'https://vibecodr.space/e';
+  const EMBED_IFRAME_SANDBOX = 'allow-scripts allow-same-origin';
+  const EMBED_IFRAME_ALLOW = "accelerometer 'none'; autoplay 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
 
   /**
    * Create an embed iframe
@@ -33,8 +35,10 @@
     iframe.style.border = 'none';
     iframe.style.borderRadius = '8px';
     iframe.style.overflow = 'hidden';
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
-    iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+    iframe.setAttribute('sandbox', EMBED_IFRAME_SANDBOX);
+    iframe.setAttribute('allow', EMBED_IFRAME_ALLOW);
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    iframe.setAttribute('loading', 'lazy');
     iframe.setAttribute('allowfullscreen', 'true');
 
     // Auto-resize support

@@ -28,6 +28,7 @@ export interface PlayerIframeProps {
   capsuleId: string;
   params?: Record<string, unknown>;
   onReady?: () => void;
+  onLoading?: () => void;
   onLog?: (log: { level: string; message: string; timestamp?: number }) => void;
   onStats?: (stats: { fps: number; memory: number }) => void;
   onBoot?: (metrics: { bootTimeMs: number }) => void;
@@ -103,7 +104,7 @@ function resolveRunnerOrigins(bundleUrl: string | null | undefined, includeNullO
 
 export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
   function PlayerIframe(
-    { capsuleId, params = {}, onReady, onLog, onStats, onBoot, onError, artifactId },
+    { capsuleId, params = {}, onReady, onLoading, onLog, onStats, onBoot, onError, artifactId },
     ref
   ) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -129,6 +130,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     useEffect(() => {
       paramsRef.current = params;
     }, [params]);
+    useEffect(() => {
+      if (status === "loading") {
+        onLoading?.();
+      }
+    }, [onLoading, status]);
     const resetRuntimeBudgets = useCallback(() => {
       runtimeEventCountRef.current = 0;
       runtimeEventLimitHitRef.current = false;
@@ -242,9 +248,9 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             if (iframe) {
               iframe.src = bundleUrl;
             }
-            setStatus("loading");
-            setErrorMessage("");
           }
+          setStatus("loading");
+          setErrorMessage("");
           pauseStateRef.current = "running";
           return sent;
         },

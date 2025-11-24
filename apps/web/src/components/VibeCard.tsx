@@ -62,7 +62,7 @@ const VibeCard = forwardRef<HTMLDivElement, VibeCardProps>(({ children, classNam
       whileHover={{ scale: 1.02, y: -4 }}
       whileTap={{ scale: 0.97 }}
       className={cn(
-        "relative group bg-card rounded-xl p-6 shadow-vc-soft hover:shadow-vc-hover transition-shadow duration-300 cursor-pointer overflow-hidden border border-border/50",
+        "relative group vc-surface rounded-xl p-6 hover:shadow-vc-hover transition-shadow duration-300 cursor-pointer overflow-hidden",
         className
       )}
       {...props}

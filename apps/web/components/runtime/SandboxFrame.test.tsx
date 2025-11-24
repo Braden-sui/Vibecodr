@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { SandboxFrame } from "./SandboxFrame";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
+import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
 
 const manifest: ClientRuntimeManifest = {
   artifactId: "artifact-abc",
@@ -33,7 +34,9 @@ describe("SandboxFrame", () => {
 
     const iframe = getByTitle("runtime-frame");
 
-    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+    expect(iframe).toHaveAttribute("sandbox", RUNTIME_IFRAME_SANDBOX);
+    expect(iframe).toHaveAttribute("allow", RUNTIME_IFRAME_PERMISSIONS);
+    expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(iframe).toHaveAttribute("data-runtime-artifact", manifest.artifactId);
     expect(iframe).toHaveAttribute("data-runtime-type", manifest.type);
     expect(iframe).toHaveAttribute("data-runtime-version", manifest.runtimeVersion);

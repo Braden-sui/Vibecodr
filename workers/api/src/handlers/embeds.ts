@@ -37,6 +37,28 @@ const EMBED_MIN_HEIGHT = 200;
 const EMBED_MAX_HEIGHT = 900;
 const OEMBED_RATE_LIMIT = 60;
 const EMBED_RATE_LIMIT = 120;
+export const EMBED_IFRAME_SANDBOX = "allow-scripts allow-same-origin";
+export const EMBED_IFRAME_ALLOW =
+  "accelerometer 'none'; autoplay 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
+export const EMBED_PERMISSIONS_POLICY_HEADER =
+  "accelerometer=(); autoplay=(); camera=(); display-capture=(); encrypted-media=(); fullscreen=(self); geolocation=(); gyroscope=(); microphone=(); midi=(); payment=(); usb=()";
+
+function buildEmbedContentSecurityPolicy(): string {
+  return [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors *",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "frame-src 'self'",
+    "script-src 'none'",
+    "connect-src 'none'",
+    "font-src 'none'",
+    "media-src 'none'",
+    "object-src 'none'",
+    "form-action 'none'",
+  ].join("; ");
+}
 
 async function getPostSchemaInfo(env: Env): Promise<PostSchemaInfo> {
   if (cachedPostSchemaInfo) return cachedPostSchemaInfo;
@@ -212,7 +234,7 @@ export const oEmbedHandler: Handler = async (req, env) => {
     const authorName = post.author_name || (authorHandle ? `@${authorHandle}` : "Unknown creator");
     const authorUrl = authorHandle ? `${providerOrigin}/u/${authorHandle}` : providerOrigin;
 
-    const embedHtml = `<iframe src="${embedUrl}" width="${width}" height="${height}" title="${escapeHtml(title)}" loading="lazy" style="border:0; border-radius:12px; overflow:hidden;" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+    const embedHtml = `<iframe src="${embedUrl}" width="${width}" height="${height}" title="${escapeHtml(title)}" loading="lazy" style="border:0; border-radius:12px; overflow:hidden;" frameborder="0" sandbox="${EMBED_IFRAME_SANDBOX}" allow="${EMBED_IFRAME_ALLOW}" referrerpolicy="no-referrer" allowfullscreen></iframe>`;
 
     // oEmbed response
     return json({
@@ -279,6 +301,7 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
     const author = authorName || (authorHandle ? `@${authorHandle}` : "Unknown creator");
     const description =
       (post.description || "").trim().slice(0, 280) || `Playable capsule by ${author}`;
+    const embedCsp = buildEmbedContentSecurityPolicy();
 
     // Generate minimal HTML with embedded player
     const html = `<!DOCTYPE html>
@@ -375,8 +398,11 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
     <div class="player">
       <iframe
         src="${playerUrl}"
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        title="${escapeHtml(title)}"
+        sandbox="${EMBED_IFRAME_SANDBOX}"
+        allow="${EMBED_IFRAME_ALLOW}"
+        referrerpolicy="no-referrer"
+        loading="lazy"
         allowfullscreen
       ></iframe>
     </div>
@@ -388,7 +414,10 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "public, max-age=600",
-        "Content-Security-Policy": "frame-ancestors 'self' https://*",
+        "Content-Security-Policy": embedCsp,
+        "Permissions-Policy": EMBED_PERMISSIONS_POLICY_HEADER,
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Content-Type-Options": "nosniff",
         ...buildRateLimitHeaders(EMBED_RATE_LIMIT, rate),
       },
     });

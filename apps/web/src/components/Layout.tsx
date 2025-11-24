@@ -21,7 +21,7 @@ const Layout = () => {
                 <button
                     type="button"
                     onClick={() => setSidebarOpen(true)}
-                    className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-card/90 text-foreground backdrop-blur border border-border shadow-vc-soft hover:border-border/70 hover:bg-card transition-colors md:bottom-8 md:right-8"
+                    className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full vc-surface text-foreground hover:bg-card/80 transition-colors md:bottom-8 md:right-8"
                     aria-label="Show navigation"
                 >
                     <Menu className="h-5 w-5" />

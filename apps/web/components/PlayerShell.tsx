@@ -31,6 +31,7 @@ export interface PlayerShellProps {
   onStats?: PlayerIframeProps["onStats"];
   onBoot?: PlayerIframeProps["onBoot"];
   onError?: PlayerIframeProps["onError"];
+  onLoading?: PlayerIframeProps["onLoading"];
 }
 
 function computePlaceholder(loadError: string | null, isLoading: boolean) {
@@ -61,6 +62,7 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
     onStats,
     onBoot,
     onError,
+    onLoading,
   },
   ref
 ) {
@@ -80,6 +82,7 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
             onStats={onStats}
             onBoot={onBoot}
             onError={onError}
+            onLoading={onLoading}
           />
         ) : (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed bg-background/80">

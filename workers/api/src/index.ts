@@ -20,6 +20,8 @@ export interface Env {
   SAFETY_TIMEOUT_MS?: string;
   SAFETY_BLOCKED_CODE_HASHES?: string;
   NET_PROXY_ENABLED?: string;
+  RUNTIME_MAX_CONCURRENT_ACTIVE?: string;
+  RUNTIME_SESSION_MAX_MS?: string;
 }
 
 export type Handler = (req: Request, env: Env, ctx: ExecutionContext, params: Record<string, string>) => Promise<Response>;

@@ -43,6 +43,7 @@ type RunRow = {
   started_at?: number;
   duration_ms?: number | null;
   status?: string | null;
+  error_message?: string | null;
 };
 
 type TestEnv = Env & { __state: { runs: Map<string, RunRow> } };
@@ -59,6 +60,19 @@ function createEnv(runs: RunRow[] = []): TestEnv {
         return this;
       },
       async all() {
+        if (sql.includes("FROM runs") && sql.includes("status = 'started'")) {
+          const userId = this.bindArgs[0];
+          const windowSeconds = Number(this.bindArgs[1] ?? 0);
+          const nowSec = Math.floor(Date.now() / 1000);
+          const count = Array.from(state.runs.values()).filter(
+            (run) =>
+              run.user_id === userId &&
+              run.status === "started" &&
+              typeof run.started_at === "number" &&
+              run.started_at >= nowSec - windowSeconds
+          ).length;
+          return { results: [{ count }] };
+        }
         if (sql.includes("FROM runs WHERE id = ?")) {
           const runId = this.bindArgs[0];
           const run = state.runs.get(runId);
@@ -82,6 +96,7 @@ function createEnv(runs: RunRow[] = []): TestEnv {
               started_at: Math.floor(Date.now() / 1000),
               duration_ms: durationMs ?? null,
               status: status ?? errorMessage ?? null,
+              error_message: errorMessage ?? null,
             });
           } else {
             const [id, capsuleId, postId, userId, status] = this.bindArgs;
@@ -97,7 +112,17 @@ function createEnv(runs: RunRow[] = []): TestEnv {
               started_at: Math.floor(Date.now() / 1000),
               duration_ms: null,
               status: status ?? null,
+              error_message: null,
             });
+          }
+        } else if (sql.startsWith("UPDATE runs")) {
+          const [durationMs, status, errorMessage, postId, runId] = this.bindArgs;
+          const run = state.runs.get(runId);
+          if (run) {
+            run.duration_ms = durationMs ?? run.duration_ms ?? null;
+            run.status = status ?? run.status ?? null;
+            run.post_id = run.post_id ?? (postId ?? null);
+            run.error_message = errorMessage ?? run.error_message ?? null;
           }
         }
         return { success: true };
@@ -184,6 +209,30 @@ describe("startRun", () => {
     expect(env.__state.runs.get("run-start")?.user_id).toBe("user-auth-1");
     expect(incrementUserCountersMock).toHaveBeenCalledTimes(1);
     expect(incrementPostStatsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects when active run limit is reached", async () => {
+    const env = createEnv([
+      { id: "run-active", capsule_id: "cap-1", post_id: "post-1", user_id: "user-auth-1", status: "started", started_at: Math.floor(Date.now() / 1000) },
+    ]);
+    (env as any).RUNTIME_MAX_CONCURRENT_ACTIVE = "1";
+
+    const res = await startRun(
+      new Request("https://example.com/api/runs/start", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-new", capsuleId: "cap-start", postId: "post-start" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { code?: string; limit?: number; activeRuns?: number };
+    expect(body.code).toBe("E-VIBECODR-0608");
+    expect(body.limit).toBe(1);
+    expect(body.activeRuns).toBe(1);
+    expect(env.__state.runs.size).toBe(1);
   });
 });
 
@@ -286,6 +335,32 @@ describe("completeRun", () => {
 
     expect(res.status).toBe(403);
     expect(env.__state.runs.get("run-existing")?.user_id).toBe("other-user");
+  });
+
+  it("fails and caps runs that exceed the session budget", async () => {
+    const env = createEnv([
+      { id: "run-long", capsule_id: "cap-1", post_id: "post-1", user_id: "user-auth-1", status: "started", started_at: Math.floor(Date.now() / 1000) },
+    ]);
+    (env as any).RUNTIME_SESSION_MAX_MS = "5000";
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-long", capsuleId: "cap-1", postId: "post-1", durationMs: 20_000 }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code?: string; limitMs?: number; durationMs?: number };
+    expect(body.code).toBe("E-VIBECODR-0609");
+    expect(body.limitMs).toBe(5000);
+    expect(body.durationMs).toBe(20000);
+    const updated = env.__state.runs.get("run-long");
+    expect(updated?.status).toBe("failed");
+    expect(updated?.duration_ms).toBe(5000);
   });
 });
 

@@ -1,6 +1,13 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { embedIframeHandler, oEmbedHandler, ogImageHandler } from "./embeds";
+import {
+  EMBED_IFRAME_ALLOW,
+  EMBED_IFRAME_SANDBOX,
+  EMBED_PERMISSIONS_POLICY_HEADER,
+  embedIframeHandler,
+  oEmbedHandler,
+  ogImageHandler,
+} from "./embeds";
 import type { Env } from "../index";
 
 const checkPublicRateLimitMock = vi.fn();
@@ -123,5 +130,20 @@ describe("embeds rate limits", () => {
     expect(body.width).toBeGreaterThanOrEqual(320);
     expect(body.height).toBeGreaterThan(0);
     expect(body.author_url).toContain("/u/alice");
+  });
+
+  it("sets sandbox, CSP, and permissions headers on the embed iframe page", async () => {
+    const req = new Request("https://worker.test/e/post1");
+    const res = await embedIframeHandler(req, createEnv(), {} as any, { p1: "post1" });
+
+    expect(res.status).toBe(200);
+    const csp = res.headers.get("Content-Security-Policy") || "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors *");
+    expect(res.headers.get("Permissions-Policy")).toBe(EMBED_PERMISSIONS_POLICY_HEADER);
+
+    const body = await res.text();
+    expect(body).toContain(`sandbox=\"${EMBED_IFRAME_SANDBOX}\"`);
+    expect(body).toContain(`allow=\"${EMBED_IFRAME_ALLOW}\"`);
   });
 });

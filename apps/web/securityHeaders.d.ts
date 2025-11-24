@@ -5,6 +5,8 @@ export type SecurityHeader = {
 
 export type SecurityHeaderOptions = {
   allowEmbedding?: boolean;
+  frameAncestors?: string | string[];
+  crossOriginEmbedderPolicy?: string | null;
 };
 
 export const EMBED_PATH_PREFIX: string;

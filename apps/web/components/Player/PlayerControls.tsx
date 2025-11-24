@@ -56,7 +56,7 @@ export function PlayerControls({
           className="gap-1"
         >
           <StopCircle className="h-4 w-4" />
-          Kill
+          Stop
         </Button>
 
         <Separator orientation="vertical" className="h-6" />

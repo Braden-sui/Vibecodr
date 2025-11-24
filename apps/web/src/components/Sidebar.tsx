@@ -38,7 +38,7 @@ const Sidebar = ({ open, onClose }: SidebarProps) => {
             animate={open ? { x: 0, opacity: 1 } : { x: -280, opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
             className={cn(
-                "fixed left-0 top-0 z-50 h-screen w-64 bg-card/95 backdrop-blur-xl border-r border-border/50 shadow-vc-soft flex flex-col",
+                "fixed left-0 top-0 z-50 h-screen w-64 vc-surface border-r-0 flex flex-col",
                 open ? "pointer-events-auto" : "pointer-events-none"
             )}
             aria-hidden={!open}

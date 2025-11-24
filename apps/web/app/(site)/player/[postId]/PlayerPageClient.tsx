@@ -8,6 +8,12 @@ import { PlayerDrawer } from "@/components/Player/PlayerDrawer";
 import { ParamControls } from "@/components/Player/ParamControls";
 import { PlayerConsoleEntry } from "@/components/Player/PlayerConsole";
 import { PlayerShell } from "@/components/PlayerShell";
+import {
+  confirmRuntimeSlot,
+  getRuntimeBudgets,
+  releaseRuntimeSlot,
+  reserveRuntimeSlot,
+} from "@/components/Player/runtimeBudgets";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sliders } from "lucide-react";
@@ -29,11 +35,17 @@ const LOG_SAMPLE_RATE = 0.2;
 const LOG_BATCH_TARGET = 10;
 const PERF_SAMPLE_RATE = 0.25;
 const PERF_EVENT_MIN_INTERVAL_MS = 2000;
+const RUNTIME_BUDGETS = getRuntimeBudgets();
+const CLIENT_STATIC_BOOT_BUDGET_MS = RUNTIME_BUDGETS.clientStaticBootMs;
+const RUN_SESSION_BUDGET_MS = RUNTIME_BUDGETS.runSessionMs;
+const MAX_CONCURRENT_RUNNERS = RUNTIME_BUDGETS.maxConcurrentRunners;
 
 type RunSession = {
   id: string;
   startedAt: number;
 };
+
+type RuntimeBudgetReason = "boot_timeout" | "run_timeout" | "concurrency_limit";
 
 type PendingAnalyticsLog = {
   level: PlayerConsoleEntry["level"];
@@ -48,6 +60,11 @@ type PublicMetadata = {
   isModerator?: boolean;
 } | null;
 
+function isClientStaticRunnerType(runner?: string | null): boolean {
+  if (!runner) return true;
+  const normalized = runner.toLowerCase();
+  return normalized === "client-static" || normalized === "html";
+}
 export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState({ fps: 0, memory: 0, bootTime: 0 });
@@ -65,6 +82,15 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const lastRunRef = useRef<RunSession | null>(null);
   const finishedRunRef = useRef<{ runId: string; status: "completed" | "failed" } | null>(null);
   const runStartInFlightRef = useRef(false);
+  const pendingRunStartRef = useRef<Promise<RunSession | null> | null>(null);
+  const runtimeSlotRef = useRef<symbol | string | null>(null);
+  const bootTimerRef = useRef<number | null>(null);
+  const runTimerRef = useRef<number | null>(null);
+  const budgetStateRef = useRef<{ bootStartedAt: number | null; runStartedAt: number | null; budgetViolated: boolean }>({
+    bootStartedAt: null,
+    runStartedAt: null,
+    budgetViolated: false,
+  });
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
   const flushLogsTimeoutRef = useRef<number | null>(null);
   const lastPerfEventRef = useRef<number>(0);
@@ -193,6 +219,40 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       setIsUnquarantining(false);
     }
   }, [actorId, authzState, isUnquarantining, post]);
+
+  const clearBootTimer = useCallback(() => {
+    if (bootTimerRef.current) {
+      clearTimeout(bootTimerRef.current);
+      bootTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRunTimer = useCallback(() => {
+    if (runTimerRef.current) {
+      clearTimeout(runTimerRef.current);
+      runTimerRef.current = null;
+    }
+  }, []);
+
+  const clearBudgetTimers = useCallback(() => {
+    clearBootTimer();
+    clearRunTimer();
+  }, [clearBootTimer, clearRunTimer]);
+
+  const releaseRuntimeSlotGuard = useCallback(() => {
+    if (runtimeSlotRef.current) {
+      releaseRuntimeSlot(runtimeSlotRef.current);
+      runtimeSlotRef.current = null;
+    }
+  }, []);
+
+  const resetBudgetState = useCallback(() => {
+    budgetStateRef.current = {
+      bootStartedAt: null,
+      runStartedAt: null,
+      budgetViolated: false,
+    };
+  }, []);
 
   const flushLogBatch = useCallback(
     (explicitRunId?: string) => {
@@ -387,96 +447,12 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     setConsoleEntries([]);
   }, []);
 
-  const startRunSession = useCallback(async (): Promise<RunSession | null> => {
-    if (!post?.capsule?.id || !post?.id) {
-      return null;
-    }
-    if (runStartInFlightRef.current) {
-      return currentRunRef.current;
-    }
-    runStartInFlightRef.current = true;
-    const provisionalRunId = createStableId("run");
-    try {
-      const init = await buildAuthInit();
-      if (!init) {
-        trackClientError("E-VIBECODR-0517", {
-          area: "player.startRun",
-          runId: provisionalRunId,
-          capsuleId: post.capsule.id,
-          postId: post.id,
-          message: "Missing auth token for run start",
-        });
-        return null;
-      }
-
-      const response = await runsApi.start(
-        { runId: provisionalRunId, capsuleId: post.capsule.id, postId: post.id },
-        init
-      );
-
-      if (!response.ok) {
-        let reason = `status=${response.status}`;
-        try {
-          const body = (await response.json()) as { reason?: string };
-          if (typeof body?.reason === "string") {
-            reason = body.reason;
-          }
-          if (response.status === 429) {
-            toast({
-              title: "Run limit reached",
-              description: body?.reason ?? "Monthly run quota exceeded. Try again after upgrading your plan.",
-              variant: "error",
-            });
-          }
-        } catch {
-          // ignore parse failures
-        }
-        trackClientError("E-VIBECODR-0517", {
-          area: "player.startRun",
-          runId: provisionalRunId,
-          capsuleId: post.capsule.id,
-          postId: post.id,
-          message: reason,
-          status: response.status,
-        });
-        return null;
-      }
-
-      let resolvedRunId = provisionalRunId;
-      try {
-        const payload = (await response.json()) as { runId?: string | null };
-        if (payload?.runId && typeof payload.runId === "string") {
-          resolvedRunId = payload.runId;
-        }
-      } catch {
-        // keep provisional run id if parsing fails
-      }
-
-      const session: RunSession = {
-        id: resolvedRunId,
-        startedAt: Date.now(),
-      };
-      currentRunRef.current = session;
-      lastRunRef.current = session;
-      finishedRunRef.current = null;
-      return session;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      trackClientError("E-VIBECODR-0517", {
-        area: "player.startRun",
-        runId: provisionalRunId,
-        capsuleId: post?.capsule?.id,
-        postId: post?.id,
-        message,
-      });
-      return null;
-    } finally {
-      runStartInFlightRef.current = false;
-    }
-  }, [buildAuthInit, post?.capsule?.id, post?.id]);
 
   const finalizeRunSession = useCallback(
     (status: "completed" | "failed", errorMessage?: string) => {
+      clearBudgetTimers();
+      releaseRuntimeSlotGuard();
+      resetBudgetState();
       const session = currentRunRef.current;
       const currentPost = post;
       const capsule = currentPost?.capsule;
@@ -520,9 +496,25 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           }
           return runsApi.complete(completePayload, init);
         })
-        .then((response) => {
+        .then(async (response) => {
           if (!response) return;
           if (!response.ok) {
+            let code: string | undefined;
+            try {
+              const body = (await response.clone().json()) as { code?: string };
+              if (typeof body?.code === "string") {
+                code = body.code;
+              }
+              if (code === "E-VIBECODR-0609") {
+                toast({
+                  title: "Run stopped by budget",
+                  description: `Runs stop after ${Math.round(RUN_SESSION_BUDGET_MS / 1000)}s to keep the player stable.`,
+                  variant: "warning",
+                });
+              }
+            } catch {
+              // ignore body parsing failures
+            }
             trackClientError("E-VIBECODR-0516", {
               area: "player.completeRun",
               runId: session.id,
@@ -530,7 +522,9 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
               postId: currentPost?.id,
               status,
               message: `status=${response.status}`,
+              code,
             });
+            return;
           }
           trackRuntimeEvent("player_run_completed", {
             capsuleId: capsule.id,
@@ -562,8 +556,259 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           });
         });
     },
-    [buildAuthInit, flushLogBatch, post]
+    [buildAuthInit, clearBudgetTimers, flushLogBatch, post, releaseRuntimeSlotGuard, resetBudgetState]
   );
+
+  const handleBudgetViolation = useCallback(
+    (
+      reason: RuntimeBudgetReason,
+      context?: { limitMs?: number; observedMs?: number; activeCount?: number }
+    ) => {
+      if (budgetStateRef.current.budgetViolated) {
+        return;
+      }
+      budgetStateRef.current.budgetViolated = true;
+      clearBudgetTimers();
+      const run = currentRunRef.current ?? lastRunRef.current;
+      const capsule = post?.capsule;
+      const baseProperties = {
+        postId: post?.id,
+        runId: run?.id ?? null,
+        reason,
+        limitMs: context?.limitMs ?? null,
+        observedMs: context?.observedMs ?? null,
+        activeRunners: context?.activeCount ?? null,
+      };
+      const message =
+        reason === "concurrency_limit"
+          ? "Runtime blocked: too many active runs"
+          : reason === "boot_timeout"
+          ? "Runtime blocked: boot timed out"
+          : "Runtime blocked: session exceeded max duration";
+
+      trackRuntimeEvent("runtime_budget_exceeded", {
+        capsuleId: capsule?.id,
+        artifactId: capsule?.artifactId ?? null,
+        runtimeType: capsule?.runner ?? null,
+        properties: baseProperties,
+        message,
+      });
+
+      trackRuntimeEvent("runtime_killed", {
+        capsuleId: capsule?.id,
+        artifactId: capsule?.artifactId ?? null,
+        runtimeType: capsule?.runner ?? null,
+        properties: { ...baseProperties, killedBy: "budget" },
+        message,
+      });
+
+      const toastDescription =
+        reason === "concurrency_limit"
+          ? `You can run up to ${MAX_CONCURRENT_RUNNERS} vibe${
+              MAX_CONCURRENT_RUNNERS === 1 ? "" : "s"
+            } at once. Stop one to start a new run.`
+          : reason === "boot_timeout"
+          ? "This vibe took too long to start, so we stopped it to keep the player responsive."
+          : `We stop runs after ${Math.round(RUN_SESSION_BUDGET_MS / 1000)}s to keep things stable. Restart to try again.`;
+
+      toast({
+        title: "Run stopped",
+        description: toastDescription,
+        variant: "warning",
+      });
+
+      iframeHandleRef.current?.kill?.();
+      finalizeRunSession("failed", reason);
+      setIsRunning(false);
+      setStats({ fps: 0, memory: 0, bootTime: 0 });
+    },
+    [clearBudgetTimers, finalizeRunSession, post]
+  );
+
+  const startRunSession = useCallback(async (): Promise<RunSession | null> => {
+    if (!post?.capsule?.id || !post?.id) {
+      return null;
+    }
+    if (currentRunRef.current) {
+      return currentRunRef.current;
+    }
+    if (pendingRunStartRef.current) {
+      return pendingRunStartRef.current;
+    }
+    const startPromise = (async () => {
+      runStartInFlightRef.current = true;
+
+      if (!runtimeSlotRef.current) {
+        const reservation = reserveRuntimeSlot();
+        if (!reservation.allowed) {
+          runStartInFlightRef.current = false;
+          handleBudgetViolation("concurrency_limit", {
+            activeCount: reservation.activeCount,
+          });
+          return null;
+        }
+        runtimeSlotRef.current = reservation.token;
+      }
+
+      const provisionalRunId = createStableId("run");
+      try {
+        const init = await buildAuthInit();
+        if (!init) {
+          trackClientError("E-VIBECODR-0517", {
+            area: "player.startRun",
+            runId: provisionalRunId,
+            capsuleId: post.capsule.id,
+            postId: post.id,
+            message: "Missing auth token for run start",
+          });
+          releaseRuntimeSlotGuard();
+          return null;
+        }
+
+      const response = await runsApi.start(
+        { runId: provisionalRunId, capsuleId: post.capsule.id, postId: post.id },
+        init
+      );
+
+      if (!response.ok) {
+        let reason = `status=${response.status}`;
+        let errorCode: string | undefined;
+        let limit: number | undefined;
+        try {
+          const body = (await response.json()) as { reason?: string; code?: string; limit?: number };
+          if (typeof body?.reason === "string") {
+            reason = body.reason;
+          }
+          if (typeof body?.code === "string") {
+            errorCode = body.code;
+          }
+          if (typeof body?.limit === "number") {
+            limit = body.limit;
+          }
+          if (response.status === 429) {
+            if (errorCode === "E-VIBECODR-0608") {
+              toast({
+                title: "Too many active runs",
+                description: `You can run up to ${limit ?? MAX_CONCURRENT_RUNNERS} vibe${
+                  (limit ?? MAX_CONCURRENT_RUNNERS) === 1 ? "" : "s"
+                } at once. Stop one to start another.`,
+                variant: "error",
+              });
+            } else {
+              toast({
+                title: "Run limit reached",
+                description: body?.reason ?? "Monthly run quota exceeded. Try again after upgrading your plan.",
+                variant: "error",
+              });
+            }
+          }
+        } catch {
+          // ignore parse failures
+        }
+        trackClientError("E-VIBECODR-0517", {
+            area: "player.startRun",
+            runId: provisionalRunId,
+            capsuleId: post.capsule.id,
+            postId: post.id,
+            message: reason,
+            status: response.status,
+          });
+          releaseRuntimeSlotGuard();
+          return null;
+        }
+
+        let resolvedRunId = provisionalRunId;
+        try {
+          const payload = (await response.json()) as { runId?: string | null };
+          if (payload?.runId && typeof payload.runId === "string") {
+            resolvedRunId = payload.runId;
+          }
+        } catch {
+          // keep provisional run id if parsing fails
+        }
+
+        const session: RunSession = {
+          id: resolvedRunId,
+          startedAt: Date.now(),
+        };
+        currentRunRef.current = session;
+        lastRunRef.current = session;
+        finishedRunRef.current = null;
+
+        const confirmation = confirmRuntimeSlot(runtimeSlotRef.current ?? session.id, session.id);
+        runtimeSlotRef.current = confirmation.allowed ? session.id : runtimeSlotRef.current;
+        budgetStateRef.current.runStartedAt = session.startedAt;
+        clearRunTimer();
+        runTimerRef.current = window.setTimeout(() => {
+          handleBudgetViolation("run_timeout", {
+            limitMs: RUN_SESSION_BUDGET_MS,
+            observedMs: RUN_SESSION_BUDGET_MS,
+          });
+        }, RUN_SESSION_BUDGET_MS);
+
+        if (!confirmation.allowed) {
+          handleBudgetViolation("concurrency_limit", {
+            activeCount: confirmation.activeCount,
+          });
+          return null;
+        }
+
+        return session;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        trackClientError("E-VIBECODR-0517", {
+          area: "player.startRun",
+          runId: provisionalRunId,
+          capsuleId: post?.capsule?.id,
+          postId: post?.id,
+          message,
+        });
+        releaseRuntimeSlotGuard();
+        clearRunTimer();
+        return null;
+      } finally {
+        runStartInFlightRef.current = false;
+      }
+    })();
+
+    pendingRunStartRef.current = startPromise;
+    const result = await startPromise;
+    pendingRunStartRef.current = null;
+    return result;
+  }, [buildAuthInit, clearRunTimer, handleBudgetViolation, post, releaseRuntimeSlotGuard]);
+
+  const handleRuntimeLoading = useCallback(() => {
+    if (!runtimeSlotRef.current) {
+      const reservation = reserveRuntimeSlot();
+      runtimeSlotRef.current = reservation.allowed ? reservation.token : null;
+      if (!reservation.allowed) {
+        handleBudgetViolation("concurrency_limit", { activeCount: reservation.activeCount });
+        return;
+      }
+    }
+    budgetStateRef.current.budgetViolated = false;
+    budgetStateRef.current.bootStartedAt = Date.now();
+    budgetStateRef.current.runStartedAt = null;
+    clearBudgetTimers();
+    if (isClientStaticRunnerType(post?.capsule?.runner ?? null)) {
+      bootTimerRef.current = window.setTimeout(() => {
+        handleBudgetViolation("boot_timeout", {
+          limitMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+          observedMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+        });
+      }, CLIENT_STATIC_BOOT_BUDGET_MS);
+    }
+    setIsRunning(true);
+    void (async () => {
+      const session = await startRunSession();
+      if (!session) {
+        clearBudgetTimers();
+        releaseRuntimeSlotGuard();
+        setIsRunning(false);
+        resetBudgetState();
+      }
+    })();
+  }, [clearBudgetTimers, handleBudgetViolation, post?.capsule?.runner, releaseRuntimeSlotGuard, resetBudgetState, startRunSession]);
 
   useEffect(() => {
     return () => {
@@ -573,6 +818,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   }, [finalizeRunSession, flushLogBatch]);
 
   const handleRunnerReady = useCallback(() => {
+    clearBootTimer();
     void (async () => {
       const session = await startRunSession();
       if (!session) {
@@ -580,6 +826,16 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         setStats({ fps: 0, memory: 0, bootTime: 0 });
         iframeHandleRef.current?.kill();
         return;
+      }
+      if (isClientStaticRunnerType(post?.capsule?.runner ?? null) && budgetStateRef.current.bootStartedAt) {
+        const bootElapsed = Math.max(0, Date.now() - budgetStateRef.current.bootStartedAt);
+        if (bootElapsed > CLIENT_STATIC_BOOT_BUDGET_MS) {
+          handleBudgetViolation("boot_timeout", {
+            limitMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+            observedMs: bootElapsed,
+          });
+          return;
+        }
       }
       setIsRunning(true);
       lastPerfEventRef.current = 0;
@@ -597,11 +853,17 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           });
       }
     })();
-  }, [post, startRunSession]);
+  }, [clearBootTimer, handleBudgetViolation, post, startRunSession]);
 
   const handleBootMetrics = useCallback(
     (metrics: { bootTimeMs: number }) => {
       setStats((prev) => ({ ...prev, bootTime: metrics.bootTimeMs }));
+      if (isClientStaticRunnerType(post?.capsule?.runner ?? null) && metrics.bootTimeMs > CLIENT_STATIC_BOOT_BUDGET_MS) {
+        handleBudgetViolation("boot_timeout", {
+          limitMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+          observedMs: metrics.bootTimeMs,
+        });
+      }
       if (post?.capsule) {
         const runId = currentRunRef.current?.id;
         trackEvent("player_boot_time", {
@@ -620,7 +882,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         });
       }
     },
-    [post]
+    [handleBudgetViolation, post]
   );
 
   const handleRuntimeError = useCallback(
@@ -859,6 +1121,17 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         capsuleId: post.capsule.id,
         runner: post.capsule.runner,
       });
+      const runId = currentRunRef.current?.id ?? lastRunRef.current?.id;
+      trackRuntimeEvent("runtime_killed", {
+        capsuleId: post.capsule.id,
+        artifactId: post.capsule.artifactId ?? null,
+        runtimeType: post.capsule.runner ?? null,
+        properties: {
+          postId: post.id,
+          runId,
+          reason: "user_request",
+        },
+      });
     }
   };
 
@@ -987,6 +1260,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           onKill={handleKill}
           onShare={handleShare}
           onReady={handleRunnerReady}
+          onLoading={handleRuntimeLoading}
           onError={handleRuntimeError}
           onLog={handleConsoleLog}
           onStats={handleStatsUpdate}

@@ -6,8 +6,10 @@
   :root {
     /* Welcoming Geometric Palette */
     /* Background: Soft Off-White / Light Warm Gray */
-    --background: 0 0% 95%; /* #F2F2F2 */
-    --foreground: 210 29% 24%; /* #2C3E50 - Deep Navy */
+    --background: 0 0% 95%;
+    /* #F2F2F2 */
+    --foreground: 210 29% 24%;
+    /* #2C3E50 - Deep Navy */
 
     /* Surface: Clean White */
     --card: 0 0% 100%;
@@ -29,7 +31,8 @@
     --muted-foreground: 210 10% 50%;
 
     /* Accent: Warm Coral */
-    --accent: 28 79% 52%; /* #E67E22 */
+    --accent: 28 79% 52%;
+    /* #E67E22 */
     --accent-foreground: 0 0% 100%;
 
     /* Destructive */
@@ -39,7 +42,8 @@
     /* Borders & Inputs */
     --border: 210 20% 85%;
     --input: 210 20% 85%;
-    --ring: 28 79% 52%; /* Coral Ring */
+    --ring: 28 79% 52%;
+    /* Coral Ring */
 
     --radius: 0.75rem;
   }
@@ -82,6 +86,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply text-foreground;
     background-color: var(--vc-bg);
@@ -99,14 +104,13 @@
 
 @layer components {
   .vc-surface {
-    background: var(--vc-surface);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--vc-shell-border);
+    @apply bg-card/60 backdrop-blur-xl border border-white/10 shadow-vc-soft;
+    /* Inner highlight for "liquid" edge */
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 4px 20px -2px rgba(0, 0, 0, 0.1);
   }
 
   .vc-surface-muted {
-    background: var(--vc-surface-muted);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--vc-shell-border);
+    @apply bg-secondary/40 backdrop-blur-lg border border-white/5;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
   }
 }
