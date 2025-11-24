@@ -81,53 +81,94 @@ const EtheriaSkyBackground = () => {
 
     const generateCloudTexture = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = 256;
-      canvas.height = 256;
+      canvas.width = 320;
+      canvas.height = 240;
       const context = canvas.getContext("2d");
       if (!context) {
         console.error("E-VIBECODR-0603 etheria sky texture context missing");
         return new THREE.Texture();
       }
 
-      context.clearRect(0, 0, canvas.width, canvas.height);
+      const gridSize = 64;
+      const grid = new Float32Array((gridSize + 1) * (gridSize + 1));
+      for (let i = 0; i < grid.length; i++) {
+        grid[i] = Math.random();
+      }
 
-      const drawBlob = (cx: number, cy: number, r: number, alpha: number) => {
-        const g = context.createRadialGradient(cx, cy, 0, cx, cy, r);
-        g.addColorStop(0, `rgba(255,255,255,${0.95 * alpha})`);
-        g.addColorStop(0.45, `rgba(255,255,255,${0.65 * alpha})`);
-        g.addColorStop(0.8, `rgba(240,245,255,${0.18 * alpha})`);
-        g.addColorStop(1, "rgba(255,255,255,0)");
-        context.fillStyle = g;
-        context.fillRect(cx - r, cy - r, r * 2, r * 2);
+      const sampleNoise = (x: number, y: number) => {
+        const gx = Math.floor(x);
+        const gy = Math.floor(y);
+        const tx = x - gx;
+        const ty = y - gy;
+        const idx = (gx % gridSize) + (gy % gridSize) * (gridSize + 1);
+        const idxRight = idx + 1;
+        const idxDown = idx + (gridSize + 1);
+        const idxDownRight = idxDown + 1;
+        const top = grid[idx] * (1 - tx) + grid[idxRight] * tx;
+        const bottom = grid[idxDown] * (1 - tx) + grid[idxDownRight] * tx;
+        return top * (1 - ty) + bottom * ty;
       };
 
-      for (let i = 0; i < 16; i++) {
-        const cx = Math.random() * canvas.width;
-        const cy = Math.random() * canvas.height * 0.6;
-        const r = 50 + Math.random() * 90;
-        const alpha = 0.6 + Math.random() * 0.4;
-        drawBlob(cx, cy, r, alpha);
+      const fbm = (nx: number, ny: number) => {
+        let value = 0;
+        let amplitude = 0.6;
+        let frequency = 1;
+        for (let i = 0; i < 5; i++) {
+          value += amplitude * sampleNoise(nx * frequency, ny * frequency);
+          frequency *= 2;
+          amplitude *= 0.45;
+        }
+        return value;
+      };
+
+      const image = context.createImageData(canvas.width, canvas.height);
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const nx = x / canvas.width;
+          const ny = y / canvas.height;
+
+          const billow = fbm(nx * 3.2, ny * 2.4);
+          const structure = fbm(nx * 1.4 + 20, ny * 1.2 + 40);
+          const densityBase = billow * 0.7 + structure * 0.45;
+          let density = Math.max(0, densityBase - 0.42);
+          density = Math.pow(density, 2.1);
+
+          const heightMask = Math.max(0, 1 - Math.pow(ny * 1.25, 2.4));
+          density *= heightMask;
+
+          const streak = Math.max(0, Math.sin(nx * Math.PI * 6 + ny * 2.2) * 0.18);
+          density = Math.min(1, density + streak * heightMask);
+
+          const warmTop = Math.pow(1 - ny, 3) * 0.35;
+          const light = 0.65 + density * 0.35 + warmTop;
+
+          const r = 255;
+          const g = 245 - ny * 35;
+          const b = 240 - ny * 48;
+
+          const alpha = Math.min(255, Math.max(0, density * 255));
+          const idx = (y * canvas.width + x) * 4;
+          image.data[idx] = Math.min(255, r * light);
+          image.data[idx + 1] = Math.min(255, g * light);
+          image.data[idx + 2] = Math.min(255, b * light);
+          image.data[idx + 3] = alpha;
+        }
       }
 
-      // Soft streaks to mimic wind-swept tops.
-      context.globalAlpha = 0.08;
-      context.fillStyle = "rgba(255,255,255,0.45)";
-      for (let i = 0; i < 6; i++) {
-        const y = Math.random() * canvas.height * 0.45;
-        const h = 10 + Math.random() * 18;
-        context.fillRect(-20, y, canvas.width + 40, h);
-      }
-      context.globalAlpha = 1;
+      context.putImageData(image, 0, 0);
 
       const texture = new THREE.CanvasTexture(canvas);
-      texture.anisotropy = typeof renderer.capabilities.getMaxAnisotropy === "function"
-        ? renderer.capabilities.getMaxAnisotropy()
-        : 1;
+      texture.anisotropy =
+        typeof renderer.capabilities.getMaxAnisotropy === "function"
+          ? renderer.capabilities.getMaxAnisotropy()
+          : 1;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
       return texture;
     };
 
     const cloudTexture = generateCloudTexture();
-    const geometry = new THREE.PlaneGeometry(140, 140);
+    const geometry = new THREE.PlaneGeometry(160, 140);
     const baseMaterial = new THREE.MeshLambertMaterial({
       map: cloudTexture,
       transparent: true,
@@ -138,8 +179,8 @@ const EtheriaSkyBackground = () => {
     });
 
     const clouds: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>[] = [];
-    const cloudCount = 210;
-    const yMin = 120;
+    const cloudCount = 180;
+    const yMin = 140;
     const yMax = 520;
 
     for (let i = 0; i < cloudCount; i++) {
@@ -149,15 +190,15 @@ const EtheriaSkyBackground = () => {
       cloud.position.x = Math.random() * 1100 - 550;
       const yPos = Math.random() * (yMax - yMin) + yMin;
       cloud.position.y = yPos;
-      cloud.position.z = i * 1.5 - 260;
+      cloud.position.z = i * 1.6 - 280;
 
       const verticalWeight = Math.max(0, Math.min(1, (yPos - yMin) / (yMax - yMin)));
-      const fadeFloor = Math.max(0, Math.min(1, (yPos - yMin) / 140));
-      material.opacity = 0.85 * Math.pow(verticalWeight, 0.85) * fadeFloor;
+      const fadeFloor = Math.max(0, Math.min(1, (yPos - yMin) / 110));
+      material.opacity = 0.92 * Math.pow(verticalWeight, 0.78) * fadeFloor;
 
-      cloud.rotation.z = Math.random() * Math.PI;
-      const scale = Math.random() * 2 + 0.9;
-      cloud.scale.set(scale * 1.25, scale, 1);
+      cloud.rotation.z = Math.random() * (Math.PI * 0.6) - Math.PI * 0.3;
+      const scale = Math.random() * 2.4 + 1.2;
+      cloud.scale.set(scale * 1.35, scale, 1);
 
       scene.add(cloud);
       clouds.push(cloud);
