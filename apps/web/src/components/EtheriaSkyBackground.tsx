@@ -39,10 +39,8 @@ const EtheriaSkyBackground = () => {
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(new THREE.Color(palette.midBlue), 180, 1100);
 
-    // WHY: Frame slightly higher and widen FOV so ~15% more of the cloud bank stays visible without distortion.
-    const camera = new THREE.PerspectiveCamera(34, width / height, 1, 3000);
-    camera.position.set(0, 180, 620);
-    camera.lookAt(new THREE.Vector3(0, 280, -240));
+    const camera = new THREE.PerspectiveCamera(30, width / height, 1, 3000);
+    camera.position.z = 620;
 
     let renderer: THREE.WebGLRenderer;
     try {
@@ -342,7 +340,7 @@ const EtheriaSkyBackground = () => {
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,rgba(255,255,255,0.25),transparent_45%),radial-gradient(circle_at_80%_12%,rgba(255,255,255,0.18),transparent_40%)] opacity-70 mix-blend-screen" />
       <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[radial-gradient(120%_80%_at_50%_100%,rgba(255,115,53,0.55),transparent_60%)] mix-blend-screen" />
-      <div ref={mountRef} className="absolute inset-x-0 top-0 h-[62vh] md:h-[55vh] lg:h-[50vh]" />
+      <div ref={mountRef} className="absolute inset-x-0 top-0 h-[72vh] md:h-[64vh] lg:h-[58vh]" />
       <div className="absolute inset-x-0 bottom-0 h-[58%] bg-gradient-to-t from-[rgba(255,115,53,0.4)] via-transparent to-transparent" />
     </div>
   );
