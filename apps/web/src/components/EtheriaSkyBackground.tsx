@@ -6,6 +6,7 @@ import { useReducedMotion } from "@/lib/useReducedMotion";
 // INVARIANT: Background stays behind all content, respects reduced-motion, and cleans up WebGL resources.
 const EtheriaSkyBackground = () => {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const gradientRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -148,6 +149,9 @@ const EtheriaSkyBackground = () => {
       sizes[i] = 150 + Math.random() * 100;
     }
 
+    // Store original positions for parallax calculations
+    const originalPositions = new Float32Array(positions);
+
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     // We can use a custom attribute or just uniforms, but for standard PointsMaterial, 
@@ -178,12 +182,47 @@ const EtheriaSkyBackground = () => {
       frameId = requestAnimationFrame(animate);
 
       const time = performance.now() * 0.001;
+      const scrollY = window.scrollY;
+      const scrollProgress = Math.min(scrollY / window.innerHeight, 5);
 
-      // Drift the entire cloud system slowly
+      // Drift the entire cloud system slowly (rotation)
       cloudSystem.rotation.y = time * 0.02;
 
-      // Optional: We could update positions here for individual particle drift, 
-      // but rotating the container is much more performant.
+      // --- Scroll-driven Parallax & Descent ---
+      
+      // 1. Move Camera forward/down
+      // Base Z is 800. We move closer as we scroll.
+      // Factor 1.5 gives a decent speed of "descent"
+      camera.position.z = 800 - (scrollY * 1.5);
+      
+      // 2. Shift Gradient Background
+      if (gradientRef.current) {
+        // Move the background up slightly to simulate descending
+        gradientRef.current.style.transform = `translateY(${scrollY * -0.4}px)`;
+      }
+
+      // 3. Part Clouds Horizontally
+      // We iterate positions to apply the curtain effect
+      const currentPositions = geometry.attributes.position.array as Float32Array;
+      
+      for (let i = 0; i < cloudCount; i++) {
+        const ix = i * 3;
+        const ox = originalPositions[ix];
+        const oz = originalPositions[ix + 2];
+        
+        // Parallax Strength:
+        // Particles with higher Z (closer to 800) are "closer" and should move faster.
+        // oz ranges roughly from -600 to +300.
+        // (oz + 800) / 1000 gives a range of ~0.2 to ~1.1
+        const proximity = (oz + 800) / 1000;
+        const parallaxStrength = Math.max(0.1, proximity * proximity * 3.5); // Non-linear for dramatic foreground effect
+
+        // Move outward from center (0)
+        // As scroll increases, push x further out
+        currentPositions[ix] = ox + (ox * scrollProgress * 0.8 * parallaxStrength);
+      }
+      
+      geometry.attributes.position.needsUpdate = true;
 
       renderer.render(scene, camera);
     };
@@ -218,7 +257,10 @@ const EtheriaSkyBackground = () => {
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
       {/* Background Gradient Layer */}
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]" />
+      <div 
+        ref={gradientRef}
+        className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]" 
+      />
 
       {/* Subtle overlay for depth */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,rgba(255,255,255,0.15),transparent_45%)] opacity-60 mix-blend-screen" />

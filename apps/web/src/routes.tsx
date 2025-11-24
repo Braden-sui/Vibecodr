@@ -34,7 +34,7 @@ function PlayerRouteWrapper() {
   return <PlayerPageClient postId={postId} />;
 }
 
-function PostDetailRoute() {
+export function PostDetailRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [post, setPost] = useState<FeedPost | null>(null);
@@ -80,7 +80,7 @@ function PostDetailRoute() {
           return;
         }
         if (!res.ok) {
-          throw new Error(`E - VIBECODR-0501 failed to load post: ${res.status} `);
+          throw new Error(`E-VIBECODR-0501 failed to load post: ${res.status}`);
         }
         const json = await res.json();
         const parsed = ApiPostResponseSchema.parse(json);
@@ -91,7 +91,7 @@ function PostDetailRoute() {
         }
 
         if (mapped.type === "app") {
-          navigate(`/ player / ${id} `, { replace: true });
+          navigate(`/player/${id}`, { replace: true });
           return;
         }
 
@@ -209,7 +209,7 @@ function ProfileRouteWrapper() {
           return;
         }
         if (!res.ok) {
-          throw new Error(`E - VIBECODR - 2001 failed to load profile: ${res.status} `);
+          throw new Error(`E-VIBECODR-2001 failed to load profile: ${res.status}`);
         }
         const json = await res.json();
         if (!cancelled) {
@@ -262,7 +262,7 @@ function ProfileRouteWrapper() {
   );
 }
 
-function LegacyProfileRouteWrapper() {
+export function LegacyProfileRouteWrapper() {
   const { handle } = useParams();
   const navigate = useNavigate();
 
@@ -270,7 +270,7 @@ function LegacyProfileRouteWrapper() {
     if (!handle) {
       return;
     }
-    navigate(`/ u / ${encodeURIComponent(handle)} `, { replace: true });
+    navigate(`/u/${encodeURIComponent(handle)}`, { replace: true });
   }, [handle, navigate]);
 
   return null;
