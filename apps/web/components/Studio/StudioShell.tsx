@@ -7,9 +7,9 @@ import type { Manifest } from "@vibecodr/shared/manifest";
 
 export interface DraftFile {
   path: string;
-  type: string;
+  type?: string;
   size: number;
-  file: File;
+  file?: File;
 }
 
 export interface DraftArtifact {
@@ -58,9 +58,14 @@ export function StudioShell({ children, currentTab, draft, onTabChange, showAdva
       <div className="border-b bg-card p-4">
         <div className="flex items-center justify-between">
           <div>
-              <h1 className="text-2xl font-bold">Studio</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold">Studio</h1>
+                <Badge variant="outline" className="border-dashed uppercase tracking-wide">
+                  Experimental
+                </Badge>
+              </div>
               <p className="text-sm text-muted-foreground">
-                Create and publish runnable vibes
+                Create and publish runnable vibes without leaving the browser
               </p>
           </div>
 

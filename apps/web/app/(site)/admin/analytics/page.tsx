@@ -24,10 +24,52 @@ type RuntimeAnalyticsRecentEvent = {
   createdAt: number;
 };
 
+type ErrorEventCount = {
+  eventName: string;
+  count: number;
+};
+
+type CapsuleErrorRate = {
+  capsuleId: string;
+  total: number;
+  errors: number;
+  errorRate: number;
+};
+
+type CapsuleRunVolume = {
+  capsuleId: string;
+  totalRuns: number;
+  completedRuns: number;
+  failedRuns: number;
+};
+
+type EndpointHealth = {
+  total: number;
+  fiveXx: number;
+  rate: number;
+};
+
+type RuntimeHealth = {
+  killed: number;
+  completed: number;
+  killRate: number;
+};
+
 type RuntimeAnalyticsResponse = {
   snapshotTime: number;
   summary: RuntimeAnalyticsSummaryRow[];
   recent: RuntimeAnalyticsRecentEvent[];
+  errorsLastDay: ErrorEventCount[];
+  capsuleErrorRates: CapsuleErrorRate[];
+  capsuleRunVolumes: CapsuleRunVolume[];
+  health: {
+    endpoints: {
+      artifacts: EndpointHealth;
+      runs: EndpointHealth;
+      import: EndpointHealth;
+    };
+    runtime: RuntimeHealth;
+  };
 };
 
 type AuthzState = "unknown" | "unauthenticated" | "forbidden" | "authorized";
@@ -48,6 +90,7 @@ export default function AdminAnalyticsPage() {
   const [summary, setSummary] = useState<RuntimeAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -149,33 +192,156 @@ export default function AdminAnalyticsPage() {
       {summary && (
         <div className="space-y-4">
           <div className="rounded-xl vc-surface p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Event summary</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Platform health</h2>
+                <p className="text-xs text-muted-foreground">
+                  Snapshot at {new Date(summary.snapshotTime).toLocaleTimeString()}
+                </p>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Snapshot at {new Date(summary.snapshotTime).toLocaleTimeString()}
+                5xx signals come from client_error telemetry; runtime outcomes from player events.
               </p>
             </div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Event</th>
-                    <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Total</th>
-                    <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Last hour</th>
-                    <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Last day</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.summary.map((row) => (
-                    <tr key={row.eventName}>
-                      <td className="px-2 py-1">{row.eventName}</td>
-                      <td className="px-2 py-1 font-semibold">{row.total}</td>
-                      <td className="px-2 py-1">{row.lastHour}</td>
-                      <td className="px-2 py-1">{row.lastDay}</td>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                { key: "artifacts", label: "Artifacts 5xx", data: summary.health.endpoints.artifacts },
+                { key: "runs", label: "Runs 5xx", data: summary.health.endpoints.runs },
+                { key: "import", label: "Import 5xx", data: summary.health.endpoints["import"] },
+              ].map((item) => (
+                <div key={item.key} className="rounded-lg border border-border/80 bg-background/40 p-3 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-semibold">{formatPercent(item.data.rate)}</span>
+                    <span className="text-xs text-muted-foreground">({item.data.fiveXx}/{item.data.total || 1})</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">5xx events vs. total client_error signals</p>
+                </div>
+              ))}
+              <div className="rounded-lg border border-border/80 bg-background/40 p-3 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Runtime killed vs completed</p>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-2xl font-semibold">{formatPercent(summary.health.runtime.killRate)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({summary.health.runtime.killed}/{summary.health.runtime.killed + summary.health.runtime.completed || 1})
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {summary.health.runtime.killed} killed / {summary.health.runtime.completed} completed
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl vc-surface p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Top error events (last 24h)</h2>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Event</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Count</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {summary.errorsLastDay.map((row) => (
+                      <tr key={row.eventName}>
+                        <td className="px-2 py-1">{row.eventName}</td>
+                        <td className="px-2 py-1 font-semibold">{row.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-xl vc-surface p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Top capsules by error rate (last 24h)</h2>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Capsule</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Error rate</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Errors</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Events</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.capsuleErrorRates.map((row) => (
+                      <tr key={row.capsuleId}>
+                        <td className="px-2 py-1">{row.capsuleId}</td>
+                        <td className="px-2 py-1 font-semibold">{formatPercent(row.errorRate)}</td>
+                        <td className="px-2 py-1">{row.errors}</td>
+                        <td className="px-2 py-1">{row.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl vc-surface p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Top capsules by run volume (last 24h)</h2>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Capsule</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Runs</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Completed</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Failed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.capsuleRunVolumes.map((row) => (
+                      <tr key={row.capsuleId}>
+                        <td className="px-2 py-1">{row.capsuleId}</td>
+                        <td className="px-2 py-1 font-semibold">{row.totalRuns}</td>
+                        <td className="px-2 py-1">{row.completedRuns}</td>
+                        <td className="px-2 py-1">{row.failedRuns}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-xl vc-surface p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Event summary</h2>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Event</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Total</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Last hour</th>
+                      <th className="px-2 py-1 text-xs uppercase tracking-wide text-muted-foreground">Last day</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.summary.map((row) => (
+                      <tr key={row.eventName}>
+                        <td className="px-2 py-1">{row.eventName}</td>
+                        <td className="px-2 py-1 font-semibold">{row.total}</td>
+                        <td className="px-2 py-1">{row.lastHour}</td>
+                        <td className="px-2 py-1">{row.lastDay}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -191,8 +357,8 @@ export default function AdminAnalyticsPage() {
                 <div key={`${item.eventName}-${index}`} className="rounded-lg border border-dashed border-border/80 p-3">
                   <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                     <span className="font-medium text-muted-foreground">{item.eventName}</span>
-                    <span>capsule: {item.capsuleId ?? "—"}</span>
-                    <span>artifact: {item.artifactId ?? "—"}</span>
+                    <span>capsule: {item.capsuleId ?? "n/a"}</span>
+                    <span>artifact: {item.artifactId ?? "n/a"}</span>
                     <span>{new Date(item.createdAt).toLocaleTimeString()}</span>
                   </div>
                   {(item.message || item.code) && (
@@ -211,6 +377,7 @@ export default function AdminAnalyticsPage() {
             </div>
           </div>
         </div>
+      )}
       )}
     </section>
   );

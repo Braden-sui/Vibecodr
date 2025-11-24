@@ -286,6 +286,315 @@ function isErrorEvent(name: string): boolean {
   return normalized.includes("error") || normalized.includes("violation") || normalized.includes("fail");
 }
 
+const ERROR_EVENT_SQL_CLAUSE =
+  "LOWER(event_name) LIKE '%error%' OR LOWER(event_name) LIKE '%violation%' OR LOWER(event_name) LIKE '%fail%'";
+const DEFAULT_ERROR_RATE_MIN_TOTAL = 3;
+const COMPLETED_STATUS_PATTERN = '%"status":"completed"%';
+const FIVE_XX_STATUS_PATTERN = "%status=5%";
+
+function toNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toRate(numerator: number, denominator: number): number {
+  if (!Number.isFinite(denominator) || denominator <= 0) return 0;
+  if (!Number.isFinite(numerator) || numerator < 0) return 0;
+  return numerator / denominator;
+}
+
+type EndpointHealthSnapshot = {
+  total: number;
+  fiveXx: number;
+  rate: number;
+};
+
+type RuntimeHealthSnapshot = {
+  killed: number;
+  completed: number;
+  killRate: number;
+};
+
+type RuntimeAnalyticsSnapshot = {
+  snapshotTime: number;
+  summary: Array<{ eventName: string; total: number; lastHour: number; lastDay: number }>;
+  recent: Array<{
+    eventName: string;
+    capsuleId: string | null;
+    artifactId: string | null;
+    runtimeType: string | null;
+    runtimeVersion: string | null;
+    code: string | null;
+    message: string | null;
+    properties: Record<string, unknown> | null;
+    createdAt: number;
+  }>;
+  errorsLastDay: Array<{ eventName: string; count: number }>;
+  capsuleErrorRates: Array<{ capsuleId: string; total: number; errors: number; errorRate: number }>;
+  capsuleRunVolumes: Array<{ capsuleId: string; totalRuns: number; completedRuns: number; failedRuns: number }>;
+  health: {
+    endpoints: {
+      artifacts: EndpointHealthSnapshot;
+      runs: EndpointHealthSnapshot;
+      import: EndpointHealthSnapshot;
+    };
+    runtime: RuntimeHealthSnapshot;
+  };
+};
+
+async function queryEndpointHealth(
+  env: Env,
+  sinceDay: number,
+  patterns: string[],
+  codePrefix?: string
+): Promise<{ total: number; fiveXx: number }> {
+  const clauses = patterns.map(() => "(LOWER(COALESCE(properties, '')) LIKE ? OR LOWER(COALESCE(message, '')) LIKE ?)");
+  const params: string[] = [];
+  for (const pattern of patterns) {
+    const normalized = `%${pattern.toLowerCase()}%`;
+    params.push(normalized, normalized);
+  }
+
+  let codeClause = "";
+  if (codePrefix) {
+    codeClause = " OR LOWER(COALESCE(code, '')) LIKE ?";
+    params.push(`${codePrefix.toLowerCase()}%`);
+  }
+
+  const whereClause = clauses.length > 0 ? `(${clauses.join(" OR ")}${codeClause})` : `(1 = 1${codeClause})`;
+
+  const { results } = await env.DB.prepare(
+    `
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN LOWER(COALESCE(message, '')) LIKE ? THEN 1 ELSE 0 END) AS five_xx
+    FROM runtime_events
+    WHERE event_name = 'client_error'
+      AND created_at >= ?
+      AND ${whereClause}
+    `
+  )
+    .bind(FIVE_XX_STATUS_PATTERN, sinceDay, ...params)
+    .all();
+
+  const row = results?.[0] as { total?: number; five_xx?: number } | undefined;
+  const total = toNumber(row?.total);
+  const fiveXx = toNumber(row?.five_xx);
+
+  return { total, fiveXx };
+}
+
+export async function buildRuntimeAnalyticsSummary(env: Env, options: {
+  limit: number;
+  recentLimit: number;
+  nowMs?: number;
+}): Promise<RuntimeAnalyticsSnapshot> {
+  const nowMs = options.nowMs ?? Date.now();
+  const nowSec = Math.floor(nowMs / 1000);
+  const sinceHour = nowSec - 3600;
+  const sinceDay = nowSec - 86400;
+  const { limit, recentLimit } = options;
+
+  const { results: summaryRows } = await env.DB.prepare(
+    `
+    SELECT
+      event_name,
+      COUNT(*) as total,
+      SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as last_hour,
+      SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as last_day
+    FROM runtime_events
+    GROUP BY event_name
+    ORDER BY total DESC
+    LIMIT ?
+    `
+  )
+    .bind(sinceHour, sinceDay, limit)
+    .all();
+
+  const summary = (summaryRows || []).map((row: any) => ({
+    eventName: row.event_name,
+    total: Number(row.total ?? 0),
+    lastHour: Number(row.last_hour ?? 0),
+    lastDay: Number(row.last_day ?? 0),
+  }));
+
+  const { results: recentRows } = await env.DB.prepare(
+    `
+    SELECT
+      event_name,
+      capsule_id,
+      artifact_id,
+      runtime_type,
+      runtime_version,
+      code,
+      message,
+      properties,
+      created_at
+    FROM runtime_events
+    ORDER BY created_at DESC
+    LIMIT ?
+    `
+  )
+    .bind(recentLimit)
+    .all();
+
+  const recent = (recentRows || []).map((row: any) => {
+    let parsedProperties: Record<string, unknown> | null = null;
+    if (typeof row.properties === "string") {
+      try {
+        parsedProperties = JSON.parse(row.properties);
+      } catch {
+        parsedProperties = null;
+      }
+    }
+
+    return {
+      eventName: row.event_name,
+      capsuleId: row.capsule_id,
+      artifactId: row.artifact_id,
+      runtimeType: row.runtime_type,
+      runtimeVersion: row.runtime_version,
+      code: row.code,
+      message: row.message,
+      properties: parsedProperties,
+      createdAt: Number(row.created_at ?? 0) * 1000,
+    };
+  });
+
+  const { results: errorRows } = await env.DB.prepare(
+    `
+    SELECT event_name, COUNT(*) AS errors
+    FROM runtime_events
+    WHERE created_at >= ? AND (${ERROR_EVENT_SQL_CLAUSE})
+    GROUP BY event_name
+    ORDER BY errors DESC
+    LIMIT ?
+    `
+  )
+    .bind(sinceDay, limit)
+    .all();
+
+  const errorsLastDay = (errorRows || []).map((row: any) => ({
+    eventName: row.event_name,
+    count: toNumber(row.errors),
+  }));
+
+  const { results: capsuleErrorRows } = await env.DB.prepare(
+    `
+    SELECT
+      capsule_id,
+      COUNT(*) AS total,
+      SUM(CASE WHEN ${ERROR_EVENT_SQL_CLAUSE} THEN 1 ELSE 0 END) AS errors,
+      CASE
+        WHEN COUNT(*) > 0 THEN SUM(CASE WHEN ${ERROR_EVENT_SQL_CLAUSE} THEN 1 ELSE 0 END) * 1.0 / COUNT(*)
+        ELSE 0
+      END AS error_rate
+    FROM runtime_events
+    WHERE capsule_id IS NOT NULL AND capsule_id != '' AND created_at >= ?
+    GROUP BY capsule_id
+    HAVING COUNT(*) >= ?
+    ORDER BY error_rate DESC, errors DESC
+    LIMIT ?
+    `
+  )
+    .bind(sinceDay, DEFAULT_ERROR_RATE_MIN_TOTAL, limit)
+    .all();
+
+  const capsuleErrorRates = (capsuleErrorRows || []).map((row: any) => ({
+    capsuleId: row.capsule_id as string,
+    total: toNumber(row.total),
+    errors: toNumber(row.errors),
+    errorRate: toNumber(row.error_rate),
+  }));
+
+  const { results: runVolumeRows } = await env.DB.prepare(
+    `
+    SELECT
+      capsule_id,
+      COUNT(*) AS total_runs,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_runs,
+      SUM(CASE WHEN status != 'completed' THEN 1 ELSE 0 END) AS failed_runs
+    FROM runs
+    WHERE capsule_id IS NOT NULL AND capsule_id != '' AND started_at >= ?
+    GROUP BY capsule_id
+    ORDER BY total_runs DESC
+    LIMIT ?
+    `
+  )
+    .bind(sinceDay, limit)
+    .all();
+
+  const capsuleRunVolumes = (runVolumeRows || []).map((row: any) => ({
+    capsuleId: row.capsule_id as string,
+    totalRuns: toNumber(row.total_runs),
+    completedRuns: toNumber(row.completed_runs),
+    failedRuns: toNumber(row.failed_runs),
+  }));
+
+  const { results: runtimeOutcomeRows } = await env.DB.prepare(
+    `
+    SELECT
+      SUM(CASE WHEN event_name = 'runtime_killed' THEN 1 ELSE 0 END) AS killed,
+      SUM(
+        CASE
+          WHEN event_name = 'player_run_completed' AND COALESCE(properties, '') LIKE ? THEN 1
+          ELSE 0
+        END
+      ) AS completed
+    FROM runtime_events
+    WHERE created_at >= ?
+    `
+  )
+    .bind(COMPLETED_STATUS_PATTERN, sinceDay)
+    .all();
+
+  const runtimeOutcome = (runtimeOutcomeRows || [])[0] as { killed?: number; completed?: number } | undefined;
+  const runtimeKilled = toNumber(runtimeOutcome?.killed);
+  const runtimeCompleted = toNumber(runtimeOutcome?.completed);
+  const runtimeHealth: RuntimeHealthSnapshot = {
+    killed: runtimeKilled,
+    completed: runtimeCompleted,
+    killRate: toRate(runtimeKilled, runtimeKilled + runtimeCompleted),
+  };
+
+  const [artifactsHealth, runsHealth, importHealth] = await Promise.all([
+    queryEndpointHealth(env, sinceDay, ["artifact"], "e-vibecodr-11"),
+    queryEndpointHealth(env, sinceDay, ["run"], "e-vibecodr-06"),
+    queryEndpointHealth(env, sinceDay, ["import"], "e-vibecodr-08"),
+  ]);
+
+  const endpoints = {
+    artifacts: {
+      total: artifactsHealth.total,
+      fiveXx: artifactsHealth.fiveXx,
+      rate: toRate(artifactsHealth.fiveXx, artifactsHealth.total),
+    },
+    runs: {
+      total: runsHealth.total,
+      fiveXx: runsHealth.fiveXx,
+      rate: toRate(runsHealth.fiveXx, runsHealth.total),
+    },
+    import: {
+      total: importHealth.total,
+      fiveXx: importHealth.fiveXx,
+      rate: toRate(importHealth.fiveXx, importHealth.total),
+    },
+  };
+
+  return {
+    snapshotTime: nowMs,
+    summary,
+    recent,
+    errorsLastDay,
+    capsuleErrorRates,
+    capsuleRunVolumes,
+    health: {
+      endpoints,
+      runtime: runtimeHealth,
+    },
+  };
+}
+
 export const recordRuntimeEvent: Handler = async (req, env) => {
   if (req.method !== "POST") {
     return json({ error: "Method Not Allowed" }, 405);
@@ -406,82 +715,10 @@ export const getRuntimeAnalyticsSummary: Handler = requireAdmin(async (req, env)
   const url = new URL(req.url);
   const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") ?? "20")));
   const recentLimit = Math.max(1, Math.min(50, Number(url.searchParams.get("recentLimit") ?? "20")));
-  const now = Math.floor(Date.now() / 1000);
-  const sinceHour = now - 3600;
-  const sinceDay = now - 86400;
 
   try {
-    const { results: summaryRows } = await env.DB.prepare(
-      `
-      SELECT
-        event_name,
-        COUNT(*) as total,
-        SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as last_hour,
-        SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as last_day
-      FROM runtime_events
-      GROUP BY event_name
-      ORDER BY total DESC
-      LIMIT ?
-      `
-    )
-      .bind(sinceHour, sinceDay, limit)
-      .all();
-
-    const summary = (summaryRows || []).map((row: any) => ({
-      eventName: row.event_name,
-      total: Number(row.total ?? 0),
-      lastHour: Number(row.last_hour ?? 0),
-      lastDay: Number(row.last_day ?? 0),
-    }));
-
-    const { results: recentRows } = await env.DB.prepare(
-      `
-      SELECT
-        event_name,
-        capsule_id,
-        artifact_id,
-        runtime_type,
-        runtime_version,
-        code,
-        message,
-        properties,
-        created_at
-      FROM runtime_events
-      ORDER BY created_at DESC
-      LIMIT ?
-      `
-    )
-      .bind(recentLimit)
-      .all();
-
-    const recent = (recentRows || []).map((row: any) => {
-      let parsedProperties: Record<string, unknown> | null = null;
-      if (typeof row.properties === "string") {
-        try {
-          parsedProperties = JSON.parse(row.properties);
-        } catch {
-          parsedProperties = null;
-        }
-      }
-
-      return {
-        eventName: row.event_name,
-        capsuleId: row.capsule_id,
-        artifactId: row.artifact_id,
-        runtimeType: row.runtime_type,
-        runtimeVersion: row.runtime_version,
-        code: row.code,
-        message: row.message,
-        properties: parsedProperties,
-        createdAt: Number(row.created_at ?? 0) * 1000,
-      };
-    });
-
-    return json({
-      snapshotTime: Date.now(),
-      summary,
-      recent,
-    });
+    const snapshot = await buildRuntimeAnalyticsSummary(env, { limit, recentLimit });
+    return json(snapshot);
   } catch (error) {
     console.error(ERROR_RUNTIME_ANALYTICS_SUMMARY_FAILED, {
       error: error instanceof Error ? error.message : String(error),

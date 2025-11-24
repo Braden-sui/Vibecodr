@@ -253,6 +253,16 @@ describe("FeedCard", () => {
     expect(screen.getByText("#demo")).toBeInTheDocument();
   });
 
+  it("calls onTagClick when a tag is selected", () => {
+    const onTagClick = vi.fn();
+    renderWithRouter(<FeedCard post={mockPost} onTagClick={onTagClick} />);
+
+    const tagButton = screen.getByRole("button", { name: "#test" });
+    fireEvent.click(tagButton);
+
+    expect(onTagClick).toHaveBeenCalledWith("test");
+  });
+
   it("should handle like button click", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,

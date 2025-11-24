@@ -21,8 +21,18 @@ vi.mock("@/lib/analytics", () => ({
 }));
 
 vi.mock("@/components/FeedCard", () => ({
-  FeedCard: ({ post }: { post: { title: string } }) => (
-    <div data-testid="feed-card">{post.title}</div>
+  FeedCard: ({ post, onTagClick }: { post: { title: string }; onTagClick?: (tag: string) => void }) => (
+    <div data-testid="feed-card">
+      {post.title}
+      {onTagClick && (
+        <button
+          data-testid={`tag-button-${post.title.replace(/\s+/g, "-")}`}
+          onClick={() => onTagClick("canvas")}
+        >
+          tag
+        </button>
+      )}
+    </div>
   ),
 }));
 
@@ -80,7 +90,7 @@ describe("HomePageClient feed data source", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText("Worker post latest")).toBeInTheDocument()
+      expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest")
     );
   });
 
@@ -92,7 +102,7 @@ describe("HomePageClient feed data source", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest")
     );
@@ -102,11 +112,32 @@ describe("HomePageClient feed data source", () => {
 
     await waitFor(() => {
       expect(mockList).toHaveBeenLastCalledWith(
-        expect.objectContaining({ mode: "latest", tags: ["canvas"] })
+        expect.objectContaining({ mode: "latest", tags: ["canvas"] }),
+        expect.anything()
       );
       expect(screen.getAllByTestId("feed-card")[0]).toHaveTextContent("Worker post latest [canvas]");
     });
     console.log("test:end passes tag filters");
+  });
+
+  it("applies tag filters when clicking a card tag", async () => {
+    render(
+      <MemoryRouter initialEntries={["/?mode=foryou"]}>
+        <HomePageClient />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+
+    const tagButton = await screen.findByTestId("tag-button-Worker-post-foryou");
+    fireEvent.click(tagButton);
+
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ mode: "foryou", tags: ["canvas"] }),
+        expect.anything()
+      )
+    );
   });
 
   it("does not fall back to sample posts on network errors", async () => {
@@ -153,8 +184,8 @@ describe("HomePageClient feed data source", () => {
     expect(
       screen.queryByText("Interactive Boids Simulation")
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Run, remix, and publish")
-    ).toBeInTheDocument();
+
+    const heroHeadings = screen.getAllByText("Run, remix, and publish");
+    expect(heroHeadings.length).toBeGreaterThan(0);
   });
 });

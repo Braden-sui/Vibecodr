@@ -22,13 +22,14 @@ interface ImportTabProps {
   draft?: CapsuleDraft;
   onDraftChange: React.Dispatch<React.SetStateAction<CapsuleDraft | undefined>>;
   onNavigateToTab?: (tab: ImportMethod | "params" | "files" | "publish") => void;
+  buildAuthInit?: () => Promise<RequestInit | undefined>;
 }
 
 /**
  * Import Tab - GitHub URL and ZIP upload.
  * Replaces the simulated progress flow with real ZIP analysis and manifest validation.
  */
-export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabProps) {
+export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit: buildAuthInitProp }: ImportTabProps) {
   const [importMethod, setImportMethod] = useState<ImportMethod>("github");
   const [githubUrl, setGithubUrl] = useState("");
   const [branch, setBranch] = useState("main");
@@ -43,6 +44,9 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
   const [singleError, setSingleError] = useState<string>("");
 
   const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
+    if (typeof buildAuthInitProp === "function") {
+      return buildAuthInitProp();
+    }
     if (typeof getToken !== "function") return undefined;
     const token = await getToken({ template: "workers" });
     if (!token) return undefined;
@@ -51,7 +55,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         Authorization: `Bearer ${token}`,
       },
     };
-  }, [getToken]);
+  }, [buildAuthInitProp, getToken]);
 
   const applyServerManifest = useCallback(
     (
@@ -65,20 +69,24 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         files?: DraftFile[];
       }
     ) => {
+      const hasErrors = Boolean(errors?.length);
+      const validationStatus: CapsuleDraft["validationStatus"] = hasErrors ? "invalid" : "valid";
+      const buildStatus: CapsuleDraft["buildStatus"] = hasErrors ? "failed" : "success";
       onDraftChange(() => ({
         id: crypto.randomUUID(),
         manifest,
         files: options?.files,
         sourceZipName: options?.sourceName,
-        validationStatus: "valid",
+        validationStatus,
         validationWarnings: warnings,
         validationErrors: errors,
-        buildStatus: "success",
+        buildStatus,
         artifact: options?.artifact ?? null,
         capsuleId: options?.capsuleId,
         publishStatus: "idle",
         postId: undefined,
       }));
+      return validationStatus;
     },
     [onDraftChange]
   );
@@ -126,7 +134,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
           validationStatus: "invalid",
           validationWarnings: analysis.warnings,
           validationErrors: analysis.errors,
-          buildStatus: "idle",
+          buildStatus: "failed",
           artifact: null,
           capsuleId: undefined,
           publishStatus: "idle",
@@ -161,14 +169,19 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         return;
       }
 
-      applyServerManifest(data.manifest, data.warnings, data.errors, {
+      const validationStatus = applyServerManifest(data.manifest, data.warnings, data.errors, {
         sourceName: file.name,
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
         files: analysis.files as DraftFile[],
       });
-      setImportStatus("success");
-      trackEvent("studio_import_zip_success", { capsuleId: data.capsuleId });
+      if (validationStatus === "invalid") {
+        setImportStatus("error");
+        setError("Manifest validation failed. Review the errors below.");
+      } else {
+        setImportStatus("success");
+        trackEvent("studio_import_zip_success", { capsuleId: data.capsuleId });
+      }
     } catch (err) {
       console.error("ZIP upload failed:", err);
       const message = err instanceof Error ? err.message : "Failed to process ZIP file";
@@ -229,14 +242,20 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         },
       ];
 
-      applyServerManifest(data.manifest ?? manifest, data.warnings, data.errors, {
+      const validationStatus = applyServerManifest(data.manifest ?? manifest, data.warnings, data.errors, {
         sourceName: file.name,
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
         files,
       });
-      setSingleStatus("success");
-      setImportMethod("single");
+      if (validationStatus === "invalid") {
+        setSingleStatus("error");
+        setSingleError("Manifest validation failed. Review the errors below.");
+        setError("Manifest validation failed. Review the errors below.");
+      } else {
+        setSingleStatus("success");
+        setImportMethod("single");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to upload file";
       setSingleStatus("error");
@@ -284,12 +303,17 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
         return;
       }
 
-      applyServerManifest(data.manifest, data.warnings, data.errors, {
+      const validationStatus = applyServerManifest(data.manifest, data.warnings, data.errors, {
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
       });
-      setImportStatus("success");
-      trackEvent("studio_import_github_success", { capsuleId: data.capsuleId });
+      if (validationStatus === "invalid") {
+        setImportStatus("error");
+        setError("Manifest validation failed. Review the errors below.");
+      } else {
+        setImportStatus("success");
+        trackEvent("studio_import_github_success", { capsuleId: data.capsuleId });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Import failed";
       setImportStatus("error");
@@ -339,6 +363,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
 
   const manifestWarnings = draft?.validationWarnings ?? [];
   const manifestErrors = draft?.validationErrors ?? [];
+  const hasValidationIssues = manifestWarnings.length > 0 || (manifestErrors?.length ?? 0) > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -480,7 +505,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
               {singleStatus === "uploading" && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Uploading and publishing…
+                  Uploading and publishing...
                 </div>
               )}
 
@@ -613,6 +638,11 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab }: ImportTabPr
           </Card>
         </TabsContent>
       </Tabs>
+      {hasValidationIssues && (
+        <div className="max-w-4xl">
+          <ValidationIssues warnings={manifestWarnings} errors={manifestErrors ?? []} />
+        </div>
+      )}
     </div>
   );
 }
@@ -649,6 +679,47 @@ function ImportStep({
         {name}
       </span>
       {status === "active" && <Badge variant="secondary">In Progress</Badge>}
+    </div>
+  );
+}
+
+function ValidationIssues({
+  warnings,
+  errors,
+}: {
+  warnings: Array<{ path: string; message: string }>;
+  errors: Array<{ path: string; message: string }>;
+}) {
+  return (
+    <div className="space-y-3 rounded-md border border-dashed border-muted-foreground/30 p-4">
+      <div className="space-y-1 text-sm text-muted-foreground">
+        <p className="font-medium">Validation results</p>
+        <p>Matches the Composer flow so creators see consistent warnings and errors.</p>
+      </div>
+      {errors.length > 0 && (
+        <div className="space-y-2 rounded-md bg-destructive/10 p-3 text-destructive">
+          <p className="text-sm font-semibold">Errors</p>
+          <ul className="space-y-1 text-xs">
+            {errors.map((issue, idx) => (
+              <li key={`${issue.path}-${idx}`}>
+                <span className="font-mono">{issue.path}</span>: {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div className="space-y-2 rounded-md bg-yellow-500/10 p-3 text-yellow-700 dark:text-yellow-400">
+          <p className="text-sm font-semibold">Warnings</p>
+          <ul className="space-y-1 text-xs">
+            {warnings.map((issue, idx) => (
+              <li key={`${issue.path}-${idx}`}>
+                <span className="font-mono">{issue.path}</span>: {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

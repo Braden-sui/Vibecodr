@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, FormEvent, ChangeEvent } from "react";
+import { useState, useRef, FormEvent, ChangeEvent, KeyboardEvent } from "react";
 import { motion } from "motion/react";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -20,6 +20,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Sparkles,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
@@ -33,6 +34,7 @@ import {
   type ZipManifestIssue,
 } from "@/lib/zipBundle";
 import { useReducedMotion } from "@/lib/useReducedMotion";
+import { featuredTags, normalizeTag } from "@/lib/tags";
 
 type ComposerMode = "status" | "image" | "github" | "zip" | "code";
 
@@ -42,6 +44,8 @@ export interface VibesComposerProps {
   onPostCreated?: (post: FeedPost) => void;
   className?: string;
 }
+
+const MAX_TAGS = 3;
 
 /**
  * VibesComposer - Unified composer for all vibe creation modes
@@ -54,6 +58,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const [isExpanded, setIsExpanded] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [tagInput, setTagInput] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +109,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   const isImporting = importStatus === "importing";
   const hasImportedCapsule = !!capsuleId;
+  const isAppPost = hasImportedCapsule || mode === "code";
+  const isTagLimitReached = selectedTags.length >= MAX_TAGS;
   const prefersReducedMotion = useReducedMotion();
 
   // Auto-detect GitHub URLs in text input
@@ -122,7 +130,38 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     setMode(newMode);
     setError(null);
     setImportError(null);
+    if (newMode === "status") {
+      setSelectedTags([]);
+      setTagInput("");
+    }
     trackEvent("composer_mode_changed", { mode: newMode });
+  };
+
+  const addTag = (raw: string) => {
+    const normalized = normalizeTag(raw);
+    if (!normalized) {
+      setTagInput("");
+      return;
+    }
+
+    setSelectedTags((prev) => {
+      if (prev.includes(normalized) || prev.length >= MAX_TAGS) {
+        return prev;
+      }
+      return [...prev, normalized];
+    });
+    setTagInput("");
+  };
+
+  const removeTag = (tag: string) => {
+    setSelectedTags((prev) => prev.filter((t) => t !== tag));
+  };
+
+  const handleTagKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" || event.key === "," || event.key === " ") {
+      event.preventDefault();
+      addTag(tagInput);
+    }
   };
 
   const handleImageSelect = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -459,6 +498,7 @@ mount.render(React.createElement(UserApp));
 
       // Determine post type based on capsule
       const type: "app" | "report" = effectiveCapsuleId ? "app" : "report";
+      const tagsForPost = type === "app" ? selectedTags : [];
 
       // Create the post
       const init = await buildAuthInit();
@@ -468,6 +508,7 @@ mount.render(React.createElement(UserApp));
         type,
         capsuleId: effectiveCapsuleId ?? undefined,
         coverKey: type === "app" ? coverKey ?? undefined : undefined,
+        tags: tagsForPost.length > 0 ? tagsForPost : undefined,
       }, init);
 
       if (response.status === 401) {
@@ -513,7 +554,7 @@ mount.render(React.createElement(UserApp));
             }
             : null,
           coverKey: type === "app" ? coverKey ?? null : null,
-          tags: [],
+          tags: tagsForPost,
           stats: {
             runs: 0,
             comments: 0,
@@ -543,6 +584,8 @@ mount.render(React.createElement(UserApp));
       // Reset form
       setTitle("");
       setDescription("");
+      setSelectedTags([]);
+      setTagInput("");
       setCode("");
       setAllowStorage(false);
       setEnableParam(false);
@@ -607,6 +650,8 @@ mount.render(React.createElement(UserApp));
     setIsExpanded(false);
     setTitle("");
     setDescription("");
+    setSelectedTags([]);
+    setTagInput("");
     setCode("");
     setAllowStorage(false);
     setEnableParam(false);
@@ -749,6 +794,79 @@ mount.render(React.createElement(UserApp));
                       rows={3}
                       disabled={isSubmitting || isImporting}
                     />
+                  )}
+
+                  {isAppPost && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-4 w-4" />
+                        <span className="text-sm font-medium">Tags (apps)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Add up to {MAX_TAGS} tags to help Vibecoders find this app.
+                      </p>
+                      {selectedTags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {selectedTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs"
+                            >
+                              #{tag}
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-foreground"
+                                onClick={() => removeTag(tag)}
+                                aria-label={`Remove ${tag} tag`}
+                                disabled={isSubmitting || isImporting}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {!isTagLimitReached && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            placeholder="e.g. ai, cli, canvas"
+                            value={tagInput}
+                            onChange={(e) => setTagInput(e.target.value)}
+                            onKeyDown={handleTagKeyDown}
+                            disabled={isSubmitting || isImporting}
+                            className="w-48"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addTag(tagInput)}
+                            disabled={!tagInput.trim() || isSubmitting || isImporting || isTagLimitReached}
+                          >
+                            Add tag
+                          </Button>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {featuredTags.map((tag) => {
+                          const active = selectedTags.includes(tag);
+                          const atLimit = isTagLimitReached && !active;
+                          return (
+                            <Button
+                              key={tag}
+                              type="button"
+                              variant={active ? "secondary" : "ghost"}
+                              size="sm"
+                              className="h-8 px-3"
+                              onClick={() => addTag(tag)}
+                              disabled={atLimit || isSubmitting || isImporting}
+                            >
+                              #{tag}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
 
                   {/* Inline Code Section */}

@@ -353,6 +353,25 @@ export const postsApi = {
 
     return fetch(workerUrl(`/posts?${search.toString()}`), init);
   },
+  discover(
+    tag: string,
+    options?: { limit?: number; offset?: number },
+    init?: RequestInit,
+  ) {
+    const normalized = tag.trim();
+    const params = new URLSearchParams();
+    if (normalized) {
+      params.set("tag", normalized);
+    }
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.offset != null) {
+      params.set("offset", String(options.offset));
+    }
+
+    return fetch(workerUrl(`/posts/discover?${params.toString()}`), init);
+  },
   like(postId: string, init?: RequestInit) {
     return fetch(workerUrl(`/posts/${postId}/like`), {
       method: "POST",

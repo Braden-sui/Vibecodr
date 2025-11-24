@@ -6,6 +6,7 @@ import ShareVibePage from "@/app/(site)/post/new/page";
 import PlayerPageClient from "@/app/(site)/player/[postId]/PlayerPageClient";
 import PricingPage from "@/app/(site)/pricing/page";
 import LivePage from "@/app/(site)/live/page";
+import DiscoverPage from "@/app/(site)/discover/page";
 import NewReport from "@/app/(site)/report/new/page";
 import SettingsPage from "@/app/(site)/settings/page";
 import ProfileSettingsPage from "@/app/(site)/settings/profile/page";
@@ -13,6 +14,7 @@ import FlaggedPostsPage from "@/app/(site)/moderation/flagged/page";
 import ModerationAuditPage from "@/app/(site)/moderation/audit/page";
 import ModerationQueue from "@/app/(site)/admin/moderation/page";
 import AdminAnalyticsPage from "@/app/(site)/admin/analytics/page";
+import StudioIndex from "@/app/(site)/studio/page";
 import { SignIn as ClerkSignIn, SignUp as ClerkSignUp } from "@clerk/clerk-react";
 import { Comments } from "@/components/Comments";
 import { mapApiFeedPostToFeedPost, type FeedPost, profileApi, postsApi } from "@/lib/api";
@@ -25,7 +27,6 @@ import { usePageMeta } from "@/lib/seo";
 import Layout from "@/src/components/Layout";
 import KineticHeader from "@/src/components/KineticHeader";
 import VibeCard from "@/src/components/VibeCard";
-import { usePageMeta } from "@/lib/seo";
 
 function PlayerRouteWrapper() {
   const params = useParams();
@@ -295,6 +296,7 @@ export function AppRoutes() {
         <Route path="/post/:id" element={<PostDetailRoute />} />
 
         {/* Marketing / static */}
+        <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/live" element={<LivePage />} />
 
@@ -309,8 +311,8 @@ export function AppRoutes() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/profile" element={<ProfileSettingsPage />} />
 
-        {/* Studio - single-page shell handles internal tabs */}
-        <Route path="/studio/*" element={<Navigate to="/post/new" replace />} />
+        {/* Studio - single-page shell handles internal tabs (experimental, direct URL only) */}
+        <Route path="/studio/*" element={<StudioIndex />} />
 
         {/* Moderation */}
         <Route path="/moderation/flagged" element={<FlaggedPostsPage />} />

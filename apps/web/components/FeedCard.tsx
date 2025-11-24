@@ -51,6 +51,7 @@ type PublicMetadata = {
 
 export interface FeedCardProps {
   post: FeedPost;
+  onTagClick?: (tag: string) => void;
 }
 
 // Global concurrency cap for active previews
@@ -89,7 +90,7 @@ function resolveRunnerOrigins(capsuleId?: string, artifactId?: string | null): s
   return Array.from(origins);
 }
 
-export function FeedCard({ post }: FeedCardProps) {
+export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const navigate = useNavigate();
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -928,11 +929,16 @@ export function FeedCard({ post }: FeedCardProps) {
 
         {/* Tags */}
         {post.tags && post.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
+          <div className="mt-2 flex flex-wrap gap-2">
             {post.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="text-xs text-muted-foreground">
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onTagClick?.(tag)}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-muted/80"
+              >
                 #{tag}
-              </span>
+              </button>
             ))}
           </div>
         )}

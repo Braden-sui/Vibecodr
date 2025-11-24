@@ -67,12 +67,13 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
   }, [draft?.files]);
 
   const entryPath = draft?.manifest?.entry;
-  const entryExists = Boolean(
-    entryPath && draft?.files?.some((file) => file.path === entryPath)
-  );
-  const hasBundle = Boolean(draft?.files && draft.files.length > 0);
+  const hasServerBundle = Boolean(draft?.capsuleId);
+  const entryExists =
+    hasServerBundle ||
+    Boolean(entryPath && draft?.files?.some((file) => file.path === entryPath));
+  const hasBundle = hasServerBundle || Boolean(draft?.files && draft.files.length > 0);
   const canPublish =
-    Boolean(draft?.manifest) && draft?.validationStatus === "valid" && hasBundle && entryExists;
+    Boolean(draft?.manifest) && draft?.validationStatus !== "invalid" && hasBundle && entryExists;
 
   const bundleLimitBytes = 25 * 1024 * 1024;
 
@@ -80,23 +81,25 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
     {
       name: "Manifest Valid",
       status:
-        draft?.validationStatus === "valid"
-          ? "pass"
-          : draft?.validationStatus === "invalid"
-            ? "fail"
+        draft?.validationStatus === "invalid"
+          ? "fail"
+          : draft?.validationStatus === "valid"
+            ? "pass"
             : "warning",
       message:
-        draft?.validationStatus === "valid"
-          ? "Schema matches @vibecodr/shared manifest definition"
-          : draft?.validationStatus === "invalid"
-            ? "Fix manifest errors before publishing"
-            : "Import a ZIP bundle to validate the manifest",
+        draft?.validationStatus === "invalid"
+          ? "Fix manifest errors before publishing"
+          : draft?.validationStatus === "valid"
+            ? "Schema matches @vibecodr/shared manifest definition"
+            : "Validate by importing or running compile in Files/Params",
     },
     {
       name: "Entry File",
       status: entryExists ? "pass" : hasBundle ? "fail" : "warning",
       message: entryExists
-        ? `${entryPath} is present`
+        ? hasServerBundle
+          ? "Entry verified on server"
+          : `${entryPath} is present`
         : entryPath
           ? `Missing ${entryPath} in bundle`
           : "Set an entry field in manifest.json",
@@ -104,12 +107,16 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
     {
       name: "Bundle Size",
       status:
-        totalSize === 0
-          ? "warning"
-          : totalSize > bundleLimitBytes
+        hasServerBundle
+          ? "pass"
+          : totalSize === 0
             ? "warning"
-            : "pass",
-      message: `${formatBytes(totalSize)} of 25 MB (Free tier limit)`,
+            : totalSize > bundleLimitBytes
+              ? "warning"
+              : "pass",
+      message: hasServerBundle
+        ? "Bundle stored on server"
+        : `${formatBytes(totalSize)} of 25 MB (Free tier limit)`,
     },
   ];
 
@@ -141,12 +148,16 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
   };
 
   const handlePublish = async () => {
-    if (!draft?.manifest || !draft.files || draft.files.length === 0) {
-      setError("Import a ZIP file before publishing.");
+    if (!draft?.manifest) {
+      setError("Import a capsule before publishing.");
       return;
     }
-    if (draft.validationStatus !== "valid") {
+    if (draft.validationStatus === "invalid") {
       setError("Fix manifest validation errors before publishing.");
+      return;
+    }
+    if (!hasBundle) {
+      setError("Import a ZIP file or load a capsule before publishing.");
       return;
     }
     if (!entryExists) {
@@ -186,6 +197,87 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
 
     try {
       const init = await buildAuthInit();
+
+      if (hasServerBundle && draft.capsuleId) {
+        const patchRes = await capsulesApi.updateManifest(draft.capsuleId, manifestToPublish, init);
+        if (patchRes.status === 401) {
+          redirectToSignIn();
+          return;
+        }
+        if (!patchRes.ok) {
+          const body = (await safeJson(patchRes)) as { error?: string };
+          throw new Error(body?.error || "Failed to save manifest before publish");
+        }
+        const patchJson = (await patchRes.json()) as { warnings?: Array<{ path: string; message: string }> };
+        if (patchJson.warnings?.length) {
+          setCapsuleWarnings(patchJson.warnings.map((w) => `${w.path}: ${w.message}`));
+        }
+
+        const compileRes = await capsulesApi.compileDraft(draft.capsuleId, init);
+        if (compileRes.status === 401) {
+          redirectToSignIn();
+          return;
+        }
+        if (!compileRes.ok) {
+          const body = (await safeJson(compileRes)) as { error?: string };
+          throw new Error(body?.error || "Failed to compile draft before publish");
+        }
+        const compiled = (await compileRes.json()) as {
+          artifactId?: string;
+          runtimeVersion?: string | null;
+          bundleDigest?: string | null;
+          bundleSizeBytes?: number | null;
+        };
+        onDraftChange((prev) =>
+          prev
+            ? {
+                ...prev,
+                buildStatus: "success",
+                validationStatus: "valid",
+                artifact: compiled.artifactId
+                  ? {
+                      id: compiled.artifactId,
+                      runtimeVersion: compiled.runtimeVersion ?? null,
+                      bundleDigest: compiled.bundleDigest ?? null,
+                      bundleSizeBytes: compiled.bundleSizeBytes ?? null,
+                      status: "ready",
+                    }
+                  : prev.artifact ?? null,
+              }
+            : prev
+        );
+
+        setPublishStatus("uploading");
+        const publishResponse = await capsulesApi.publishDraft(draft.capsuleId, init);
+        if (publishResponse.status === 401) {
+          redirectToSignIn();
+          return;
+        }
+        const publishJson = (await publishResponse.json()) as {
+          postId?: string;
+          warnings?: string[];
+          error?: string;
+        };
+        if (!publishResponse.ok || !publishJson?.postId) {
+          throw new Error(publishJson?.error || "Failed to publish capsule");
+        }
+        if (publishJson.warnings?.length) {
+          setCapsuleWarnings((prev) => [...prev, ...publishJson.warnings!]);
+        }
+        onDraftChange((prev) =>
+          prev
+            ? {
+                ...prev,
+                publishStatus: "success",
+                postId: publishJson.postId,
+              }
+            : prev
+        );
+        setPublishStatus("success");
+        navigate(`/post/${publishJson.postId}`);
+        return;
+      }
+
       const manifestFile = new File(
         [JSON.stringify(manifestToPublish, null, 2)],
         "manifest.json",
@@ -197,9 +289,11 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
       formData.append("manifest", manifestFile);
 
       draft.files
-        .filter((entry) => entry.path.toLowerCase() !== "manifest.json")
+        ?.filter((entry) => entry.path.toLowerCase() !== "manifest.json" && entry.file)
         .forEach((entry) => {
-          formData.append(entry.path, entry.file, entry.path);
+          if (entry.file) {
+            formData.append(entry.path, entry.file, entry.path);
+          }
         });
 
       const publishResponse = await capsulesApi.publish(formData, init);
@@ -564,4 +658,12 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+async function safeJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }

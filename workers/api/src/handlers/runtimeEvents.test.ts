@@ -6,6 +6,7 @@ import {
   consumeRateLimit,
   getClientIp,
   getRateLimitBucketCount,
+  buildRuntimeAnalyticsSummary,
   recordRuntimeEvent,
   RUNTIME_EVENT_MAX_BYTES,
   RUNTIME_EVENT_MAX_CLOCK_SKEW_MS,
@@ -238,5 +239,70 @@ describe("runtimeEvents recordRuntimeEvent", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe("buildRuntimeAnalyticsSummary", () => {
+  const makeSummaryEnv = (prepare: ReturnType<typeof vi.fn>): Env => ({
+    DB: { prepare } as unknown as D1Database,
+    R2: {} as any,
+    vibecodr_analytics_engine: { writeDataPoint: vi.fn() } as any,
+    ALLOWLIST_HOSTS: "[]",
+    CLERK_JWT_ISSUER: "test-issuer",
+    BUILD_COORDINATOR_DURABLE: {} as any,
+    ARTIFACT_COMPILER_DURABLE: {} as any,
+  });
+
+  it("returns aggregated metrics for admin dashboards", async () => {
+    const prepareResponses = [
+      { results: [{ event_name: "runtime_error", total: 5, last_hour: 2, last_day: 5 }] }, // summary
+      {
+        results: [
+          {
+            event_name: "runtime_error",
+            capsule_id: "caps-1",
+            artifact_id: "art-1",
+            runtime_type: "react-jsx",
+            runtime_version: "v0.1.0",
+            code: "E-VIBECODR-2101",
+            message: "boom",
+            properties: '{"status":"failed"}',
+            created_at: 123,
+          },
+        ],
+      }, // recent
+      { results: [{ event_name: "runtime_error", errors: 5 }] }, // errorsLastDay
+      { results: [{ capsule_id: "caps-1", total: 10, errors: 4, error_rate: 0.4 }] }, // capsuleErrorRates
+      { results: [{ capsule_id: "caps-1", total_runs: 6, completed_runs: 5, failed_runs: 1 }] }, // run volumes
+      { results: [{ killed: 2, completed: 8 }] }, // runtime outcomes
+      { results: [{ total: 3, five_xx: 1 }] }, // artifacts health
+      { results: [{ total: 5, five_xx: 2 }] }, // runs health
+      { results: [{ total: 1, five_xx: 0 }] }, // import health
+    ];
+
+    const prepare = vi.fn((_sql: string) => {
+      const next = prepareResponses.shift() ?? { results: [] };
+      return {
+        bind: (..._args: any[]) => ({
+          all: vi.fn().mockResolvedValue(next),
+        }),
+      };
+    });
+
+    const env = makeSummaryEnv(prepare);
+    const snapshot = await buildRuntimeAnalyticsSummary(env, { limit: 10, recentLimit: 5, nowMs: 1_000_000 });
+
+    expect(snapshot.snapshotTime).toBe(1_000_000);
+    expect(snapshot.summary[0]).toMatchObject({ eventName: "runtime_error", total: 5, lastHour: 2, lastDay: 5 });
+    expect(snapshot.recent[0]).toMatchObject({ capsuleId: "caps-1", code: "E-VIBECODR-2101" });
+    expect(snapshot.errorsLastDay).toEqual([{ eventName: "runtime_error", count: 5 }]);
+    expect(snapshot.capsuleErrorRates[0]).toMatchObject({ capsuleId: "caps-1", errors: 4, total: 10, errorRate: 0.4 });
+    expect(snapshot.capsuleRunVolumes[0]).toMatchObject({ totalRuns: 6, completedRuns: 5, failedRuns: 1 });
+    expect(snapshot.health.runtime).toMatchObject({ killed: 2, completed: 8 });
+    expect(snapshot.health.runtime.killRate).toBeCloseTo(0.2);
+    expect(snapshot.health.endpoints.runs.rate).toBeCloseTo(0.4);
+    expect(snapshot.health.endpoints.artifacts.rate).toBeCloseTo(1 / 3);
+    expect(snapshot.health.endpoints["import"].rate).toBe(0);
+    expect(prepare).toHaveBeenCalledTimes(9);
   });
 });

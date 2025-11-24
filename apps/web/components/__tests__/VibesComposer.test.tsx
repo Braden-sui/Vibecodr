@@ -458,4 +458,48 @@ describe("VibesComposer inline code mode", () => {
     expect(createArgs.capsuleId).toBe("caps123");
     expect(createArgs.coverKey).toBe("covers/user1/cover.png");
   });
+
+  it("attaches selected tags to app posts", async () => {
+    capsulesPublishMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, capsuleId: "caps-tagged" }),
+    } as any);
+
+    postsApiCreateMock.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "post-tagged" }),
+    } as any);
+
+    const user = userEvent.setup();
+    render(<VibesComposer />);
+
+    const codeChip = screen.getByRole("button", { name: "Code" });
+    await user.click(codeChip);
+
+    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    fireEvent.focus(titleInput);
+    fireEvent.change(titleInput, { target: { value: "Tagged inline app" } });
+
+    const codeTextarea = await screen.findByPlaceholderText(
+      /Write your app code here\. HTML stays client-static/i
+    );
+    fireEvent.change(codeTextarea, { target: { value: "<div>Tagged</div>" } });
+
+    const aiTagButton = await screen.findByRole("button", { name: "#ai" });
+    await user.click(aiTagButton);
+
+    const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
+    await waitFor(() => expect(shareButton).not.toBeDisabled());
+    await user.click(shareButton);
+
+    await waitFor(() => {
+      expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
+      expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = postsApiCreateMock.mock.calls[0][0] as any;
+    expect(payload.tags).toEqual(["ai"]);
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { motion } from "motion/react";
 import { useAuth } from "@clerk/clerk-react";
@@ -15,10 +15,11 @@ import { ApiFeedResponseSchema } from "@vibecodr/shared";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import KineticHeader from "@/src/components/KineticHeader";
 import { usePageMeta } from "@/lib/seo";
+import { featuredTags, normalizeTag, normalizeTagList } from "@/lib/tags";
 
 type FeedMode = "latest" | "following" | "foryou";
 
-const availableTags = ["ai", "visualization", "canvas", "cli", "webcontainer", "data"];
+const availableTags = featuredTags;
 
 export default function FeedPage() {
   const [mode, setMode] = useState<FeedMode>("latest");
@@ -32,6 +33,7 @@ export default function FeedPage() {
   const { getToken } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const prefersReducedMotion = useReducedMotion();
+  const tokenRef = useRef(getToken);
   const origin =
     typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
       ? window.location.origin
@@ -45,6 +47,10 @@ export default function FeedPage() {
     siteName: "Vibecodr",
     canonicalUrl: origin || undefined,
   });
+
+  useEffect(() => {
+    tokenRef.current = getToken;
+  }, [getToken]);
 
   // Keep searchTerm synced with URL `q`
   useEffect(() => {
@@ -63,13 +69,13 @@ export default function FeedPage() {
     }
 
     const tagsParam = searchParams.get("tags");
-    const nextTags =
-      tagsParam && tagsParam.trim()
-        ? tagsParam
+    const nextTags = tagsParam && tagsParam.trim()
+      ? normalizeTagList(
+        tagsParam
           .split(",")
           .map((tag: string) => tag.trim())
-          .filter(Boolean)
-        : [];
+      )
+      : [];
 
     const tagsChanged =
       nextTags.length !== selectedTags.length ||
@@ -91,8 +97,9 @@ export default function FeedPage() {
       try {
         const t0 = performance.now();
         let init: RequestInit = { signal: controller.signal };
-        if (typeof getToken === "function") {
-          const token = await getToken({ template: "workers" });
+        const tokenProvider = tokenRef.current;
+        if (typeof tokenProvider === "function") {
+          const token = await tokenProvider({ template: "workers" });
           if (token) {
             init = {
               ...init,
@@ -204,7 +211,7 @@ export default function FeedPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [mode, searchTerm, selectedTags, getToken]);
+  }, [mode, searchTerm, selectedTags]);
 
   useEffect(() => {
     if (!searchTerm) return;
@@ -256,7 +263,7 @@ export default function FeedPage() {
           viewport={{ once: true, amount: 0.3 }}
           transition={{ delay: prefersReducedMotion ? 0 : Math.min(0.05 * index, 0.25), duration: 0.35 }}
         >
-          <FeedCard post={post} />
+          <FeedCard post={post} onTagClick={handleFeedTagClick} />
         </motion.div>
       ))}
     </div>
@@ -294,18 +301,45 @@ export default function FeedPage() {
     trackEvent("feed_mode_changed", { mode: nextMode });
   };
 
-  const toggleTag = (tag: string) => {
-    const exists = selectedTags.includes(tag);
-    const nextTags = exists ? selectedTags.filter((t) => t !== tag) : [...selectedTags, tag];
-    trackEvent("feed_tag_toggle", { tag, active: !exists, mode });
-
+  const applyTagFilters = (tags: string[], modeOverride?: FeedMode) => {
+    const normalized = normalizeTagList(tags);
+    const nextMode: FeedMode = modeOverride ?? (mode === "following" ? "foryou" : mode);
     const nextParams = new URLSearchParams(searchParams);
-    if (nextTags.length > 0) {
-      nextParams.set("tags", nextTags.join(","));
+
+    if (normalized.length > 0) {
+      nextParams.set("tags", normalized.join(","));
     } else {
       nextParams.delete("tags");
     }
+
+    if (nextMode === "latest") {
+      nextParams.delete("mode");
+    } else {
+      nextParams.set("mode", nextMode);
+    }
+
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const toggleTag = (tag: string) => {
+    const normalized = normalizeTag(tag);
+    if (!normalized) return;
+
+    const exists = selectedTags.includes(normalized);
+    const nextTags = exists ? selectedTags.filter((t) => t !== normalized) : [...selectedTags, normalized];
+    const targetMode: FeedMode = mode === "following" ? "latest" : mode;
+
+    trackEvent("feed_tag_toggle", { tag: normalized, active: !exists, mode: targetMode });
+    applyTagFilters(nextTags, targetMode);
+  };
+
+  const handleFeedTagClick = (tag: string) => {
+    const normalized = normalizeTag(tag);
+    if (!normalized) return;
+
+    const targetMode: FeedMode = mode === "latest" ? "latest" : "foryou";
+    trackEvent("feed_tag_clicked", { tag: normalized, mode: targetMode });
+    applyTagFilters([normalized], targetMode);
   };
 
   const emptyState = (
@@ -374,10 +408,19 @@ export default function FeedPage() {
                   {heroPost.stats?.runs ?? 0} runs
                 </span>
                 {heroTags.length > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1">
+                  <div className="inline-flex flex-wrap items-center gap-2">
                     <TagIcon className="h-3.5 w-3.5" />
-                    {heroTags.map((tag) => `#${tag}`).join(", ")}
-                  </span>
+                    {heroTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => handleFeedTagClick(tag)}
+                        className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 transition hover:bg-muted/80"
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -502,7 +545,9 @@ export default function FeedPage() {
                     <p className="text-sm text-muted-foreground">
                       Once you follow a creator, their new posts land here automatically.
                     </p>
-                    <Button variant="outline">Discover Vibecoders</Button>
+                    <Button variant="outline" asChild>
+                      <Link to="/discover">Discover Vibecoders</Link>
+                    </Button>
                   </div>
                 </div>
               )}
