@@ -5,6 +5,7 @@ import { act } from "react-dom/test-utils";
 import React from "react";
 import { MemoryRouter } from "react-router-dom";
 import PlayerPageClient from "./PlayerPageClient";
+import { resetRuntimeSlotsForTest } from "@/components/Player/runtimeBudgets";
 
 const playerShellPropsRef: { current: any } = { current: null };
 
@@ -16,6 +17,7 @@ const mockRunsStart = vi.fn().mockResolvedValue({
 const mockRunsComplete = vi.fn().mockResolvedValue({ ok: true });
 const mockAppendLogs = vi.fn().mockResolvedValue({ ok: true });
 const mockMapPost = vi.fn();
+const mockToast = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   postsApi: {
@@ -41,6 +43,10 @@ vi.mock("@/lib/handoff", () => ({
 
 vi.mock("@/lib/perf", () => ({
   budgeted: (_label: string, fn: () => void) => fn(),
+}));
+
+vi.mock("@/lib/toast", () => ({
+  toast: (...args: unknown[]) => mockToast(...args),
 }));
 
 vi.mock("@clerk/clerk-react", () => ({
@@ -88,6 +94,8 @@ describe("PlayerPageClient", () => {
     mockRunsComplete.mockClear();
     mockAppendLogs.mockClear();
     mockMapPost.mockClear();
+    mockToast.mockClear();
+    resetRuntimeSlotsForTest();
     mockPostsGet.mockReset();
     mockPostsGet.mockResolvedValue({
       ok: true,
@@ -169,5 +177,43 @@ describe("PlayerPageClient", () => {
     expect(playerShellPropsRef.current?.isRunning).toBe(false);
 
     unmount();
+  });
+
+  it("surfaces plan-aware messaging when run quota blocks start", async () => {
+    mockRunsStart.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        error: "Run quota exceeded",
+        code: "E-VIBECODR-0605",
+        plan: "free",
+        limits: { maxRuns: 5 },
+        runsThisMonth: 5,
+      }),
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/player/post-123"]}>
+        <PlayerPageClient postId="post-123" />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(mockPostsGet).toHaveBeenCalled());
+    await waitFor(() => expect(playerShellPropsRef.current).not.toBeNull());
+
+    await act(async () => {
+      playerShellPropsRef.current?.onReady?.();
+    });
+
+    await waitFor(() => expect(mockRunsStart).toHaveBeenCalled());
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    const payload = mockToast.mock.calls[mockToast.mock.calls.length - 1]?.[0];
+    expect(payload).toEqual(
+      expect.objectContaining({
+        title: expect.stringContaining("Free plan"),
+      })
+    );
+    expect(String(payload?.description ?? "")).toMatch(/free plan/i);
+    expect(mockRunsComplete).not.toHaveBeenCalled();
   });
 });

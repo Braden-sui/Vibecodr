@@ -46,16 +46,16 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!session) return;
 
     setIsSubmitting(true);
     setMessage("");
 
     try {
+      const sessionId = session?.id ?? "live-beta-general";
       const init = await buildAuthInit();
       const response = await liveApi.joinWaitlist(
         {
-          sessionId: session.id,
+          sessionId,
           email,
           handle,
           plan,
@@ -75,12 +75,9 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
         throw new Error(errorMessage);
       }
 
-      trackEvent("live_waitlist_submitted", {
-        sessionId: session.id,
-        plan,
-      });
+      trackEvent("live_waitlist_submitted", { sessionId, plan });
       resetForm();
-      setMessage("You&apos;re on the list. We&apos;ll email you as soon as slots open up.");
+      setMessage("You're on the list. We'll email you as soon as slots open up.");
     } catch (error) {
       console.error("Failed to join waitlist", error);
       const nextMessage =
@@ -106,7 +103,7 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
           <DialogDescription>
             {session
               ? `Reserve a spot for "${session.title}". Live minutes are limited while we scale Phase 5.`
-              : "Reserve a spot to showcase your projects live with pointer sync + chat. Demo your capsules, walk through features, or stream your coding process."}
+              : "Reserve a spot to showcase your projects live with pointer sync and chat. Demo your capsules, walk through features, or stream your coding process."}
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -146,7 +143,7 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
             </Select>
           </div>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Live minutes are included on Creator plans and above. We’ll nudge you if you’re close to your quota.
+            Live minutes are included on Creator plans and above. We'll nudge you if you're close to your quota.
           </div>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Submitting..." : "Join waitlist"}

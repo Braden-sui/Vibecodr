@@ -10,5 +10,5 @@ export async function onRequest(context: RuntimeContext): Promise<Response> {
   if (!shouldApplyRuntimeHeaders(context.request, response)) {
     return response;
   }
-  return applyRuntimeHeaders(response);
+  return applyRuntimeHeaders(response, context.request);
 }

@@ -48,16 +48,6 @@ function PrimaryNav() {
 
           <HighlightItem asChild>
             <Link
-              to="/live"
-              data-highlighted={isActive("/live") || undefined}
-              className="rounded-full px-3 py-2 text-sm hover:text-primary"
-            >
-              Live
-            </Link>
-          </HighlightItem>
-
-          <HighlightItem asChild>
-            <Link
               to="/pricing"
               data-highlighted={isActive("/pricing") || undefined}
               className="rounded-full px-3 py-2 text-sm hover:text-primary"

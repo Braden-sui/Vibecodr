@@ -60,7 +60,7 @@ export function LiveSessionCard({ session, onJoin }: Props) {
           <CardTitle className="text-xl">{session.title}</CardTitle>
           <CardDescription className="flex items-center gap-2 text-sm">
             <div className="h-6 w-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500" />
-            @{session.host.handle} · {session.host.plan.toUpperCase()} plan
+            @{session.host.handle} - {session.host.plan.toUpperCase()} plan
           </CardDescription>
         </div>
       </CardHeader>
@@ -90,7 +90,7 @@ export function LiveSessionCard({ session, onJoin }: Props) {
       </CardContent>
       <CardFooter className="justify-between">
         <p className="text-sm text-muted-foreground">
-          {session.waitlistOnly ? "Plan required · join the beta" : "Open to anyone with remix access"}
+          {session.waitlistOnly ? "Plan required - request an invite" : "Open to anyone with remix access"}
         </p>
         <Button onClick={handleJoin}>{session.status === "live" ? "Join live" : "Request invite"}</Button>
       </CardFooter>

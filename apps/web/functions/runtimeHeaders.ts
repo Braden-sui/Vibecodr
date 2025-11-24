@@ -1,6 +1,8 @@
 import securityHeaders from "../securityHeaders";
 
-const RUNTIME_PAGE_PATHS = [/^\/player(?:\/|$)/, /^\/e(?:\/|$)/];
+const PLAYER_PATH_PATTERN = /^\/player(?:\/|$)/;
+const EMBED_PATH_PATTERN = /^\/e(?:\/|$)/;
+const RUNTIME_PAGE_PATHS = [PLAYER_PATH_PATTERN, EMBED_PATH_PATTERN];
 
 function isHtmlResponse(response: Response): boolean {
   const contentType = response.headers.get("content-type") || "";
@@ -16,12 +18,14 @@ export function shouldApplyRuntimeHeaders(request: Request, response: Response):
   return isHtmlResponse(response) && isRuntimePage(request);
 }
 
-export function applyRuntimeHeaders(response: Response): Response {
+export function applyRuntimeHeadersForPath(response: Response, pathname: string): Response {
   const headers = new Headers(response.headers);
+  const allowEmbedding = EMBED_PATH_PATTERN.test(pathname);
+  const frameAncestors = allowEmbedding ? "*" : "'self'";
   const headerSet = securityHeaders.buildSecurityHeaders({
-    allowEmbedding: true,
-    frameAncestors: "*",
-    crossOriginEmbedderPolicy: null,
+    allowEmbedding,
+    frameAncestors,
+    crossOriginEmbedderPolicy: allowEmbedding ? null : undefined,
   });
 
   for (const header of headerSet) {
@@ -33,4 +37,9 @@ export function applyRuntimeHeaders(response: Response): Response {
     statusText: response.statusText,
     headers,
   });
+}
+
+export function applyRuntimeHeaders(response: Response, request?: Request): Response {
+  const pathname = request ? new URL(request.url).pathname : "/";
+  return applyRuntimeHeadersForPath(response, pathname);
 }

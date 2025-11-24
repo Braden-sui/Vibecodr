@@ -13,30 +13,40 @@ import type { CapsuleDraft } from "@/components/Studio/StudioShell";
 
 /**
  * Studio Index - Main vibe creation workflow
- * Tabs: Import → Params → Files → Publish
+ * Tabs: Import + Publish (Params/Files available with ?advanced=1)
  * Based on mvp-plan.md Phase 2 Studio requirements
  */
 export default function StudioIndex() {
   const [currentTab, setCurrentTab] = useState<StudioTab>("import");
   const [draft, setDraft] = useState<CapsuleDraft | undefined>();
+  const [showAdvanced] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("advanced") === "1";
+  });
 
   const handleTabChange = (tab: string) => {
-    if (tab === "import" || tab === "params" || tab === "files" || tab === "publish") {
+    if (tab === "import" || tab === "publish") {
+      setCurrentTab(tab);
+      return;
+    }
+    if (showAdvanced && (tab === "params" || tab === "files")) {
       setCurrentTab(tab);
     }
   };
 
   return (
     <div className="space-y-6">
-      <StudioNav currentTab={currentTab} onTabChange={handleTabChange} />
-      <StudioShell currentTab={currentTab} draft={draft} onTabChange={handleTabChange}>
+      <StudioNav currentTab={currentTab} onTabChange={handleTabChange} showAdvanced={showAdvanced} />
+      <StudioShell currentTab={currentTab} draft={draft} onTabChange={handleTabChange} showAdvanced={showAdvanced}>
         {currentTab === "import" && (
           <ImportTab draft={draft} onDraftChange={setDraft} onNavigateToTab={handleTabChange} />
         )}
-        {currentTab === "params" && <ParamsTab />}
-        {currentTab === "files" && <FilesTab />}
+        {currentTab === "params" && showAdvanced && <ParamsTab />}
+        {currentTab === "files" && showAdvanced && <FilesTab />}
         {currentTab === "publish" && <PublishTab draft={draft} onDraftChange={setDraft} />}
       </StudioShell>
     </div>
   );
 }
+

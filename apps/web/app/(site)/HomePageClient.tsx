@@ -329,108 +329,78 @@ export default function FeedPage() {
       animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
     >
-      {(heroPost || isHeroLoading) && (
+      <motion.section
+        className="rounded-3xl border bg-card/90 p-8 shadow-vc-soft"
+        initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
+        whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.35 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" />
+              Playable vibes
+            </div>
+            <KineticHeader text="Run, remix, and publish" className="text-4xl font-bold tracking-tight" />
+            <p className="text-lg text-muted-foreground">
+              Ship a runnable demo without setup. Test it inline, tweak params, and share the embed in minutes.
+            </p>
+          </div>
+          <Button asChild size="lg" className="self-start lg:self-auto">
+            <Link to="/post/new">Start a vibe</Link>
+          </Button>
+        </div>
+      </motion.section>
+
+      {heroPost && (
         <motion.section
-          className="relative z-10 overflow-hidden rounded-3xl vc-surface p-8"
-          initial={prefersReducedMotion ? undefined : { opacity: 0, y: 16 }}
+          className="rounded-2xl border bg-card/80 p-6 shadow-sm"
+          initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
           whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.4 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="absolute inset-0 opacity-90" aria-hidden />
-          <div className="absolute inset-x-10 top-0 h-40 bg-vc-glow blur-3xl" aria-hidden />
-          <div className="relative grid items-center gap-8 lg:grid-cols-[1.3fr_1fr]">
-            {heroPost ? (
-              <>
-                <div className="space-y-4">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700 shadow-sm backdrop-blur-sm dark:bg-white/10 dark:text-indigo-100">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Featured vibe
-                  </div>
-                  <KineticHeader text={heroPost.title} className="text-3xl font-bold leading-tight tracking-tight md:text-4xl" />
-                  <p className="max-w-3xl text-lg text-muted-foreground">
-                    {heroPost.description ?? "Run it inline, tweak params, and remix instantly."}
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild size="lg">
-                      <Link to={heroHref}>Run featured vibe</Link>
-                    </Button>
-                    <Button asChild variant="outline" size="lg">
-                      <Link to="/post/new">Create your own</Link>
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/60 px-3 py-1 backdrop-blur-sm dark:border-white/10 dark:bg-white/10">
-                      <Play className="h-4 w-4" />
-                      <span>{heroPost.stats?.runs ?? 0} runs</span>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/60 px-3 py-1 backdrop-blur-sm dark:border-white/10 dark:bg-white/10">
-                      <Sparkles className="h-4 w-4 text-amber-500" />
-                      <span>Remix-ready</span>
-                    </div>
-                    {heroTags.length > 0 && (
-                      <div className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/60 px-3 py-1 backdrop-blur-sm dark:border-white/10 dark:bg-white/10">
-                        <TagIcon className="h-3.5 w-3.5" />
-                        <span>{heroTags.map((tag) => `#${tag}`).join(" / ")}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="relative">
-                  <div className="vc-surface relative overflow-hidden rounded-2xl border shadow-vc-soft-lg">
-                    <div className="aspect-video w-full bg-gradient-to-br from-indigo-200/70 via-white to-emerald-100/70 dark:from-indigo-900/50 dark:via-slate-900 dark:to-emerald-900/40" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(96,165,250,0.25),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(234,179,8,0.2),transparent_40%)]" />
-                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-muted-foreground backdrop-blur-sm">
-                      <span className="truncate">
-                        {heroPost.type === "app" ? "Runs inline / sandboxed" : "Report / remixable"}
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 text-[10px] uppercase tracking-wide text-emerald-700 shadow-sm dark:bg-white/10 dark:text-emerald-100">
-                        <Sparkles className="h-3 w-3" />
-                        live preview
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-4">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700 shadow-sm backdrop-blur-sm dark:bg-white/10 dark:text-indigo-100">
-                    <Sparkles className="h-3.5 w-3.5 animate-spin" />
-                    Loading featured vibe
-                  </div>
-                  <div className="h-10 w-3/4 rounded-lg bg-white/70 shadow-sm backdrop-blur-sm dark:bg-white/10" />
-                  <div className="space-y-2">
-                    <div className="h-5 w-11/12 rounded bg-white/60 backdrop-blur-sm dark:bg-white/10" />
-                    <div className="h-5 w-10/12 rounded bg-white/50 backdrop-blur-sm dark:bg-white/10" />
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button size="lg" disabled className="pointer-events-none">
-                      Loading vibe...
-                    </Button>
-                    <Button asChild variant="outline" size="lg">
-                      <Link to="/post/new">Create your own</Link>
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/60 px-3 py-1 backdrop-blur-sm dark:border-white/10 dark:bg-white/10">
-                      <Play className="h-4 w-4" />
-                      <span>Loading runs...</span>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/60 px-3 py-1 backdrop-blur-sm dark:border-white/10 dark:bg-white/10">
-                      <Sparkles className="h-4 w-4 text-amber-500" />
-                      <span>Remix-ready</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="relative">
-                  <div className="vc-surface relative overflow-hidden rounded-2xl border shadow-vc-soft-lg">
-                    <div className="aspect-video w-full bg-gradient-to-br from-indigo-200/60 via-white to-emerald-100/60 dark:from-indigo-900/40 dark:via-slate-900 dark:to-emerald-900/30" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(96,165,250,0.2),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(234,179,8,0.16),transparent_40%)]" />
-                  </div>
-                </div>
-              </>
-            )}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Featured vibe</div>
+              <h2 className="text-2xl font-semibold leading-tight">{heroPost.title}</h2>
+              <p className="text-sm text-muted-foreground">
+                {heroPost.description ?? "Open it inline, remix, and publish your own take."}
+              </p>
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1">
+                  <Play className="h-3.5 w-3.5" />
+                  {heroPost.stats?.runs ?? 0} runs
+                </span>
+                {heroTags.length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1">
+                    <TagIcon className="h-3.5 w-3.5" />
+                    {heroTags.map((tag) => `#${tag}`).join(", ")}
+                  </span>
+                )}
+              </div>
+            </div>
+            <Button asChild size="sm">
+              <Link to={heroHref}>Open featured vibe</Link>
+            </Button>
+          </div>
+        </motion.section>
+      )}
+
+      {isHeroLoading && !heroPost && (
+        <motion.section
+          className="rounded-2xl border bg-card/80 p-6 shadow-sm"
+          initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
+          whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="space-y-3">
+            <div className="h-4 w-24 rounded bg-muted" />
+            <div className="h-6 w-2/3 rounded bg-muted" />
+            <div className="h-4 w-full rounded bg-muted" />
+            <div className="h-4 w-3/4 rounded bg-muted" />
           </div>
         </motion.section>
       )}
@@ -547,7 +517,7 @@ export default function FeedPage() {
                 <Sparkles className="h-6 w-6 text-amber-600 dark:text-amber-200" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold">For You Beta</h3>
+                <h3 className="text-lg font-semibold">For You</h3>
                 <p className="text-sm text-muted-foreground">
                   Blends recency, remix velocity, and similar params so you see vibes you'll actually run.
                 </p>

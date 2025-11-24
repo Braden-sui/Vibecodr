@@ -674,8 +674,18 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         let reason = `status=${response.status}`;
         let errorCode: string | undefined;
         let limit: number | undefined;
+        let plan: string | undefined;
+        let runsUsed: number | null = null;
+        let maxRuns: number | null = null;
         try {
-          const body = (await response.json()) as { reason?: string; code?: string; limit?: number };
+          const body = (await response.json()) as {
+            reason?: string;
+            code?: string;
+            limit?: number;
+            plan?: string;
+            limits?: { maxRuns?: number };
+            runsThisMonth?: number;
+          };
           if (typeof body?.reason === "string") {
             reason = body.reason;
           }
@@ -684,6 +694,15 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           }
           if (typeof body?.limit === "number") {
             limit = body.limit;
+          }
+          if (typeof body?.plan === "string") {
+            plan = body.plan;
+          }
+          if (typeof body?.runsThisMonth === "number") {
+            runsUsed = body.runsThisMonth;
+          }
+          if (typeof body?.limits?.maxRuns === "number") {
+            maxRuns = body.limits.maxRuns;
           }
           if (response.status === 429) {
             if (errorCode === "E-VIBECODR-0608") {
@@ -695,9 +714,48 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
                 variant: "error",
               });
             } else {
+              const planLabel = (() => {
+                switch (plan) {
+                  case "free":
+                    return "Free";
+                  case "creator":
+                    return "Creator";
+                  case "pro":
+                    return "Pro";
+                  case "team":
+                    return "Team";
+                  default:
+                    return null;
+                }
+              })();
+              const usageSummary =
+                runsUsed != null && maxRuns != null
+                  ? `${runsUsed}/${maxRuns} runs this month`
+                  : null;
+              const planAwareDescription = (() => {
+                if (plan === "free") {
+                  return [
+                    "You are out of run time on the free plan.",
+                    usageSummary ? `You have used ${usageSummary}.` : null,
+                    "Upgrade to keep running vibes.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                }
+                if (planLabel) {
+                  return [
+                    `You have reached the ${planLabel} plan run quota.`,
+                    usageSummary ? `You have used ${usageSummary}.` : null,
+                    "Upgrade to unlock more runtime.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                }
+                return body?.reason ?? "Monthly run quota exceeded. Try again after upgrading your plan.";
+              })();
               toast({
-                title: "Run limit reached",
-                description: body?.reason ?? "Monthly run quota exceeded. Try again after upgrading your plan.",
+                title: planLabel ? `${planLabel} plan limit reached` : "Run limit reached",
+                description: planAwareDescription,
                 variant: "error",
               });
             }

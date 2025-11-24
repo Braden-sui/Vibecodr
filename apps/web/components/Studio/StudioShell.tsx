@@ -42,6 +42,7 @@ export interface StudioShellProps {
   currentTab: StudioTab;
   draft?: CapsuleDraft;
   onTabChange?: (tab: string) => void;
+  showAdvanced?: boolean;
 }
 
 /**
@@ -49,7 +50,8 @@ export interface StudioShellProps {
  * Provides tab navigation and validation status display
  * Based on mvp-plan.md Studio section
  */
-export function StudioShell({ children, currentTab, draft, onTabChange }: StudioShellProps) {
+export function StudioShell({ children, currentTab, draft, onTabChange, showAdvanced = false }: StudioShellProps) {
+  const showAdvancedTabs = showAdvanced || currentTab === "params" || currentTab === "files";
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
       {/* Header with Status */}
@@ -112,22 +114,26 @@ export function StudioShell({ children, currentTab, draft, onTabChange }: Studio
               <Upload className="mr-2 h-4 w-4" />
               Import
             </TabsTrigger>
-            <TabsTrigger
-              value="params"
-              className="relative h-14 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent"
-              disabled={!draft?.manifest}
-            >
-              <Sliders className="mr-2 h-4 w-4" />
-              Params
-            </TabsTrigger>
-            <TabsTrigger
-              value="files"
-              className="relative h-14 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent"
-              disabled={!draft?.manifest}
-            >
-              <FileCode className="mr-2 h-4 w-4" />
-              Files
-            </TabsTrigger>
+            {showAdvancedTabs && (
+              <TabsTrigger
+                value="params"
+                className="relative h-14 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+                disabled={!draft?.manifest}
+              >
+                <Sliders className="mr-2 h-4 w-4" />
+                Params
+              </TabsTrigger>
+            )}
+            {showAdvancedTabs && (
+              <TabsTrigger
+                value="files"
+                className="relative h-14 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+                disabled={!draft?.manifest}
+              >
+                <FileCode className="mr-2 h-4 w-4" />
+                Files
+              </TabsTrigger>
+            )}
             <TabsTrigger
               value="publish"
               className="relative h-14 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent"

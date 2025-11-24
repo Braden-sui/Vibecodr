@@ -2,7 +2,7 @@ import React from "react";
 import { UserButton, useUser } from "@clerk/clerk-react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Home, Zap, Radio, Settings, User, Code2 } from "lucide-react";
+import { Home, Settings, User, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -25,9 +25,7 @@ const Sidebar = ({ open, onClose }: SidebarProps) => {
 
     const navItems = [
         { icon: Home, label: "Home", path: "/" },
-        { icon: Zap, label: "Trending", path: "/trending" },
-        { icon: Radio, label: "Live", path: "/live" },
-        { icon: Code2, label: "Snippets", path: "/snippets" },
+        { icon: Code2, label: "Share a vibe", path: "/post/new" },
         { icon: User, label: "Profile", path: profilePath },
         { icon: Settings, label: "Settings", path: "/settings" },
     ];
