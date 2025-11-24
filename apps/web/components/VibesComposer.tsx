@@ -108,7 +108,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   // Auto-detect GitHub URLs in text input
   const handleTextChange = (value: string) => {
     setTitle(value);
-    
+
     // Auto-detect GitHub URL
     const githubPattern = /https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+/i;
     if (githubPattern.test(value) && mode === "status") {
@@ -505,12 +505,12 @@ mount.render(React.createElement(UserApp));
           },
           capsule: effectiveCapsuleId
             ? {
-                id: effectiveCapsuleId,
-                runner: "client-static",
-                capabilities: undefined,
-                params: undefined,
-                artifactId: null,
-              }
+              id: effectiveCapsuleId,
+              runner: "client-static",
+              capabilities: undefined,
+              params: undefined,
+              artifactId: null,
+            }
             : null,
           coverKey: type === "app" ? coverKey ?? null : null,
           tags: [],
@@ -663,474 +663,474 @@ mount.render(React.createElement(UserApp));
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       className={className}
     >
-      <Card className={cn("mb-6 overflow-hidden rounded-2xl shadow-vc-soft", className)}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Share a Vibe</h2>
-        </div>
-      </CardHeader>
+      <Card className={cn("mb-6 overflow-hidden rounded-2xl vc-surface bg-transparent shadow-none", className)}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Share a Vibe</h2>
+          </div>
+        </CardHeader>
 
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Mode Selector */}
-          {!isExpanded && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant={mode === "status" ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleModeChange("status")}
-              >
-                Status
-              </Button>
-              <Button
-                type="button"
-                variant={mode === "github" ? "default" : "outline"}
-                size="sm"
-                className="gap-1"
-                onClick={() => handleModeChange("github")}
-              >
-                <Github className="h-3 w-3" />
-                GitHub
-              </Button>
-              <Button
-                type="button"
-                variant={mode === "zip" ? "default" : "outline"}
-                size="sm"
-                className="gap-1"
-                onClick={() => handleModeChange("zip")}
-              >
-                <Upload className="h-3 w-3" />
-                ZIP
-              </Button>
-              <Button
-                type="button"
-                variant={mode === "code" ? "default" : "outline"}
-                size="sm"
-                className="gap-1"
-                onClick={() => handleModeChange("code")}
-              >
-                <Code className="h-3 w-3" />
-                Code
-              </Button>
-            </div>
-          )}
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Mode Selector */}
+            {!isExpanded && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={mode === "status" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleModeChange("status")}
+                >
+                  Status
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === "github" ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => handleModeChange("github")}
+                >
+                  <Github className="h-3 w-3" />
+                  GitHub
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === "zip" ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => handleModeChange("zip")}
+                >
+                  <Upload className="h-3 w-3" />
+                  ZIP
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === "code" ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => handleModeChange("code")}
+                >
+                  <Code className="h-3 w-3" />
+                  Code
+                </Button>
+              </div>
+            )}
 
-          {/* Main Input */}
-          <div className="space-y-2">
-            <Input
-              placeholder={
-                mode === "github"
-                  ? "https://github.com/user/repo"
-                  : mode === "status"
-                    ? "What's your vibe?"
-                    : "Title for your vibe"
-              }
-              value={mode === "github" && !isExpanded ? githubUrl : title}
-              onChange={(e) => {
-                if (mode === "github" && !isExpanded) {
-                  setGithubUrl(e.target.value);
-                } else {
-                  handleTextChange(e.target.value);
+            {/* Main Input */}
+            <div className="space-y-2">
+              <Input
+                placeholder={
+                  mode === "github"
+                    ? "https://github.com/user/repo"
+                    : mode === "status"
+                      ? "What's your vibe?"
+                      : "Title for your vibe"
                 }
-              }}
-              onFocus={() => setIsExpanded(true)}
-              disabled={isSubmitting || isImporting}
-            />
+                value={mode === "github" && !isExpanded ? githubUrl : title}
+                onChange={(e) => {
+                  if (mode === "github" && !isExpanded) {
+                    setGithubUrl(e.target.value);
+                  } else {
+                    handleTextChange(e.target.value);
+                  }
+                }}
+                onFocus={() => setIsExpanded(true)}
+                disabled={isSubmitting || isImporting}
+              />
 
-            {isExpanded && (
-              <>
-                {mode !== "status" && (
-                  <Textarea
-                    placeholder="Add more details (optional)"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={3}
-                    disabled={isSubmitting || isImporting}
-                  />
-                )}
-
-                {/* Inline Code Section */}
-                {mode === "code" && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center gap-2">
-                      <Code className="h-4 w-4" />
-                      <span className="text-sm font-medium">Inline App Code</span>
-                    </div>
+              {isExpanded && (
+                <>
+                  {mode !== "status" && (
                     <Textarea
-                      placeholder="Write your app code here. HTML stays client-static; JS/TSX runs in the sandboxed runtime."
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      rows={10}
+                      placeholder="Add more details (optional)"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={3}
                       disabled={isSubmitting || isImporting}
                     />
+                  )}
 
-                    {/* Advanced manifest controls */}
-                    <div className="mt-3 space-y-3 border-t pt-3">
-                      <div>
-                        <p className="text-sm font-medium">Advanced (optional)</p>
-                        <p className="text-xs text-muted-foreground">
-                          Configure basic capabilities and a simple parameter for this app.
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Outbound network access is disabled until premium VM tiers launch.
-                        </p>
+                  {/* Inline Code Section */}
+                  {mode === "code" && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center gap-2">
+                        <Code className="h-4 w-4" />
+                        <span className="text-sm font-medium">Inline App Code</span>
                       </div>
+                      <Textarea
+                        placeholder="Write your app code here. HTML stays client-static; JS/TSX runs in the sandboxed runtime."
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        rows={10}
+                        disabled={isSubmitting || isImporting}
+                      />
 
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <Label htmlFor="inline-code-storage" className="text-xs font-medium">
-                            Allow storage
-                          </Label>
+                      {/* Advanced manifest controls */}
+                      <div className="mt-3 space-y-3 border-t pt-3">
+                        <div>
+                          <p className="text-sm font-medium">Advanced (optional)</p>
                           <p className="text-xs text-muted-foreground">
-                            Enable IndexedDB access for this app.
+                            Configure basic capabilities and a simple parameter for this app.
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Outbound network access is disabled until premium VM tiers launch.
                           </p>
                         </div>
-                        <Switch
-                          id="inline-code-storage"
-                          checked={allowStorage}
-                          onCheckedChange={(checked) => setAllowStorage(Boolean(checked))}
-                          disabled={isSubmitting || isImporting}
-                        />
-                      </div>
 
-                      <div className="mt-2 space-y-2 border-t pt-3">
                         <div className="flex items-center justify-between gap-4">
                           <div className="space-y-1">
-                            <span className="text-xs font-medium">Parameter (optional)</span>
+                            <Label htmlFor="inline-code-storage" className="text-xs font-medium">
+                              Allow storage
+                            </Label>
                             <p className="text-xs text-muted-foreground">
-                              Expose a single slider to control your app.
+                              Enable IndexedDB access for this app.
                             </p>
                           </div>
                           <Switch
-                            id="inline-code-param"
-                            checked={enableParam}
-                            onCheckedChange={(checked) => setEnableParam(Boolean(checked))}
+                            id="inline-code-storage"
+                            checked={allowStorage}
+                            onCheckedChange={(checked) => setAllowStorage(Boolean(checked))}
                             disabled={isSubmitting || isImporting}
                           />
                         </div>
 
-                        {enableParam && (
-                          <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div className="mt-2 space-y-2 border-t pt-3">
+                          <div className="flex items-center justify-between gap-4">
                             <div className="space-y-1">
-                              <Label htmlFor="inline-code-param-label" className="text-xs font-medium">
-                                Label
-                              </Label>
-                              <Input
-                                id="inline-code-param-label"
-                                value={paramLabel}
-                                onChange={(e) => setParamLabel(e.target.value)}
-                                disabled={isSubmitting || isImporting}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label htmlFor="inline-code-param-default" className="text-xs font-medium">
-                                Default
-                              </Label>
-                              <Input
-                                id="inline-code-param-default"
-                                type="number"
-                                value={paramDefault}
-                                onChange={(e) => setParamDefault(Number(e.target.value) || 0)}
-                                disabled={isSubmitting || isImporting}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label htmlFor="inline-code-param-min" className="text-xs font-medium">
-                                Min
-                              </Label>
-                              <Input
-                                id="inline-code-param-min"
-                                type="number"
-                                value={paramMin}
-                                onChange={(e) => setParamMin(Number(e.target.value) || 0)}
-                                disabled={isSubmitting || isImporting}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label htmlFor="inline-code-param-max" className="text-xs font-medium">
-                                Max
-                              </Label>
-                              <Input
-                                id="inline-code-param-max"
-                                type="number"
-                                value={paramMax}
-                                onChange={(e) => setParamMax(Number(e.target.value) || 0)}
-                                disabled={isSubmitting || isImporting}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <Label htmlFor="inline-code-param-step" className="text-xs font-medium">
-                                Step
-                              </Label>
-                              <Input
-                                id="inline-code-param-step"
-                                type="number"
-                                value={paramStep}
-                                onChange={(e) => setParamStep(Number(e.target.value) || 1)}
-                                disabled={isSubmitting || isImporting}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {/* GitHub Import Section */}
-                {mode === "github" && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center gap-2">
-                      <Github className="h-4 w-4" />
-                      <span className="text-sm font-medium">Import from GitHub</span>
-                    </div>
-                    <Input
-                      placeholder="https://github.com/user/repo"
-                      value={githubUrl}
-                      onChange={(e) => setGithubUrl(e.target.value)}
-                      disabled={isImporting || hasImportedCapsule}
-                    />
-                    {!hasImportedCapsule && (
-                      <Button
-                        type="button"
-                        onClick={handleGithubImport}
-                        disabled={!githubUrl.trim() || isImporting}
-                        size="sm"
-                        className="gap-2"
-                      >
-                        {isImporting ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Importing...
-                          </>
-                        ) : (
-                          "Import Repository"
-                        )}
-                      </Button>
-                    )}
-                    {importError && (
-                      <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-                        <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                        <span>{importError}</span>
-                      </div>
-                    )}
-                    {hasImportedCapsule && (
-                      <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
-                        <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                        <span>Repository imported successfully</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ZIP Upload Section */}
-                {mode === "zip" && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center gap-2">
-                      <Upload className="h-4 w-4" />
-                      <span className="text-sm font-medium">Upload ZIP</span>
-                    </div>
-                    <input
-                      ref={zipInputRef}
-                      type="file"
-                      accept=".zip"
-                      onChange={handleZipSelect}
-                      className="hidden"
-                    />
-                    {!zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => zipInputRef.current?.click()}
-                        disabled={isImporting}
-                      >
-                        Select ZIP File
-                      </Button>
-                    )}
-                    {zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
-                      <div className="flex items-center justify-between rounded-md bg-muted p-2">
-                        <span className="text-sm">{zipFile.name}</span>
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            onClick={handleZipImport}
-                            disabled={isImporting}
-                            size="sm"
-                            className="gap-2"
-                          >
-                            {isImporting ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Importing...
-                              </>
-                            ) : (
-                              "Import"
-                            )}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={clearZip}
-                            disabled={isImporting}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    {importError && mode === "zip" && (
-                      <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-                        <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                        <span>{importError}</span>
-                      </div>
-                    )}
-                    {hasImportedCapsule && capsuleSource === "zip" && (
-                      <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
-                        <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                        <span>ZIP imported successfully</span>
-                      </div>
-                    )}
-                    {zipSummary && (
-                      <div className="space-y-2 rounded-md border p-3 text-xs">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium">{zipSummary.fileName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatBytes(zipSummary.totalSize)}
-                            </p>
-                          </div>
-                          <Button variant="ghost" size="sm" onClick={resetZipImport}>
-                            Replace ZIP
-                          </Button>
-                        </div>
-                        {zipManifestWarnings.length > 0 && (
-                          <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
-                            <p className="text-xs font-medium">Manifest warnings</p>
-                            {zipManifestWarnings.slice(0, 4).map((warning, index) => (
-                              <p key={`${warning.path}-${index}`}>
-                                <span className="font-mono">{warning.path}</span>: {warning.message}
+                              <span className="text-xs font-medium">Parameter (optional)</span>
+                              <p className="text-xs text-muted-foreground">
+                                Expose a single slider to control your app.
                               </p>
-                            ))}
+                            </div>
+                            <Switch
+                              id="inline-code-param"
+                              checked={enableParam}
+                              onCheckedChange={(checked) => setEnableParam(Boolean(checked))}
+                              disabled={isSubmitting || isImporting}
+                            />
                           </div>
-                        )}
-                        {zipPublishWarnings.length > 0 && (
-                          <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
-                            <p className="text-xs font-medium">Publish warnings</p>
-                            {zipPublishWarnings.map((warning, index) => (
-                              <p key={`${warning}-${index}`}>{warning}</p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
-                {/* Image Upload Section (cover for app vibes) */}
-                {hasImportedCapsule && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="h-4 w-4" />
-                      <span className="text-sm font-medium">Add Image</span>
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                    />
-                    {!imagePreview && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isSubmitting || isUploadingCover}
-                      >
-                        Select Image
-                      </Button>
-                    )}
-                    {imagePreview && (
-                      <div className="space-y-2">
-                        <div className="relative aspect-video w-full overflow-hidden rounded-md">
-                          <img
-                            src={imagePreview ?? ""}
-                            alt="Preview"
-                            className="h-full w-full object-cover"
-                          />
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="icon"
-                            className="absolute right-2 top-2"
-                            onClick={clearImage}
-                            disabled={isSubmitting || isUploadingCover}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
+                          {enableParam && (
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                              <div className="space-y-1">
+                                <Label htmlFor="inline-code-param-label" className="text-xs font-medium">
+                                  Label
+                                </Label>
+                                <Input
+                                  id="inline-code-param-label"
+                                  value={paramLabel}
+                                  onChange={(e) => setParamLabel(e.target.value)}
+                                  disabled={isSubmitting || isImporting}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="inline-code-param-default" className="text-xs font-medium">
+                                  Default
+                                </Label>
+                                <Input
+                                  id="inline-code-param-default"
+                                  type="number"
+                                  value={paramDefault}
+                                  onChange={(e) => setParamDefault(Number(e.target.value) || 0)}
+                                  disabled={isSubmitting || isImporting}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="inline-code-param-min" className="text-xs font-medium">
+                                  Min
+                                </Label>
+                                <Input
+                                  id="inline-code-param-min"
+                                  type="number"
+                                  value={paramMin}
+                                  onChange={(e) => setParamMin(Number(e.target.value) || 0)}
+                                  disabled={isSubmitting || isImporting}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="inline-code-param-max" className="text-xs font-medium">
+                                  Max
+                                </Label>
+                                <Input
+                                  id="inline-code-param-max"
+                                  type="number"
+                                  value={paramMax}
+                                  onChange={(e) => setParamMax(Number(e.target.value) || 0)}
+                                  disabled={isSubmitting || isImporting}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="inline-code-param-step" className="text-xs font-medium">
+                                  Step
+                                </Label>
+                                <Input
+                                  id="inline-code-param-step"
+                                  type="number"
+                                  value={paramStep}
+                                  onChange={(e) => setParamStep(Number(e.target.value) || 1)}
+                                  disabled={isSubmitting || isImporting}
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
-              </>
+                    </div>
+                  )}
+                  {/* GitHub Import Section */}
+                  {mode === "github" && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center gap-2">
+                        <Github className="h-4 w-4" />
+                        <span className="text-sm font-medium">Import from GitHub</span>
+                      </div>
+                      <Input
+                        placeholder="https://github.com/user/repo"
+                        value={githubUrl}
+                        onChange={(e) => setGithubUrl(e.target.value)}
+                        disabled={isImporting || hasImportedCapsule}
+                      />
+                      {!hasImportedCapsule && (
+                        <Button
+                          type="button"
+                          onClick={handleGithubImport}
+                          disabled={!githubUrl.trim() || isImporting}
+                          size="sm"
+                          className="gap-2"
+                        >
+                          {isImporting ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Importing...
+                            </>
+                          ) : (
+                            "Import Repository"
+                          )}
+                        </Button>
+                      )}
+                      {importError && (
+                        <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+                          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                          <span>{importError}</span>
+                        </div>
+                      )}
+                      {hasImportedCapsule && (
+                        <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
+                          <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                          <span>Repository imported successfully</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ZIP Upload Section */}
+                  {mode === "zip" && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center gap-2">
+                        <Upload className="h-4 w-4" />
+                        <span className="text-sm font-medium">Upload ZIP</span>
+                      </div>
+                      <input
+                        ref={zipInputRef}
+                        type="file"
+                        accept=".zip"
+                        onChange={handleZipSelect}
+                        className="hidden"
+                      />
+                      {!zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => zipInputRef.current?.click()}
+                          disabled={isImporting}
+                        >
+                          Select ZIP File
+                        </Button>
+                      )}
+                      {zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
+                        <div className="flex items-center justify-between rounded-md bg-muted p-2">
+                          <span className="text-sm">{zipFile.name}</span>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              onClick={handleZipImport}
+                              disabled={isImporting}
+                              size="sm"
+                              className="gap-2"
+                            >
+                              {isImporting ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Importing...
+                                </>
+                              ) : (
+                                "Import"
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={clearZip}
+                              disabled={isImporting}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {importError && mode === "zip" && (
+                        <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+                          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                          <span>{importError}</span>
+                        </div>
+                      )}
+                      {hasImportedCapsule && capsuleSource === "zip" && (
+                        <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
+                          <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                          <span>ZIP imported successfully</span>
+                        </div>
+                      )}
+                      {zipSummary && (
+                        <div className="space-y-2 rounded-md border p-3 text-xs">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium">{zipSummary.fileName}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatBytes(zipSummary.totalSize)}
+                              </p>
+                            </div>
+                            <Button variant="ghost" size="sm" onClick={resetZipImport}>
+                              Replace ZIP
+                            </Button>
+                          </div>
+                          {zipManifestWarnings.length > 0 && (
+                            <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                              <p className="text-xs font-medium">Manifest warnings</p>
+                              {zipManifestWarnings.slice(0, 4).map((warning, index) => (
+                                <p key={`${warning.path}-${index}`}>
+                                  <span className="font-mono">{warning.path}</span>: {warning.message}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          {zipPublishWarnings.length > 0 && (
+                            <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                              <p className="text-xs font-medium">Publish warnings</p>
+                              {zipPublishWarnings.map((warning, index) => (
+                                <p key={`${warning}-${index}`}>{warning}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Image Upload Section (cover for app vibes) */}
+                  {hasImportedCapsule && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center gap-2">
+                        <ImageIcon className="h-4 w-4" />
+                        <span className="text-sm font-medium">Add Image</span>
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                      />
+                      {!imagePreview && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isSubmitting || isUploadingCover}
+                        >
+                          Select Image
+                        </Button>
+                      )}
+                      {imagePreview && (
+                        <div className="space-y-2">
+                          <div className="relative aspect-video w-full overflow-hidden rounded-md">
+                            <img
+                              src={imagePreview ?? ""}
+                              alt="Preview"
+                              className="h-full w-full object-cover"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute right-2 top-2"
+                              onClick={clearImage}
+                              disabled={isSubmitting || isUploadingCover}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Error Display */}
+            {error && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
             )}
-          </div>
 
-          {/* Error Display */}
-          {error && (
-            <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          {isExpanded && (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={resetComposer}
-                disabled={isSubmitting || isImporting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={
-                  isSubmitting ||
-                  isImporting ||
-                  isUploadingCover ||
-                  !title.trim() ||
-                  (mode === "github" && !hasImportedCapsule && !!githubUrl.trim()) ||
-                  (mode === "zip" && !!zipFile && !hasImportedCapsule)
-                }
-                className="gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sharing...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Share Vibe
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-        </form>
-      </CardContent>
-    </Card>
+            {/* Action Buttons */}
+            {isExpanded && (
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetComposer}
+                  disabled={isSubmitting || isImporting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={
+                    isSubmitting ||
+                    isImporting ||
+                    isUploadingCover ||
+                    !title.trim() ||
+                    (mode === "github" && !hasImportedCapsule && !!githubUrl.trim()) ||
+                    (mode === "zip" && !!zipFile && !hasImportedCapsule)
+                  }
+                  className="gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sharing...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Share Vibe
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </form>
+        </CardContent>
+      </Card>
     </motion.section>
   );
 }

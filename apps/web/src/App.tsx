@@ -22,7 +22,7 @@ function PrimaryNav() {
 
   return (
     <motion.header
-      className="sticky top-0 z-30 border-b bg-vc-shell bg-cover backdrop-blur-xl"
+      className="sticky top-0 z-30 vc-surface border-x-0 border-t-0"
       initial={prefersReducedMotion ? false : { y: -12, opacity: 0 }}
       animate={prefersReducedMotion ? false : { y: 0, opacity: 1 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}

@@ -66,9 +66,9 @@ export default function FeedPage() {
     const nextTags =
       tagsParam && tagsParam.trim()
         ? tagsParam
-            .split(",")
-            .map((tag: string) => tag.trim())
-            .filter(Boolean)
+          .split(",")
+          .map((tag: string) => tag.trim())
+          .filter(Boolean)
         : [];
 
     const tagsChanged =
@@ -331,7 +331,7 @@ export default function FeedPage() {
     >
       {(heroPost || isHeroLoading) && (
         <motion.section
-          className="relative z-10 overflow-hidden rounded-3xl border bg-vc-hero p-8 shadow-vc-soft"
+          className="relative z-10 overflow-hidden rounded-3xl vc-surface p-8"
           initial={prefersReducedMotion ? undefined : { opacity: 0, y: 16 }}
           whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.4 }}
@@ -497,7 +497,7 @@ export default function FeedPage() {
       </motion.section>
 
       <Tabs value={mode} onValueChange={handleModeChange}>
-        <TabsList className="grid w-full max-w-md grid-cols-3">
+        <TabsList className="grid w-full max-w-md grid-cols-3 vc-surface p-1">
           <TabsTrigger value="latest">Latest</TabsTrigger>
           <TabsTrigger value="following">Following</TabsTrigger>
           <TabsTrigger value="foryou" className="gap-2">
