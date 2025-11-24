@@ -6,6 +6,7 @@ import { useReducedMotion } from "@/lib/useReducedMotion";
 // INVARIANT: Background stays behind all content, respects reduced-motion, and cleans up WebGL resources.
 const EtheriaSkyBackground = () => {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const gradientRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -22,6 +23,11 @@ const EtheriaSkyBackground = () => {
     if (!hasWebGLSupport) {
       return;
     }
+
+    let scrollY = window.scrollY || window.pageYOffset || 0;
+    const handleScroll = () => {
+      scrollY = window.scrollY || window.pageYOffset || 0;
+    };
 
     const { clientWidth, clientHeight } = mount;
     const width = Math.max(1, clientWidth || window.innerWidth);
@@ -163,13 +169,27 @@ const EtheriaSkyBackground = () => {
 
     // --- Animation ---
     let frameId: number;
+    const baseCameraY = camera.position.y;
+    const baseCameraZ = camera.position.z;
     const animate = () => {
       frameId = requestAnimationFrame(animate);
 
       const time = performance.now() * 0.001;
+      const viewportHeight = window.innerHeight || height;
+      const scrollNorm = viewportHeight > 0 ? Math.min(2, scrollY / viewportHeight) : 0;
 
-      // Drift the entire cloud system slowly
-      cloudSystem.rotation.y = time * 0.02;
+      // Scroll-driven camera descent and forward movement
+      camera.position.y = baseCameraY - scrollNorm * 200;
+      camera.position.z = baseCameraZ - scrollNorm * 150;
+
+      // Drift the entire cloud system slowly with a bit of scroll parallax
+      cloudSystem.rotation.y = time * 0.02 + scrollNorm * 0.15;
+
+      // Subtle gradient shift tied to scroll
+      if (gradientRef.current) {
+        const gradientOffset = scrollNorm * 40;
+        gradientRef.current.style.transform = `translate3d(0, ${gradientOffset}px, 0)`;
+      }
 
       renderer.render(scene, camera);
     };
@@ -185,9 +205,11 @@ const EtheriaSkyBackground = () => {
     };
 
     window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll);
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll);
       cancelAnimationFrame(frameId);
 
       geometry.dispose();
@@ -204,7 +226,10 @@ const EtheriaSkyBackground = () => {
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
       {/* Background Gradient Layer */}
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]" />
+      <div
+        ref={gradientRef}
+        className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]"
+      />
 
       {/* Subtle overlay for depth */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,rgba(255,255,255,0.15),transparent_45%)] opacity-60 mix-blend-screen" />
