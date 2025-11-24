@@ -94,6 +94,9 @@ const EtheriaSkyBackground = () => {
     const color3 = new THREE.Color("#123a88"); // Deep Blue (Shadow side)
     const sunDirection = new THREE.Vector3(-0.5, 0.5, 0.8).normalize(); // Direction of the "sun"
 
+    // We'll store initial random offsets to maintain "shape" during recycling
+    const randomOffsets = new Float32Array(cloudCount * 3);
+
     // Create clusters of clouds
     const clusterCount = 40;
     for (let i = 0; i < cloudCount; i++) {
@@ -101,23 +104,32 @@ const EtheriaSkyBackground = () => {
       const clusterIdx = Math.floor((i / cloudCount) * clusterCount);
 
       // Cluster centers (randomly placed in the sky volume)
-      // We use a pseudo-random offset based on clusterIdx to keep them consistent but scattered
       const clusterX = (Math.sin(clusterIdx * 123.45) * 800);
       const clusterY = (Math.cos(clusterIdx * 678.90) * 200) + 50;
-      const clusterZ = (Math.sin(clusterIdx * 321.01) * 400) - 200;
+      // We spread Z widely for the "infinite" tunnel feel
+      const clusterZ = (Math.sin(clusterIdx * 321.01) * 800) - 400; 
 
       // Particle offset within the cluster (ellipsoid shape)
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.random() * 120;
       const heightOffset = (Math.random() - 0.5) * 60;
 
-      const x = clusterX + Math.cos(angle) * radius;
-      const y = clusterY + heightOffset + Math.sin(angle) * radius * 0.4;
-      const z = clusterZ + Math.sin(angle) * radius * 0.8;
+      const offsetX = Math.cos(angle) * radius;
+      const offsetY = heightOffset + Math.sin(angle) * radius * 0.4;
+      const offsetZ = Math.sin(angle) * radius * 0.8;
+
+      const x = clusterX + offsetX;
+      const y = clusterY + offsetY;
+      const z = clusterZ + offsetZ;
 
       positions[i * 3] = x;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = z;
+
+      // Store offsets relative to "center" for recycling logic
+      randomOffsets[i * 3] = offsetX; // not strictly used but good for reshaping
+      randomOffsets[i * 3 + 1] = offsetY;
+      randomOffsets[i * 3 + 2] = offsetZ;
 
       // --- Lighting Simulation ---
       // Determine "facing" relative to sun for this particle within its cluster
@@ -149,18 +161,19 @@ const EtheriaSkyBackground = () => {
       sizes[i] = 150 + Math.random() * 100;
     }
 
-    // Store original positions for parallax calculations
-    const originalPositions = new Float32Array(positions);
+    // Store original positions for parallax calculations (base reference)
+    // We act on a "virtual" Z position that loops
+    const originalPositions = new Float32Array(cloudCount * 3);
+    const originalZ = new Float32Array(cloudCount);
+    for(let i=0; i<cloudCount; i++) {
+        originalPositions[i * 3] = positions[i * 3];
+        originalPositions[i * 3 + 1] = positions[i * 3 + 1];
+        originalPositions[i * 3 + 2] = positions[i * 3 + 2];
+        originalZ[i] = positions[i * 3 + 2];
+    }
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    // We can use a custom attribute or just uniforms, but for standard PointsMaterial, 
-    // we can't easily vary size per vertex without a custom shader. 
-    // However, standard PointsMaterial `size` is global. 
-    // To get varying sizes efficiently without custom shaders, we can use the 'size' uniform 
-    // and rely on perspective attenuation. 
-    // If we really need per-particle size control, we'd need ShaderMaterial. 
-    // For now, let's stick to a global size that looks good with perspective.
 
     const material = new THREE.PointsMaterial({
       size: 180,
@@ -183,43 +196,71 @@ const EtheriaSkyBackground = () => {
 
       const time = performance.now() * 0.001;
       const scrollY = window.scrollY;
-      const scrollProgress = Math.min(scrollY / window.innerHeight, 5);
-
-      // Drift the entire cloud system slowly (rotation)
-      cloudSystem.rotation.y = time * 0.02;
-
-      // --- Scroll-driven Parallax & Descent ---
       
-      // 1. Move Camera forward/down
-      // Base Z is 800. We move closer as we scroll.
-      // Factor 1.5 gives a decent speed of "descent"
-      camera.position.z = 800 - (scrollY * 1.5);
+      // 1. Infinite Camera Movement
+      // Instead of moving the camera to a limit, we move it continuously.
+      // However, precision issues happen if camera.z gets too small/large.
+      // Better approach: Move the world (clouds) relative to the camera.
       
-      // 2. Shift Gradient Background
+      // "Virtual" camera Z based on scroll. 
+      // 800 is start. We move deeper (negative) as we scroll.
+      // We multiply scrollY to make the journey feel faster/longer.
+      const virtualCameraZ = 800 - (scrollY * 1.5);
+      
+      // 2. Shift Gradient Background (Cyclical)
       if (gradientRef.current) {
-        // Move the background up slightly to simulate descending
-        gradientRef.current.style.transform = `translateY(${scrollY * -0.4}px)`;
+        // Loop the background translation every 2000px of scroll to avoid running out
+        const gradientLoop = (scrollY * 0.4) % 1000; 
+        gradientRef.current.style.transform = `translateY(-${gradientLoop}px)`;
       }
 
-      // 3. Part Clouds Horizontally
-      // We iterate positions to apply the curtain effect
+      // 3. Infinite Cloud Looping
       const currentPositions = geometry.attributes.position.array as Float32Array;
-      
+      const tunnelLength = 2000; // Depth of the cloud tunnel
+      const tunnelStart = 800;   // Where particles "start" relative to camera (behind)
+      const tunnelEnd = -1200;   // Where particles "end" (far distance)
+
       for (let i = 0; i < cloudCount; i++) {
         const ix = i * 3;
-        const ox = originalPositions[ix];
-        const oz = originalPositions[ix + 2];
         
-        // Parallax Strength:
-        // Particles with higher Z (closer to 800) are "closer" and should move faster.
-        // oz ranges roughly from -600 to +300.
-        // (oz + 800) / 1000 gives a range of ~0.2 to ~1.1
-        const proximity = (oz + 800) / 1000;
-        const parallaxStrength = Math.max(0.1, proximity * proximity * 3.5); // Non-linear for dramatic foreground effect
+        // Calculate relative Z distance to the "virtual camera"
+        // We add a modulo to create the loop.
+        // The particle's "true" Z is its original Z minus the camera's travel distance.
+        let relativeZ = originalZ[i] - virtualCameraZ;
+        
+        // Wrap the Z coordinate within the tunnel length to create infinity
+        // We want z to be in range [tunnelEnd, tunnelStart]
+        // If it goes > tunnelStart (behind camera), wrap to tunnelEnd (far front)
+        // If it goes < tunnelEnd (too far), wrap to tunnelStart (behind)
+        
+        // Shift relativeZ so 0 is at tunnelEnd
+        const offsetZ = relativeZ - tunnelEnd;
+        const wrappedZ = ((offsetZ % tunnelLength) + tunnelLength) % tunnelLength;
+        const finalZ = wrappedZ + tunnelEnd;
+        
+        // Parallax / Cloud Parting Logic
+        // As particles get closer to the camera (finalZ approaches 800), they spread out (X/Y)
+        // Normalized progress from 0 (far) to 1 (near)
+        const progress = (finalZ - tunnelEnd) / tunnelLength; 
+        // Exponential spread for "flying through" effect
+        const spread = 1 + (progress * progress * progress * 2);
 
-        // Move outward from center (0)
-        // As scroll increases, push x further out
-        currentPositions[ix] = ox + (ox * scrollProgress * 0.8 * parallaxStrength);
+        // Base positions
+        // We re-derive X/Y from cluster logic or just noise to keep it deterministic but shifting
+        // Here we just use the original X/Y and expand them
+        // To make it feel "procedural", we can add a slight rotation or wave based on scroll
+        const baseX = (Math.sin(i * 0.1 + time * 0.05) * 50) + (originalPositions[ix] || positions[ix]); 
+        // We don't strictly store originalPositions X/Y because we overwrite them in the loop, 
+        // so we can just use the current buffer or re-calc. 
+        // Ideally, we should have stored original X/Y. Let's fix that briefly above by using a separate buffer if needed.
+        // But for "virtually never ending", reusing the buffer with a math function is fine.
+        
+        // Let's actually rely on the `originalPositions` we defined earlier but missed populating fully in the previous block.
+        // Let's assume originalPositions[ix] is valid static data.
+        
+        currentPositions[ix] = originalPositions[ix] * spread;
+        currentPositions[ix + 1] = originalPositions[ix+1] * spread;
+        currentPositions[ix + 2] = finalZ;
       }
       
       geometry.attributes.position.needsUpdate = true;
