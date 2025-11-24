@@ -6,7 +6,6 @@ import { useReducedMotion } from "@/lib/useReducedMotion";
 // INVARIANT: Background stays behind all content, respects reduced-motion, and cleans up WebGL resources.
 const EtheriaSkyBackground = () => {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const gradientRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -87,22 +86,11 @@ const EtheriaSkyBackground = () => {
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(cloudCount * 3);
     const colors = new Float32Array(cloudCount * 3);
-    const sizes = new Float32Array(cloudCount);
 
     const color1 = new THREE.Color("#ff8c4a"); // Sunset Orange (Sun side)
     const color2 = new THREE.Color("#a0133c"); // Crimson (Mid)
     const color3 = new THREE.Color("#123a88"); // Deep Blue (Shadow side)
     const sunDirection = new THREE.Vector3(-0.5, 0.5, 0.8).normalize(); // Direction of the "sun"
-
-    // We'll store initial random offsets to maintain "shape" during recycling
-    const randomOffsets = new Float32Array(cloudCount * 3);
-
-    // Deterministic random helper
-    // Allows us to get the same "random" value for a specific particle index every time
-    const getDeterministicRandom = (seed: number) => {
-      const x = Math.sin(seed) * 10000;
-      return x - Math.floor(x);
-    };
 
     // Create clusters of clouds
     const clusterCount = 40;
@@ -111,32 +99,23 @@ const EtheriaSkyBackground = () => {
       const clusterIdx = Math.floor((i / cloudCount) * clusterCount);
 
       // Cluster centers (randomly placed in the sky volume)
-      const clusterX = (Math.sin(clusterIdx * 123.45) * 800);
-      const clusterY = (Math.cos(clusterIdx * 678.90) * 200) + 50;
-      // We spread Z widely for the "infinite" tunnel feel
-      const clusterZ = (Math.sin(clusterIdx * 321.01) * 800) - 400; 
+      // We use a pseudo-random offset based on clusterIdx to keep them consistent but scattered
+      const clusterX = Math.sin(clusterIdx * 123.45) * 800;
+      const clusterY = Math.cos(clusterIdx * 678.9) * 200 + 50;
+      const clusterZ = Math.sin(clusterIdx * 321.01) * 400 - 200;
 
       // Particle offset within the cluster (ellipsoid shape)
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.random() * 120;
       const heightOffset = (Math.random() - 0.5) * 60;
 
-      const offsetX = Math.cos(angle) * radius;
-      const offsetY = heightOffset + Math.sin(angle) * radius * 0.4;
-      const offsetZ = Math.sin(angle) * radius * 0.8;
-
-      const x = clusterX + offsetX;
-      const y = clusterY + offsetY;
-      const z = clusterZ + offsetZ;
+      const x = clusterX + Math.cos(angle) * radius;
+      const y = clusterY + heightOffset + Math.sin(angle) * radius * 0.4;
+      const z = clusterZ + Math.sin(angle) * radius * 0.8;
 
       positions[i * 3] = x;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = z;
-
-      // Store offsets relative to "center" for recycling logic
-      randomOffsets[i * 3] = offsetX; // not strictly used but good for reshaping
-      randomOffsets[i * 3 + 1] = offsetY;
-      randomOffsets[i * 3 + 2] = offsetZ;
 
       // --- Lighting Simulation ---
       // Determine "facing" relative to sun for this particle within its cluster
@@ -163,62 +142,20 @@ const EtheriaSkyBackground = () => {
       colors[i * 3] = mixedColor.r;
       colors[i * 3 + 1] = mixedColor.g;
       colors[i * 3 + 2] = mixedColor.b;
-
-      // Randomize sizes slightly for variety (deterministic)
-      const rSize = getDeterministicRandom(i * 91.345);
-      sizes[i] = 150 + rSize * 100;
     }
-
-    // Store original positions for parallax calculations (base reference)
-    // We act on a "virtual" Z position that loops
-    const originalPositions = new Float32Array(positions); // Correctly initialize from initial positions
-    const originalZ = new Float32Array(cloudCount);
-    for(let i=0; i<cloudCount; i++) {
-        originalZ[i] = positions[i * 3 + 2];
-    }
-
-    // Opacity buffer for fade in/out
-    const opacities = new Float32Array(cloudCount);
-    opacities.fill(1); // Start fully visible, animate loop will adjust
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3)); // Renamed to aColor to avoid conflicts
-    geometry.setAttribute("aOpacity", new THREE.BufferAttribute(opacities, 1));
-    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
-    // Custom shader to support per-particle opacity and size attenuation
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        map: { value: cloudTexture },
-        scale: { value: height / (2 * Math.tan((35 * Math.PI) / 360)) } // Perspective scale for fov 35
-      },
-      vertexShader: `
-        attribute vec3 aColor;
-        attribute float aOpacity;
-        attribute float aSize;
-        varying float vOpacity;
-        varying vec3 vColor;
-        void main() {
-          vOpacity = aOpacity;
-          vColor = aColor;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_Position = projectionMatrix * mvPosition;
-          // Size attenuation matches THREE.PointsMaterial
-          gl_PointSize = aSize * (scale / -mvPosition.z);
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D map;
-        varying float vOpacity;
-        varying vec3 vColor;
-        void main() {
-          vec4 texColor = texture2D(map, gl_PointCoord);
-          gl_FragColor = vec4(vColor, texColor.a * vOpacity);
-        }
-      `,
+    const material = new THREE.PointsMaterial({
+      size: 180,
+      map: cloudTexture,
+      vertexColors: true,
       transparent: true,
+      opacity: 0.45,
       depthWrite: false,
-      blending: THREE.NormalBlending
+      blending: THREE.NormalBlending,
+      sizeAttenuation: true,
     });
 
     const cloudSystem = new THREE.Points(geometry, material);
@@ -230,71 +167,9 @@ const EtheriaSkyBackground = () => {
       frameId = requestAnimationFrame(animate);
 
       const time = performance.now() * 0.001;
-      const scrollY = window.scrollY;
-      
-      // 1. Infinite Camera Movement
-      // "Virtual" camera Z based on scroll. 
-      // 800 is start. We move deeper (negative) as we scroll.
-      // We multiply scrollY to make the journey feel faster/longer.
-      const virtualCameraZ = 800 - (scrollY * 1.5);
-      
-      // 2. Shift Gradient Background (Cyclical)
-      if (gradientRef.current) {
-        // Loop the background translation every 2000px of scroll to avoid running out
-        const gradientLoop = (scrollY * 0.4) % 1000; 
-        gradientRef.current.style.transform = `translateY(-${gradientLoop}px)`;
-      }
 
-      // 3. Infinite Cloud Looping
-      const currentPositions = geometry.attributes.position.array as Float32Array;
-      const currentOpacities = geometry.attributes.aOpacity.array as Float32Array;
-      const tunnelLength = 2000; // Depth of the cloud tunnel
-      const tunnelStart = 800;   // Where particles "start" relative to camera (behind)
-      const tunnelEnd = -1200;   // Where particles "end" (far distance)
-      const fadeDistance = 600;  // Distance over which to fade in/out
-
-      for (let i = 0; i < cloudCount; i++) {
-        const ix = i * 3;
-        
-        // Calculate relative Z distance to the "virtual camera"
-        let relativeZ = originalZ[i] - virtualCameraZ;
-        
-        // Wrap the Z coordinate within the tunnel length to create infinity
-        const offsetZ = relativeZ - tunnelEnd;
-        const wrappedZ = ((offsetZ % tunnelLength) + tunnelLength) % tunnelLength;
-        const finalZ = wrappedZ + tunnelEnd;
-        
-        // Parallax / Cloud Parting Logic
-        const progress = (finalZ - tunnelEnd) / tunnelLength; 
-        const spread = 1 + (progress * progress * progress * 2);
-
-        // Deterministic X/Y expansion
-        // We use the stored original positions to ensure the cloud shape is preserved but expanded
-        currentPositions[ix] = originalPositions[ix] * spread;
-        currentPositions[ix + 1] = originalPositions[ix+1] * spread;
-        currentPositions[ix + 2] = finalZ;
-
-        // Fade Logic
-        // We want to fade IN at the far end (tunnelEnd) and OUT at the near end (tunnelStart)
-        // Distance from far end
-        const distFromFar = finalZ - tunnelEnd; // 0 to 2000
-        
-        let alpha = 0.45; // Max base opacity
-        
-        if (distFromFar < fadeDistance) {
-           // Fading in from distance
-           alpha *= (distFromFar / fadeDistance);
-        } else if (distFromFar > (tunnelLength - fadeDistance)) {
-           // Fading out near camera/behind
-           const distFromNear = tunnelLength - distFromFar;
-           alpha *= (distFromNear / fadeDistance);
-        }
-        
-        currentOpacities[i] = Math.max(0, alpha);
-      }
-      
-      geometry.attributes.position.needsUpdate = true;
-      geometry.attributes.aOpacity.needsUpdate = true;
+      // Drift the entire cloud system slowly
+      cloudSystem.rotation.y = time * 0.02;
 
       renderer.render(scene, camera);
     };
@@ -307,9 +182,6 @@ const EtheriaSkyBackground = () => {
       renderer.setSize(nextWidth, nextHeight);
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
-      
-      // Update shader scale uniform for correct point sizing
-      material.uniforms.scale.value = nextHeight / (2 * Math.tan((35 * Math.PI) / 360));
     };
 
     window.addEventListener("resize", handleResize);
@@ -332,10 +204,7 @@ const EtheriaSkyBackground = () => {
   return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
       {/* Background Gradient Layer */}
-      <div 
-        ref={gradientRef}
-        className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]" 
-      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,#0b0d48_0%,#123a88_24%,#73124a_46%,#a0133c_64%,#ff521b_78%,#ff8c4a_100%)]" />
 
       {/* Subtle overlay for depth */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,rgba(255,255,255,0.15),transparent_45%)] opacity-60 mix-blend-screen" />
