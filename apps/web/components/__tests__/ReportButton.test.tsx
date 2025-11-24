@@ -246,11 +246,11 @@ describe("ReportButton", () => {
 
   it("should include optional details in submission", async () => {
     const user = userEvent.setup({ delay: null });
-    let capturedPayload: any;
-    let capturedInit: any;
-    reportMock.mockImplementationOnce(async (payload, init) => {
+    let capturedPayload: Record<string, unknown> | null = null;
+    let capturedInit: RequestInit | null = null;
+    reportMock.mockImplementationOnce(async (payload: Record<string, unknown>, init?: RequestInit) => {
       capturedPayload = payload;
-      capturedInit = init;
+      capturedInit = init ?? null;
       return {
         ok: true,
         status: 200,

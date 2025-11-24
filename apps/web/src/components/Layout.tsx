@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { motion } from "framer-motion";
-import LiquidBackground from "@/src/components/LiquidBackground";
+import EtheriaSkyBackground from "@/src/components/EtheriaSkyBackground";
 import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,7 @@ const Layout = () => {
 
     return (
         <div className="min-h-screen text-foreground font-sans selection:bg-accent/30">
-            <LiquidBackground />
+            <EtheriaSkyBackground />
 
             {/* Desktop Sidebar */}
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
