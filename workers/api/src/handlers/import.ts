@@ -6,7 +6,7 @@
 
 import JSZip from "jszip";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
-import type { Env, Handler } from "../index";
+import type { Env, Handler } from "../types";
 import { requireAuth, type AuthenticatedUser } from "../auth";
 import {
   sanitizeHtmlEntryIfNeeded,
@@ -21,10 +21,12 @@ import {
   getUserRunQuotaState,
   getUserStorageState,
   incrementStorageUsage,
+  type Plan,
 } from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
 import { uploadCapsuleBundle, deleteCapsuleBundle } from "../storage/r2";
 import { bundleWithEsbuild } from "../runtime/esbuildBundler";
+import { json } from "../lib/responses";
 
 interface AnalysisResult {
   entryPoint: string;
@@ -381,19 +383,11 @@ function getContentType(filename: string): string {
   return types[ext || ""] || "application/octet-stream";
 }
 
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
-
 function writeImportAnalytics(
   env: Env,
   payload: {
     outcome: "success" | "error";
-    plan?: string;
+    plan?: Plan;
     totalSize?: number;
     fileCount?: number;
     warnings?: number;
@@ -402,7 +396,7 @@ function writeImportAnalytics(
   }
 ) {
   try {
-    const analytics = (env as any).vibecodr_analytics_engine;
+    const analytics = env.vibecodr_analytics_engine;
     if (!analytics || typeof analytics.writeDataPoint !== "function") return;
     analytics.writeDataPoint({
       blobs: ["import", payload.outcome, payload.plan ?? "", payload.code ?? ""],

@@ -11,6 +11,7 @@ import { trackEvent } from "@/lib/analytics";
 import { liveApi } from "@/lib/api";
 import { useAuth } from "@clerk/clerk-react";
 import { redirectToSignIn } from "@/lib/client-auth";
+import { Plan, normalizePlan } from "@vibecodr/shared";
 
 interface Props {
   open: boolean;
@@ -21,7 +22,7 @@ interface Props {
 export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
   const [email, setEmail] = useState("");
   const [handle, setHandle] = useState("");
-  const [plan, setPlan] = useState<"free" | "creator" | "pro" | "team">("free");
+  const [plan, setPlan] = useState<Plan>(Plan.FREE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const { getToken } = useAuth();
@@ -40,7 +41,7 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
   const resetForm = () => {
     setEmail("");
     setHandle("");
-    setPlan("free");
+    setPlan(Plan.FREE);
     setMessage("");
   };
 
@@ -130,15 +131,15 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
           </div>
           <div className="space-y-2">
             <Label>Current plan</Label>
-            <Select value={plan} onValueChange={(value) => setPlan(value as typeof plan)}>
+            <Select value={plan} onValueChange={(value) => setPlan(normalizePlan(value, plan))}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="free">Free</SelectItem>
-                <SelectItem value="creator">Creator</SelectItem>
-                <SelectItem value="pro">Pro</SelectItem>
-                <SelectItem value="team">Team</SelectItem>
+                <SelectItem value={Plan.FREE}>Free</SelectItem>
+                <SelectItem value={Plan.CREATOR}>Creator</SelectItem>
+                <SelectItem value={Plan.PRO}>Pro</SelectItem>
+                <SelectItem value={Plan.TEAM}>Team</SelectItem>
               </SelectContent>
             </Select>
           </div>

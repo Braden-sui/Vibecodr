@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 import type { AuthenticatedUser } from "./auth";
 
 vi.mock("./auth", () => {
@@ -28,6 +28,9 @@ function makeDb(row: DbRow) {
           return state;
         },
         async all() {
+          if (query.startsWith("PRAGMA table_info(posts)")) {
+            return { results: [{ name: "visibility" }] };
+          }
           if (query.includes("FROM posts") && query.includes("WHERE p.id = ?")) {
             if (query.includes("p.quarantined")) {
               // Non-moderator path: quarantined posts should be filtered out by the query

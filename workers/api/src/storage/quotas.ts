@@ -1,48 +1,7 @@
-/**
- * Plan Quotas and Enforcement
- * Based on mvp-plan.md pricing section
- */
+import { PLAN_LIMITS, Plan, normalizePlan, type PlanLimits } from "@vibecodr/shared";
 
-export enum Plan {
-  FREE = "free",
-  CREATOR = "creator",
-  PRO = "pro",
-  TEAM = "team",
-}
-
-export interface PlanLimits {
-  maxBundleSize: number; // bytes
-  maxRuns: number; // per month
-  maxStorage: number; // bytes total
-  liveMinutes: number; // streaming minutes
-}
-
-export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
-  [Plan.FREE]: {
-    maxBundleSize: 25 * 1024 * 1024, // 25 MB
-    maxRuns: 5_000,
-    maxStorage: 1 * 1024 * 1024 * 1024, // 1 GB
-    liveMinutes: 0, // watch only
-  },
-  [Plan.CREATOR]: {
-    maxBundleSize: 25 * 1024 * 1024, // 25 MB
-    maxRuns: 50_000,
-    maxStorage: 10 * 1024 * 1024 * 1024, // 10 GB
-    liveMinutes: 0,
-  },
-  [Plan.PRO]: {
-    maxBundleSize: 100 * 1024 * 1024, // 100 MB
-    maxRuns: 250_000,
-    maxStorage: 50 * 1024 * 1024 * 1024, // 50 GB
-    liveMinutes: 2_500,
-  },
-  [Plan.TEAM]: {
-    maxBundleSize: 250 * 1024 * 1024, // 250 MB
-    maxRuns: 1_000_000,
-    maxStorage: 250 * 1024 * 1024 * 1024, // 250 GB
-    liveMinutes: 10_000,
-  },
-};
+export { PLAN_LIMITS, Plan };
+export type { PlanLimits };
 
 export interface QuotaUsage {
   bundleSize: number;
@@ -180,17 +139,13 @@ export async function getUserStorageState(
 
   const row = results?.[0] as
     | {
-        plan?: string;
+        plan?: unknown;
         storage_usage_bytes?: number;
         storage_version?: number;
       }
     | undefined;
 
-  const planValue = row?.plan;
-  const plan =
-    typeof planValue === "string" && Object.values(Plan).includes(planValue as Plan)
-      ? (planValue as Plan)
-      : Plan.FREE;
+  const plan = normalizePlan(row?.plan, Plan.FREE);
 
   return {
     plan,

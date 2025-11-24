@@ -1,9 +1,10 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import type { AuthenticatedUser } from "../auth";
 import { generateBundleHash, type CapsuleFile } from "../storage/r2";
 import type { Manifest } from "@vibecodr/shared/manifest";
+import { Plan, normalizePlan } from "@vibecodr/shared";
 import { publishCapsule, persistCapsuleBundle } from "./capsules";
 
 vi.mock("../auth", () => {
@@ -25,7 +26,7 @@ type CapsuleRecord = {
 };
 
 type MockDbState = {
-  plan: string;
+  plan: Plan;
   storageUsage: number;
   storageVersion: number;
   forceReservationConflict: boolean;
@@ -36,7 +37,7 @@ type MockDbState = {
 type TestEnv = Env & { __mockDbState: MockDbState };
 
 type CreateEnvOptions = {
-  plan?: string;
+  plan?: Plan;
   storageUsage?: number;
   storageVersion?: number;
   forceReservationConflict?: boolean;
@@ -51,7 +52,7 @@ type CreateEnvOptions = {
 
 function createEnv(options: CreateEnvOptions = {}): TestEnv {
   const dbState: MockDbState = {
-    plan: options.plan ?? "free",
+    plan: options.plan ?? Plan.FREE,
     storageUsage: options.storageUsage ?? 0,
     storageVersion: options.storageVersion ?? 0,
     forceReservationConflict: options.forceReservationConflict ?? false,
@@ -136,7 +137,9 @@ function createEnv(options: CreateEnvOptions = {}): TestEnv {
             }
             dbState.hasUserRow = true;
             dbState.plan =
-              typeof this.bindArgs?.[2] === "string" ? this.bindArgs[2] : dbState.plan;
+              typeof this.bindArgs?.[2] === "string"
+                ? normalizePlan(this.bindArgs[2], dbState.plan)
+                : dbState.plan;
             dbState.storageUsage =
               typeof this.bindArgs?.[3] === "number" ? this.bindArgs[3] : dbState.storageUsage;
             dbState.storageVersion =
@@ -303,42 +306,19 @@ function createEnv(options: CreateEnvOptions = {}): TestEnv {
 }
 
 function createPublishRequest(manifest: unknown, entryPath: string, entryContent: string): Request {
-  const manifestJson = JSON.stringify(manifest);
+  const manifestFile = new File([JSON.stringify(manifest)], "manifest.json", {
+    type: "application/json",
+  });
 
-  const manifestFile = {
-    async text() {
-      return manifestJson;
-    },
-  } as any;
+  const entryFile = new File([entryContent], entryPath, { type: "text/html" });
 
-  const encoder = new TextEncoder();
-  const entryBytes = encoder.encode(entryContent);
-  const entryFile = {
-    size: entryBytes.byteLength,
-    type: "text/html",
-    async arrayBuffer() {
-      return entryBytes.buffer;
-    },
-  } as any;
-
-  const entries: Array<[string, any]> = [
-    ["manifest", manifestFile],
-    [entryPath, entryFile],
-  ];
-
-  const formDataStub: any = {
-    get(name: string) {
-      const entry = entries.find(([key]) => key === name);
-      return entry ? entry[1] : null;
-    },
-    [Symbol.iterator]() {
-      return entries[Symbol.iterator]();
-    },
-  };
+  const formData = new FormData();
+  formData.append("manifest", manifestFile);
+  formData.append(entryPath, entryFile);
 
   const req = {
     async formData() {
-      return formDataStub;
+      return formData;
     },
   } as any as Request;
 
@@ -434,7 +414,6 @@ describe("publishCapsule runtime artifacts", () => {
       {} as any,
       {} as any
     );
-
     expect(res.status).toBe(200);
     const body = (await res.json()) as PublishCapsuleResponse;
     expect(body.artifact?.id).toBeDefined();

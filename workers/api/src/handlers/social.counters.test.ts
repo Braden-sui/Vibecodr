@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 
 vi.mock("../auth", () => {
   return {
@@ -23,6 +23,10 @@ vi.mock("../auth", () => {
 
 vi.mock("./counters", () => ({
   incrementPostStats: vi.fn(async () => {}),
+  runCounterUpdate: async (_ctx: any, updater: () => Promise<unknown>) => {
+    await updater();
+  },
+  ERROR_POST_STATS_UPDATE_FAILED: "E-VIBECODR-0109",
 }));
 
 import { incrementPostStats } from "./counters";
@@ -151,7 +155,6 @@ describe("Counters wiring", () => {
       {} as any,
       { p1: "p1" } as any
     );
-
     expect(res.status).toBe(201);
     expect(incrementPostStats).toHaveBeenCalledWith(env, "p1", { commentsDelta: 1 });
   });

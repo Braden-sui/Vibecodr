@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getArtifactManifest } from "./artifacts";
-import type { Env } from "../index";
+import type { Env } from "../types";
 
 const checkPublicRateLimitMock = vi.fn();
 const getClientIpMock = vi.fn();

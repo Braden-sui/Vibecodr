@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import { appendRunLogs, completeRun, startRun } from "./runs";
 import { Plan, PLAN_LIMITS } from "../storage/quotas";
 
@@ -24,6 +24,9 @@ vi.mock("./counters", () => ({
     incrementUserCountersMock(...args),
   incrementPostStats: (...args: Parameters<typeof incrementPostStatsMock>) =>
     incrementPostStatsMock(...args),
+  runCounterUpdate: async (_ctx: any, updater: () => Promise<unknown>) => {
+    await updater();
+  },
 }));
 
 vi.mock("../storage/quotas", async () => {
@@ -182,7 +185,7 @@ describe("startRun", () => {
     );
 
     expect(res.status).toBe(429);
-    const body = (await res.json()) as { error: string; plan?: string; limits?: any; usage?: any };
+    const body = (await res.json()) as { error: string; plan?: Plan; limits?: any; usage?: any };
     expect(body.error).toBe("Run quota exceeded");
     expect(body.plan).toBe(Plan.FREE);
     expect(body.limits?.maxRuns).toBe(PLAN_LIMITS[Plan.FREE].maxRuns);
@@ -261,7 +264,7 @@ describe("completeRun", () => {
     );
 
     expect(res.status).toBe(429);
-    const body = (await res.json()) as { error: string; plan?: string; limits?: any; usage?: any };
+    const body = (await res.json()) as { error: string; plan?: Plan; limits?: any; usage?: any };
     expect(body.error).toBe("Run quota exceeded");
     expect(body.plan).toBe(Plan.FREE);
     expect(body.limits?.maxRuns).toBe(PLAN_LIMITS[Plan.FREE].maxRuns);

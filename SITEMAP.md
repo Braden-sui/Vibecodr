@@ -1,101 +1,69 @@
 # Vibecodr Website Skeleton - Sitemap and Ownership Notes
 
-This document lists the major surfaces and their purpose. Each route in apps/web has an accompanying file with explicit responsibilities and TODOs.
+Major surfaces and their responsibilities. UI routes live in `apps/web`, Worker routes live in `workers/api`.
 
-- /
-  - Runnable feed for App and Report posts
-  - Modes: Latest, Following, For You (beta)
-  - Search by text and filter by tags; click-to-run inline previews for app posts with a small concurrency cap
-- /player/:postId
-  - Full-screen Player for a single post
-  - Sandboxed iframe, bottom controls (restart/kill/perf, share, report), right drawer tabs (Notes, Remix, Chat)
-- /post/new
-  - "Share a vibe" composer
-  - Imports from GitHub or ZIP via the Worker, then creates an App or Report post
-- /post/:id
-  - Post detail (App or Report); currently a simple stub that links people back into the player
-- /studio
-  - Creation hub with tabs: Import, Params, Files, Publish (client-side shell)
-- /u/:handle
-  - Profile page with layout/blocks, stats (Followers, Following, Posts, Runs, Remixes), and the user’s posts
-  - Ownership is on the user (SSOT: id/handle/avatar/bio). Profile rows are metadata keyed by `user_id`.
-- /settings
-  - Account & plan usage caps UI (static MVP; Worker exposes `/user/quota` for future wiring)
-- /pricing
-  - Public plans & limits (Free, Creator, Pro, Team)
-- /live
-  - Placeholder "not live yet" page for the future live capsules hub
-- /admin/moderation
-  - Simple stub queue for reports/quarantine
-- /moderation/flagged
-  - Moderator-only list of flagged posts, backed by Worker moderation APIs
-- /moderation/audit
-  - Admin-only audit log for moderation actions
-- /sign-in, /sign-up
-  - Auth flows provided by Clerk (sign-in/sign-up screens)
+## Web SPA (apps/web)
+- `/` – Runnable feed with tabs (latest, following, foryou), text search via `?q=`, tag filters via `?tags=`, and inline run buttons that respect runtime budgets.
+- `/discover` – Tag-focused lane backed by `/posts/discover`; defaults to featured tags and lets users follow a tag filter.
+- `/post/new` (alias `/composer`) – VibesComposer that imports from GitHub/ZIP or inline code, then creates a post plus optional capsule.
+- `/post/:id` – Report posts render inline; app posts redirect to `/player/:id` for full runtime controls.
+- `/player/:postId` – Full-screen player with sandboxed iframe, param controls, console/log streaming, report/share/remix hooks, and runtime budget enforcement.
+- `/studio/*` – Experimental Studio shell (Import/Params/Files/Publish tabs). Not linked in nav; reachable via direct URL or `?capsuleId=` hydrate for existing drafts.
+- `/u/:handle` (`/profile/:handle` redirects) – Profile header + blocks/themes + post list; profile data stored under `profiles`/`profile_*` tables keyed by `user_id`.
+- `/settings`, `/settings/profile` – Account + profile editing surfaces (plan usage UI is static; Worker exposes `/user/quota`).
+- `/pricing` – Plan details (Free, Creator, Pro, Team).
+- `/live` – Live capsules placeholder/waitlist surface.
+- `/report/new` – Report composer placeholder.
+- Moderation/admin – `/moderation/flagged`, `/moderation/audit`, `/admin/moderation` (queue), `/admin/analytics` (runtime analytics dashboard for admins).
+- Auth – `/sign-in`, `/sign-up` (Clerk).
 
-API (Cloudflare Worker, workers/api):
+## API (Cloudflare Worker, workers/api)
+Full list in `workers/api/src/routes.ts`; highlights:
 
-Key routes (see workers/api/src/index.ts for the full list):
+- **Manifest, import, artifacts**
+  - `POST /manifest/validate` – validate manifest JSON.
+  - `POST /import/github`, `POST /import/zip` – create capsule drafts from GitHub or uploaded ZIP (NDJSON progress optional via `?progress=1`).
+  - Artifacts: `POST /artifacts` (create upload session), `PUT /artifacts/:id/sources`, `PUT /artifacts/:id/complete`, `GET /artifacts/:id/manifest`, `GET /artifacts/:id/bundle` (runtime bundle + manifest).
 
-- Manifest, capsules, artifacts
-  - POST /manifest/validate - validate manifest JSON and return structured errors/warnings
-  - POST /capsules/publish - validate bundle, enforce plan quotas, upload to R2, create capsule record
-  - GET /capsules/:id - capsule details + manifest + R2 metadata
-  - GET /capsules/:id/verify - integrity check only
-  - GET /capsules/:id/manifest - Player fetches runtime manifest
-  - GET /capsules/:id/bundle - iframe entry file with strict CSP
-  - POST /artifacts, PUT /artifacts/:id/sources, PUT /artifacts/:id/complete, GET /artifacts/:id/manifest - runtime artifact pipeline
+- **Capsules & Studio**
+  - `POST /capsules/publish` – validate bundle, enforce plan quotas, run safety checks, upload to R2, create capsule + asset rows.
+  - `GET /capsules/mine` – list capsules owned by caller.
+  - `GET /capsules/:id`, `/verify`, `/manifest`, `/bundle` – capsule details, integrity check, runtime manifest, iframe entry.
+  - `GET /capsules/:id/files-summary`, `GET|PUT /capsules/:id/files/:path`, `PATCH /capsules/:id/manifest` – draft hydration/editing for Studio.
+  - `POST /capsules/:id/compile-draft`, `POST /capsules/:id/publish` – runtime artifact compilation + publish for drafts.
 
-- Import
-  - POST /import/github - create capsule draft from a GitHub repo
-  - POST /import/zip - create capsule draft from uploaded ZIP
+- **Profiles, follows, quota**
+  - `POST /users/sync` – Clerk identity upsert; `GET /users/:handle`, `/posts`, `/check-following` – profile header + recent posts + follow status.
+  - Extended profile: `GET /profile/:handle`, `PATCH /profile` (profile blocks/themes/layout), `GET /profile/search` (by tags/handle/name).
+  - Follows: `POST /users/:id/follow`, `DELETE /users/:id/follow`, followers/following lists.
+  - `GET /user/quota` – current plan + storage/run usage.
 
-- Feed, posts, and social
-  - GET /posts?mode=latest|following|foryou&q=&tags= - feed backing the homepage lanes
-  - GET /posts/:id - single post payload for Player
-  - POST /posts - create a new post (app/report) using the authed user id
-  - POST /posts/:id/like, DELETE /posts/:id/like, GET /posts/:id/likes
-  - POST /posts/:id/comments, GET /posts/:id/comments, DELETE /comments/:id
+- **Posts, feed, social**
+  - `GET /posts` – feed (modes latest|following|foryou, optional `q`, `tags`, pagination); `GET /posts/discover` – tag-focused lane.
+  - `GET /posts/:id` – single post (app posts carry capsule + manifest for Player).
+  - `POST /posts` – create post (app or report); `POST /covers` – upload cover images.
+  - Likes: `POST /posts/:id/like`, `DELETE /posts/:id/like`, `GET /posts/:id/likes`, `GET /posts/:id/check-liked`.
+  - Comments: `POST /posts/:id/comments`, `GET /posts/:id/comments`, `DELETE /comments/:id`.
 
-- Profiles, follows, and quota
-  - POST /users/sync - upsert basic user identity from Clerk (handle/name/avatar/bio/plan). `users` stays the SSOT.
-  - GET /users/:handle - profile header + stats (users joined with profile metadata)
-  - GET /users/:handle/posts - recent posts for that user
-  - GET /users/:id/check-following - whether the current user follows a target
-  - POST /users/:id/follow, DELETE /users/:id/follow, plus followers/following lists
-  - GET /user/quota - current user plan, storage, and run usage/limits
+- **Notifications**
+  - `GET /notifications`, `GET /notifications/summary`, `GET /notifications/unread-count`, `POST /notifications/mark-read`.
 
-- Notifications
-  - GET /notifications - paginated notifications list
-  - GET /notifications/summary - unread count + notifications in one payload
-  - GET /notifications/unread-count - unread badge count for UI
-  - POST /notifications/mark-read - mark some or all notifications as read
+- **Runtime + analytics**
+  - `POST /runs/start` – reserve runtime slot + record started run; `POST /runs/complete` – finalize run and increment counters; `POST /runs/:id/logs` – append sampled console logs to Analytics Engine.
+  - `POST /runtime-events` – ingest runtime telemetry into D1 (`runtime_events`) + Analytics Engine; `GET /runtime-analytics/summary` – admin-only snapshot for `/admin/analytics`.
+  - Durable Objects: `GET /do/status` proxy into BuildCoordinator for health.
 
-- Moderation & safety
-  - POST /moderation/report - flag content
-  - GET /moderation/flagged-posts - aggregate flagged posts for moderators
-  - GET /moderation/reports - detailed moderation reports queue
-  - POST /moderation/reports/:id/resolve - resolve a report with an action
-  - POST /moderation/posts/:id/action - direct moderation actions on posts
-  - POST /moderation/comments/:id/action - direct moderation actions on comments
-  - POST /moderation/filter-content - keyword filter helper used before writes
-  - GET /moderation/audit - audit log (admin)
+- **Moderation & safety**
+  - Reports/queues: `POST /moderation/report`, `GET /moderation/reports`, `POST /moderation/reports/:id/resolve`, `GET /moderation/flagged-posts`, `GET /moderation/audit`.
+  - Actions: `POST /moderation/posts/:id/action`, `POST /moderation/comments/:id/action`, `GET /moderation/posts/:id/status`.
+  - Helpers: `POST /moderation/filter-content` (keyword filter), `POST /live/waitlist` (live capsule waitlist + analytics), safety gates on publish/import handled in handlers.
 
-- Embeds & proxy
-  - GET /oembed - oEmbed JSON for `/player/:id` and `/e/:id`
-  - GET /e/:id - embeddable iframe wrapper around the Player
-  - GET /og-image/:id - branded SVG Open Graph image for posts
-  - GET /proxy?url=...&capsuleId=... - allowlisted network proxy with per-capsule/host rate limiting
+- **Embeds & proxy**
+  - `GET /oembed` (for `/player/:id` and `/e/:id`), `GET /e/:id` (embed wrapper), `GET /og-image/:id` (SVG OG image), `GET /proxy` (allowlisted, authenticated network proxy with per-capsule/host rate limits).
 
-- Runs & runtime events
-  - POST /runs/complete - record a completed Player run (optionally tied to a post)
-  - POST /runs/:id/logs - append logs from runner (currently a stub that returns 501)
-  - POST /runtime-events - append runtime telemetry
-
-DB (D1, workers/api/src/schema.ts):
-- Identity: users (SSOT for auth/handle/avatar/bio/plan)
-- Profile metadata: profiles (1:1 via user_id), profile_themes, profile_blocks, custom_fields, projects, profile_links, badges, user_badges, handle_history
-- Capsules runtime: capsules, assets, artifacts, artifact_manifests
-- Social: posts (author_id), comments, likes, follows, remixes, runs
-- Notifications, moderation reports/audit, runtime_events
+## Data model (D1, `workers/api/src/schema.ts`)
+- Identity & counters: `users` (plan, storage usage, denormalized counts, feature flags).
+- Capsules/runtime: `capsules`, `assets`, `artifacts`, `artifact_manifests`, `runs`, `remixes`, `likes`.
+- Content: `posts`, `comments`, `reports`, `follows`, `live_waitlist`.
+- Profiles: `profiles`, `profile_themes`, `profile_blocks`, `custom_fields`, `projects`, `profile_links`, `badges`, `user_badges`, `handle_history`.
+- Runtime analytics: `runtime_events` table expected by `/runtime-events` (Analytics Engine also receives telemetry).

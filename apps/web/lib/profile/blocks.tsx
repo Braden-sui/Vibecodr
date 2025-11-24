@@ -3,13 +3,14 @@ import type { ProfileBlock } from "./schema";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import VibeCard from "@/src/components/VibeCard";
+import { Plan, normalizePlan } from "@vibecodr/shared";
 
 export type ProfilePageData = {
   user: {
     handle: string;
     name?: string | null;
     avatarUrl?: string | null;
-    plan?: string | null;
+    plan?: Plan | null;
   };
   header: {
     tagline?: string | null;
@@ -101,10 +102,12 @@ const buildLinkItems = (block: ProfileBlock, data: ProfilePageData) => {
     items.push({ label: "X", url: `https://x.com/${xHandle.replace(/^@/, "")}` });
   }
 
-  const rawLinks = Array.isArray((block as any)?.props?.links) ? ((block as any).props.links as any[]) : [];
+  const rawLinks = Array.isArray(block.props?.links) ? block.props.links : [];
   for (const raw of rawLinks) {
-    const label = asString((raw as any)?.label, 80);
-    const url = normalizeUrl((raw as any)?.url);
+    if (!raw || typeof raw !== "object") continue;
+    const link = raw as { label?: unknown; url?: unknown };
+    const label = asString(link.label, 80);
+    const url = normalizeUrl(link.url);
     if (!label || !url) continue;
     items.push({ label, url });
     if (items.length >= MAX_LINKS) break;
@@ -123,6 +126,8 @@ const renderBanner: BlockRenderer = ({ data }) => {
   const tagline = asString(data.header.tagline, 160);
   const location = asString(data.header.location, 80);
   const pronouns = asString(data.header.pronouns, 40);
+  const plan = data.user.plan ? normalizePlan(data.user.plan, Plan.FREE) : null;
+  const showPlan = plan !== null && plan !== Plan.FREE;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-[var(--vc-surface)] p-6 shadow-[var(--shadow,0_20px_60px_rgba(0,0,0,0.45))]">
@@ -142,8 +147,8 @@ const renderBanner: BlockRenderer = ({ data }) => {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <div className="text-xl font-semibold">{data.user.name || `@${data.user.handle}`}</div>
-              {data.user.plan && data.user.plan !== "free" ? (
-                <Badge className="bg-[var(--vc-accent)] text-xs font-semibold text-black">{data.user.plan}</Badge>
+              {showPlan ? (
+                <Badge className="bg-[var(--vc-accent)] text-xs font-semibold text-black">{plan}</Badge>
               ) : null}
             </div>
             <p className="text-sm text-[var(--vc-muted)]">@{data.user.handle}</p>
@@ -169,7 +174,7 @@ const renderAbout: BlockRenderer = ({ data }) => {
 };
 
 const renderMarkdown: BlockRenderer = ({ block }) => {
-  const content = asString((block as any)?.props?.content, 8000);
+  const content = asString(block.props?.content, 8000);
   if (!content) return null;
   return (
     <VibeCard className="prose prose-sm max-w-none bg-[color:var(--vc-card)] text-[color:var(--vc-fg)] shadow">
@@ -179,7 +184,7 @@ const renderMarkdown: BlockRenderer = ({ block }) => {
 };
 
 const renderText: BlockRenderer = ({ block }) => {
-  const content = asString((block as any)?.props?.content, 2000);
+  const content = asString(block.props?.content, 2000);
   if (!content) return null;
   return (
     <VibeCard className="bg-[color:var(--vc-card)] text-[color:var(--vc-fg)] shadow">
@@ -290,8 +295,9 @@ const renderLinks: BlockRenderer = ({ block, data }) => {
 };
 
 const renderCapsuleEmbed: BlockRenderer = ({ block }) => {
-  const embedUrl = allowedEmbedUrl((block as any)?.props?.embedUrl);
-  const height = Number((block as any)?.props?.height ?? 360);
+  const embedUrl = allowedEmbedUrl(block.props?.embedUrl);
+  const heightValue = block.props?.height;
+  const height = Number(heightValue ?? 360);
   if (!embedUrl) return null;
 
   return (

@@ -4,24 +4,27 @@ This package hosts the front-end SPA built with Vite and React Router:
 
 - `app/**` - Page modules kept for organization; all are `"use client"` React components consumed by the SPA (no Next.js runtime).
 - `src/**` - SPA entry point (`src/main.tsx` + `App.tsx`) that renders `<BrowserRouter>` + `<AppRoutes />`.
-- `components/**` - Shared UI primitives (shadcn, Player, Moderation UI).
+- `components/**` - Shared UI primitives (shadcn, Player, Moderation/Admin UI).
 
 ## Architecture
 
-- Every user-facing page under `app/(site)` is a `"use client"` component built on `react-router-dom`; there is no Next.js rendering path.
-- The SPA harness (`src/App.tsx`) renders `<BrowserRouter>` + `<AppRoutes />`, so Feed, Player, and the composer all share one implementation path.
-- API calls are centralized in `lib/api.ts`, which reads `getWorkerApiBase()` so the SPA always talks directly to the Worker.
+- All feature pages live under `app/(site)` as `"use client"` components rendered via `react-router-dom`; there is no Next.js server runtime.
+- The SPA harness (`src/App.tsx`) wraps everything in Clerk + PostHog providers, syncs the user on mount, and renders `<BrowserRouter>` + `<AppRoutes />` so feed, player, and composer share one path.
+- API calls are centralized in `lib/api.ts`/`lib/worker-api.ts`, which resolve the Worker base URL in order: `WORKER_API_BASE`, `NEXT_PUBLIC_API_BASE`, `NEXT_PUBLIC_API_URL`, falling back to `http://127.0.0.1:8787` in dev.
 
 ## Key routes
 
-- `/` (Feed): cards, hover previews, actions
-- `/player/:postId`: sandboxed runner, params drawer, logs, remix
-- `/post/new`: unified composer for posts/imports/inline code (old `/studio` now redirects here)
-- `/post/:id`: app/report display
-- `/report/new`: report composer placeholder with snapshot button
-- `/u/:handle`: public profile + blocks/layout
-- `/settings`: plan usage and upgrades UI (static; no billing wiring yet)
-- `/admin/moderation`: moderation queue
+- `/` – feed tabs (latest/following/foryou), search (`?q=`) + tag filters (`?tags=`), inline run actions that obey runtime budgets.
+- `/discover` – tag-focused discover lane backed by `/posts/discover`.
+- `/post/new` (alias `/composer`) – unified composer (GitHub/ZIP import + inline code) using `VibesComposer`.
+- `/post/:id` – report posts render inline; app posts redirect to `/player/:id`.
+- `/player/:postId` – sandboxed runner with param controls, console/log streaming, remix/share/report actions, runtime slot reservation.
+- `/studio/*` – experimental Studio shell (Import/Params/Files/Publish) available via direct URL or `?capsuleId=` hydrate.
+- `/u/:handle` (`/profile/:handle` redirects) – profile header + blocks/layout + post list.
+- `/settings`, `/settings/profile` – plan usage (static) + profile editing.
+- `/pricing`, `/live`, `/report/new` – marketing/static and placeholders.
+- Moderation/admin – `/moderation/flagged`, `/moderation/audit`, `/admin/moderation` (queue), `/admin/analytics` (runtime analytics dashboard).
+- Auth – `/sign-in`, `/sign-up`.
 
 ## Development commands
 
@@ -32,6 +35,6 @@ This package hosts the front-end SPA built with Vite and React Router:
 
 - Data fetching: wire to Workers API endpoints
 - Styling: Tailwind + shadcn (tokens, components)
-- Auth: Clerk/Lucia (GitHub + Google)
-- Analytics: Cloudflare Analytics Engine datapoints for Player interactions
+- Auth: Clerk (`VITE_CLERK_PUBLISHABLE_KEY`) with `useAuth().getToken({ template: "workers" })` for privileged fetches
+- Analytics: PostHog client wrapper plus Worker runtime event/log hooks for Player interactions
 - Accessibility: focus traps in Player, keyboard navigation

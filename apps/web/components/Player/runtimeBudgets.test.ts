@@ -12,7 +12,12 @@ import {
 describe("runtimeBudgets", () => {
   beforeEach(() => {
     resetRuntimeSlotsForTest();
-    setRuntimeBudgetsForTest({ maxConcurrentRunners: 2, clientStaticBootMs: 5_000, runSessionMs: 60_000 });
+    setRuntimeBudgetsForTest({
+      maxConcurrentRunners: 2,
+      clientStaticBootMs: 5_000,
+      webContainerBootMs: 8_000,
+      runSessionMs: 60_000,
+    });
   });
 
   afterEach(() => {
@@ -60,7 +65,8 @@ describe("runtimeBudgets", () => {
   });
 
   it("allows test overrides for budgets", () => {
-    setRuntimeBudgetsForTest({ maxConcurrentRunners: 3 });
+    setRuntimeBudgetsForTest({ maxConcurrentRunners: 3, webContainerBootMs: 4_500 });
     expect(getRuntimeBudgets().maxConcurrentRunners).toBe(3);
+    expect(getRuntimeBudgets().webContainerBootMs).toBe(4_500);
   });
 });

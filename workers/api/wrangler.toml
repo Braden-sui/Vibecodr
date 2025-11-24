@@ -67,3 +67,6 @@ new_sqlite_classes = ["ArtifactCompiler"]
 [[analytics_engine_datasets]]
 binding = "vibecodr_analytics_engine"
 dataset = "vibecodr_analytics"
+
+[triggers]
+crons = ["45 10 * * *"]

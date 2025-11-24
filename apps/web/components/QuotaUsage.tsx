@@ -9,24 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, TrendingUp, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { quotaApi } from "@/lib/api";
-
-interface QuotaData {
-  plan: "free" | "creator" | "pro" | "team";
-  usage: {
-    storage: number; // bytes
-    runs: number; // count this month
-    bundleSize: number; // bytes of current vibe
-  };
-  limits: {
-    maxStorage: number;
-    maxRuns: number;
-    maxBundleSize: number;
-  };
-}
+import { Plan, UserQuotaResponseSchema, type UserQuotaResponse } from "@vibecodr/shared";
 
 export function QuotaUsage() {
   const { getToken } = useAuth();
-  const [quota, setQuota] = useState<QuotaData | null>(null);
+  const [quota, setQuota] = useState<UserQuotaResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
@@ -48,7 +35,8 @@ export function QuotaUsage() {
       if (!response.ok) throw new Error("Failed to fetch quota");
 
       const data = await response.json();
-      setQuota(data);
+      const parsed = UserQuotaResponseSchema.parse(data);
+      setQuota(parsed);
     } catch (error) {
       const shouldLogError = typeof process === "undefined" || process.env.NODE_ENV !== "test";
       if (shouldLogError && typeof console !== "undefined" && typeof console.error === "function") {
@@ -87,15 +75,15 @@ export function QuotaUsage() {
     return "bg-blue-500";
   };
 
-  const getPlanBadgeColor = (plan: string): string => {
+  const getPlanBadgeColor = (plan: Plan): string => {
     switch (plan) {
-      case "free":
+      case Plan.FREE:
         return "bg-gray-500";
-      case "creator":
+      case Plan.CREATOR:
         return "bg-blue-500";
-      case "pro":
+      case Plan.PRO:
         return "bg-purple-500";
-      case "team":
+      case Plan.TEAM:
         return "bg-gradient-to-r from-yellow-500 to-orange-500";
       default:
         return "bg-gray-500";
@@ -200,7 +188,7 @@ export function QuotaUsage() {
         </div>
 
         {/* Upgrade CTA */}
-        {needsUpgrade && quota.plan !== "team" && (
+        {needsUpgrade && quota.plan !== Plan.TEAM && (
           <div className="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950/20 p-4">
             <div className="flex items-start gap-3">
               <TrendingUp className="h-5 w-5 text-orange-600 dark:text-orange-400 mt-0.5" />
@@ -223,7 +211,7 @@ export function QuotaUsage() {
         )}
 
         {/* Plan benefits */}
-        {quota.plan === "free" && !needsUpgrade && (
+        {quota.plan === Plan.FREE && !needsUpgrade && (
           <div className="text-center text-sm text-muted-foreground">
             <Link to="/pricing" className="text-blue-600 dark:text-blue-400 hover:underline">
               Upgrade to Creator

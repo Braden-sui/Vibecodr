@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import app, { type Env } from "./index";
+import app from "./index";
+import type { Env } from "./types";
 
 vi.mock("./auth", () => ({
   verifyAuth: vi.fn().mockResolvedValue(null),
@@ -23,14 +24,20 @@ vi.mock("./auth", () => ({
 describe("getPosts pagination hardening", () => {
   const prepareCalls: Array<{ query: string; bindings: any[] }> = [];
   const mockDb = {
-    prepare: vi.fn((query: string) => ({
-      bind: (...bindings: any[]) => {
+    prepare: vi.fn((query: string) => {
+      const state: any = {};
+      state.all = vi.fn(async () => {
+        if (query.startsWith("PRAGMA table_info(posts)")) {
+          return { results: [{ name: "visibility" }] };
+        }
+        return { results: [] };
+      });
+      state.bind = (...bindings: any[]) => {
         prepareCalls.push({ query, bindings });
-        return {
-          all: vi.fn(async () => ({ results: [] })),
-        };
-      },
-    })),
+        return state;
+      };
+      return state;
+    }),
   };
 
   const env = {

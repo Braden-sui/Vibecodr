@@ -7,6 +7,8 @@ export type SecurityHeaderOptions = {
   allowEmbedding?: boolean;
   frameAncestors?: string | string[];
   crossOriginEmbedderPolicy?: string | null;
+  scriptNonce?: string;
+  styleNonce?: string;
 };
 
 export const EMBED_PATH_PREFIX: string;

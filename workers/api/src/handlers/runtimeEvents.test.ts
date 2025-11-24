@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import {
   RATE_LIMIT_MAX_KEYS,
   consumeRateLimit,

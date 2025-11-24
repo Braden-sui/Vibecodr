@@ -25,6 +25,7 @@ export interface RuntimeManifest {
     sizeBytes: number;
     digest: string;
   };
+  cspNonce?: string;
 }
 
 export interface BuildRuntimeManifestInput {

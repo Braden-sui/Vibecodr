@@ -1,4 +1,5 @@
-import type { Env } from "../index";
+import type { Env } from "../types";
+import { json } from "../lib/responses";
 import type { Manifest } from "@vibecodr/shared/manifest";
 import {
   ERROR_ARTIFACT_COMPILER_STATE_WRITE_FAILED,
@@ -40,7 +41,6 @@ type ArtifactRow = {
 
 type ManifestVersionRow = { max_version?: number | null };
 
-const JSON_HEADERS = { "content-type": "application/json" };
 const DEFAULT_RUNTIME_VERSION = "v0.1.0";
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
@@ -68,10 +68,6 @@ class ArtifactCompileError extends Error {
   }
 }
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
-}
-
 export class ArtifactCompiler {
   private state: DurableObjectState;
   private env: ArtifactCompilerEnv;
@@ -91,7 +87,7 @@ export class ArtifactCompiler {
     errorCode?: string;
   }) {
     try {
-      const analytics = (this.env as any).vibecodr_analytics_engine;
+      const analytics = this.env.vibecodr_analytics_engine;
       if (!analytics || typeof analytics.writeDataPoint !== "function") return;
       analytics.writeDataPoint({
         blobs: [

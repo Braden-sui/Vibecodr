@@ -1,26 +1,12 @@
 import { ERROR_CAPSULE_ACCESS_BLOCKED } from "@vibecodr/shared";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import { verifyAuth, isModeratorOrAdmin } from "../auth";
-import type { Env } from "../index";
+import type { Env, Handler } from "../types";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { getCapsuleKey } from "../storage/r2";
 import { buildBundleCsp, normalizeBundleNetworkMode } from "../security/bundleCsp";
 import { guessContentType } from "../runtime/mime";
-
-type Handler = (
-  req: Request,
-  env: Env,
-  ctx: ExecutionContext,
-  params: Record<string, string>
-) => Promise<Response>;
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
+import { json } from "../lib/responses";
 
 type CapsuleRow = {
   id: string;

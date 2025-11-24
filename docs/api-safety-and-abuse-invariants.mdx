@@ -26,7 +26,7 @@ If any invariant would be violated by a change, **the change is not allowed** wi
   - **How we enforce it**
     - Seeds/migrations live as **files + CLI scripts only**:
       - e.g. `src/seed-dev.sql`, `db:migrate`, `d1:seed:*` in `package.json`.
-    - No route in `workers/api/src/index.ts` may call these; they are wired only via `npm/pnpm` scripts.
+    - No route in `workers/api/src/routes.ts` may call these; they are wired only via `npm/pnpm` scripts.
 
 - **[INV-API-0002] No public “platform” API (for now)**
   - **Goal**: The API exists only to serve our own UI and first-party flows, not arbitrary third-party integrations.

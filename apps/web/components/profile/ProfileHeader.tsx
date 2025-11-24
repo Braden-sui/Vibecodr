@@ -2,6 +2,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import type { ProfileTheme } from "@/lib/profile/schema";
 import KineticHeader from "@/src/components/KineticHeader";
+import { Plan, normalizePlan } from "@vibecodr/shared";
 
 export type ProfileHeaderProps = {
   profile: {
@@ -11,7 +12,7 @@ export type ProfileHeaderProps = {
       name?: string | null;
       avatarUrl?: string | null;
       bio?: string | null;
-      plan?: string | null;
+      plan?: Plan | null;
       createdAt: number | string;
     };
     header: {
@@ -34,6 +35,8 @@ function formatJoined(createdAt: number | string): string {
 
 export function ProfileHeader({ profile }: ProfileHeaderProps) {
   const { user, header } = profile;
+  const plan = user.plan ? normalizePlan(user.plan, Plan.FREE) : null;
+  const showPlan = plan !== null && plan !== Plan.FREE;
 
   return (
     <header className="mb-8 space-y-6">
@@ -43,9 +46,9 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <KineticHeader text={user.name || `@${user.handle}`} className="text-2xl font-bold" />
-              {user.plan && user.plan !== "free" ? (
+              {showPlan ? (
                 <Badge className="bg-gradient-to-r from-yellow-500 to-orange-500 text-xs font-semibold text-white">
-                  {user.plan.toUpperCase()}
+                  {plan.toUpperCase()}
                 </Badge>
               ) : null}
             </div>

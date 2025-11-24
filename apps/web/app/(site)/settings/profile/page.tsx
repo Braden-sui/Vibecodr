@@ -20,6 +20,7 @@ import { blockRegistry, getBlockDefinition } from "@/lib/profile/blocks";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { Plan, normalizePlan } from "@vibecodr/shared";
 
 type LayoutBlock = {
   id: string;
@@ -43,7 +44,7 @@ type LoadedProfilePayload = {
     name?: string | null;
     avatarUrl?: string | null;
     bio?: string | null;
-    plan?: string | null;
+    plan?: Plan | null;
     createdAt: number | string;
   };
   header: {
@@ -75,6 +76,74 @@ type LoadedProfilePayload = {
     tier?: string | null;
   }>;
 };
+
+type LinkEntry = { label: string; url: string };
+
+type CapsuleListResponse = {
+  capsules?: Array<{ id: unknown; title: unknown }>;
+};
+
+function isLoadedProfilePayload(value: unknown): value is LoadedProfilePayload {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<LoadedProfilePayload>;
+  const user = candidate.user as { id?: unknown; handle?: unknown } | undefined;
+  if (!user || (typeof user.id !== "string" && typeof user.id !== "number") || typeof user.handle !== "string") {
+    return false;
+  }
+  if (!candidate.header || typeof candidate.header !== "object") {
+    return false;
+  }
+  if (!Array.isArray(candidate.blocks) || !Array.isArray(candidate.projects) || !Array.isArray(candidate.badges)) {
+    return false;
+  }
+  if (candidate.pinnedCapsules && !Array.isArray(candidate.pinnedCapsules)) {
+    return false;
+  }
+  return true;
+}
+
+function isCapsuleListResponse(value: unknown): value is CapsuleListResponse {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as CapsuleListResponse;
+  return Array.isArray(candidate.capsules);
+}
+
+function readLinks(raw: unknown): LinkEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    if (entry && typeof entry === "object") {
+      const candidate = entry as { label?: unknown; url?: unknown };
+      return {
+        label: typeof candidate.label === "string" ? candidate.label : "",
+        url: typeof candidate.url === "string" ? candidate.url : "",
+      };
+    }
+    return { label: "", url: "" };
+  });
+}
+
+function readLinksFromProps(props: Record<string, unknown>): LinkEntry[] {
+  return readLinks(props["links"]);
+}
+
+function normalizeLinksForPayload(raw: unknown): LinkEntry[] {
+  const parsed = readLinks(raw);
+  const result: LinkEntry[] = [];
+  for (const entry of parsed) {
+    const label = entry.label.trim().slice(0, 80);
+    const url = entry.url.trim();
+    if (!label || !url) continue;
+    try {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") continue;
+      result.push({ label, url: parsedUrl.toString() });
+    } catch {
+      continue;
+    }
+    if (result.length >= 12) break;
+  }
+  return result;
+}
 
 const defaultTheme: ProfileTheme = {
   mode: "system",
@@ -229,49 +298,47 @@ export default function ProfileSettingsPage() {
         if (!res.ok) {
           throw new Error(`Failed to load profile (${res.status})`);
         }
-        const json = (await res.json()) as any;
+        const json: unknown = await res.json();
         if (cancelled) return;
 
-        const rawBlocks: LayoutBlock[] = Array.isArray(json.blocks)
-          ? ((json.blocks as any[]).map((block, index) => {
-              const config = (block.config ?? {}) as Partial<ProfileBlock>;
-              const position =
-                typeof block.position === "number" && Number.isFinite(block.position)
-                  ? Number(block.position)
-                  : index;
-              const visibility: "public" | "followers" | "private" =
-                block.visibility === "followers" || block.visibility === "private"
-                  ? block.visibility
-                  : "public";
+        if (!isLoadedProfilePayload(json)) {
+          throw new Error("E-VIBECODR-2202 invalid profile response");
+        }
 
-              const id: string = String(config.id ?? block.id ?? `${block.type}-${index}`);
+        const rawBlocks: LayoutBlock[] = json.blocks.map((block, index) => {
+          const config = (block.config ?? {}) as Partial<ProfileBlock>;
+          const position =
+            typeof block.position === "number" && Number.isFinite(block.position) ? Number(block.position) : index;
+          const visibility: "public" | "followers" | "private" =
+            block.visibility === "followers" || block.visibility === "private" ? block.visibility : "public";
 
-              const baseConfig: ProfileBlock = {
-                id,
-                version: 1,
-                type: config.type ?? block.type,
-                visibility: config.visibility ?? visibility,
-                position,
-                props: config.props ?? {},
-              };
+          const id: string = String(config.id ?? block.id ?? `${block.type}-${index}`);
 
-              return {
-                id,
-                type: baseConfig.type,
-                position,
-                visibility: baseConfig.visibility,
-                config: baseConfig,
-              } satisfies LayoutBlock;
-            }) as LayoutBlock[])
-          : [];
+          const baseConfig: ProfileBlock = {
+            id,
+            version: 1,
+            type: config.type ?? block.type,
+            visibility: config.visibility ?? visibility,
+            position,
+            props: config.props ?? {},
+          };
+
+          return {
+            id,
+            type: baseConfig.type,
+            position,
+            visibility: baseConfig.visibility,
+            config: baseConfig,
+          } satisfies LayoutBlock;
+        });
 
         const normalizedBlocks =
           rawBlocks.length > 0
             ? [...rawBlocks].sort((a, b) => a.position - b.position)
             : buildInitialBlocks();
 
-        const header = (json.header ?? {}) as LoadedProfilePayload["header"];
-        const remoteTheme = (json.theme ?? null) as ProfileTheme | null;
+        const header = json.header;
+        const remoteTheme = json.theme ?? null;
 
         const loaded: LoadedProfilePayload = {
           user: {
@@ -280,7 +347,7 @@ export default function ProfileSettingsPage() {
             name: json.user.name ?? null,
             avatarUrl: json.user.avatarUrl ?? null,
             bio: json.user.bio ?? null,
-            plan: json.user.plan ?? null,
+            plan: json.user.plan ? normalizePlan(json.user.plan, Plan.FREE) : null,
             createdAt: json.user.createdAt,
           },
           header: {
@@ -345,15 +412,16 @@ export default function ProfileSettingsPage() {
         if (!res.ok) {
           throw new Error(`Failed to load capsules (${res.status})`);
         }
-        const json = (await res.json()) as any;
+        const json: unknown = await res.json();
         if (cancelled) return;
+        if (!isCapsuleListResponse(json)) {
+          throw new Error("E-VIBECODR-2203 invalid capsule response");
+        }
         const options =
-          Array.isArray(json.capsules) && json.capsules.length
-            ? json.capsules.map((item: any) => ({
-                id: String(item.id),
-                title: item.title ?? null,
-              }))
-            : [];
+          (json.capsules ?? []).map((item) => ({
+            id: String(item.id),
+            title: typeof item.title === "string" ? item.title : null,
+          })) || [];
         setCapsuleOptions(options);
       } catch (err) {
         if (cancelled) return;
@@ -460,7 +528,7 @@ export default function ProfileSettingsPage() {
 
   const handleAddLink = (id: string) => {
     updateBlockProps(id, (props) => {
-      const links = Array.isArray((props as any).links) ? [...((props as any).links as any[])] : [];
+      const links = [...readLinksFromProps(props)];
       links.push({ label: "", url: "" });
       return { ...props, links };
     });
@@ -468,7 +536,7 @@ export default function ProfileSettingsPage() {
 
   const handleRemoveLink = (id: string, index: number) => {
     updateBlockProps(id, (props) => {
-      const links = Array.isArray((props as any).links) ? [...((props as any).links as any[])] : [];
+      const links = [...readLinksFromProps(props)];
       links.splice(index, 1);
       return { ...props, links };
     });
@@ -476,8 +544,8 @@ export default function ProfileSettingsPage() {
 
   const handleLinkChange = (id: string, index: number, field: "label" | "url", value: string) => {
     updateBlockProps(id, (props) => {
-      const links = Array.isArray((props as any).links) ? [...((props as any).links as any[])] : [];
-      const existing = (links[index] as any) ?? { label: "", url: "" };
+      const links = [...readLinksFromProps(props)];
+      const existing = links[index] ?? { label: "", url: "" };
       links[index] = { ...existing, [field]: value };
       return { ...props, links };
     });
@@ -569,25 +637,6 @@ export default function ProfileSettingsPage() {
       }
     }
 
-    const normalizeLinks = (raw: unknown): Array<{ label: string; url: string }> => {
-      if (!Array.isArray(raw)) return [];
-      const result: Array<{ label: string; url: string }> = [];
-      for (const entry of raw) {
-        const label = typeof (entry as any)?.label === "string" ? (entry as any).label.trim().slice(0, 80) : "";
-        const url = typeof (entry as any)?.url === "string" ? (entry as any).url.trim() : "";
-        if (!label || !url) continue;
-        try {
-          const parsed = new URL(url);
-          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
-          result.push({ label, url: parsed.toString() });
-        } catch {
-          continue;
-        }
-        if (result.length >= 12) break;
-      }
-      return result;
-    };
-
     let hasInvalidBlocks = false;
     const normalizedBlocks =
       blocks.length > 0
@@ -595,7 +644,7 @@ export default function ProfileSettingsPage() {
             const props: Record<string, unknown> = { ...(block.config.props ?? {}) };
 
             if (block.type === "links") {
-              props.links = normalizeLinks(props.links);
+              props.links = normalizeLinksForPayload(props.links);
             }
 
             if (block.type === "markdown" || block.type === "text") {
@@ -661,9 +710,9 @@ export default function ProfileSettingsPage() {
       if (!res.ok) {
         let message = "Failed to save profile";
         try {
-          const body = (await res.json()) as any;
-          if (body && typeof body.error === "string") {
-            message = body.error;
+          const body: unknown = await res.json();
+          if (body && typeof body === "object" && "error" in body && typeof (body as { error?: unknown }).error === "string") {
+            message = (body as { error: string }).error;
           }
         } catch {
           // ignore
@@ -1262,6 +1311,7 @@ export default function ProfileSettingsPage() {
                   const def = getBlockDefinition(block.type) ??
                     blockRegistry.find((b) => b.type === block.type);
                   const label = def?.label ?? block.type;
+                  const currentLinks = readLinksFromProps(block.config.props ?? {});
                   return (
                     <div
                       key={block.id}
@@ -1352,42 +1402,39 @@ export default function ProfileSettingsPage() {
                               + Add link
                             </Button>
                           </div>
-                          {Array.isArray((block.config.props as any)?.links) &&
-                          (block.config.props as any).links.length > 0 ? (
-                            (block.config.props as any).links.map(
-                              (link: any, linkIndex: number) => (
-                                <div key={`${block.id}-link-${linkIndex}`} className="grid gap-2 sm:grid-cols-[2fr_3fr_auto]">
-                                  <Input
-                                    value={link?.label ?? ""}
-                                    onChange={(event) =>
-                                      handleLinkChange(block.id, linkIndex, "label", event.target.value)
-                                    }
-                                    placeholder="Label"
-                                    className="h-9"
-                                    maxLength={80}
-                                  />
-                                  <Input
-                                    value={link?.url ?? ""}
-                                    onChange={(event) =>
-                                      handleLinkChange(block.id, linkIndex, "url", event.target.value)
-                                    }
-                                    placeholder="https://"
-                                    className="h-9"
-                                    maxLength={500}
-                                  />
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-9 w-9 text-destructive"
-                                    onClick={() => handleRemoveLink(block.id, linkIndex)}
-                                    aria-label="Remove link"
-                                  >
-                                    x
-                                  </Button>
-                                </div>
-                              ),
-                            )
+                          {currentLinks.length > 0 ? (
+                            currentLinks.map((link, linkIndex: number) => (
+                              <div key={`${block.id}-link-${linkIndex}`} className="grid gap-2 sm:grid-cols-[2fr_3fr_auto]">
+                                <Input
+                                  value={link?.label ?? ""}
+                                  onChange={(event) =>
+                                    handleLinkChange(block.id, linkIndex, "label", event.target.value)
+                                  }
+                                  placeholder="Label"
+                                  className="h-9"
+                                  maxLength={80}
+                                />
+                                <Input
+                                  value={link?.url ?? ""}
+                                  onChange={(event) =>
+                                    handleLinkChange(block.id, linkIndex, "url", event.target.value)
+                                  }
+                                  placeholder="https://"
+                                  className="h-9"
+                                  maxLength={500}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 text-destructive"
+                                  onClick={() => handleRemoveLink(block.id, linkIndex)}
+                                  aria-label="Remove link"
+                                >
+                                  x
+                                </Button>
+                              </div>
+                            ))
                           ) : (
                             <p className="text-xs text-muted-foreground">No links yet.</p>
                           )}

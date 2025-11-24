@@ -1,4 +1,4 @@
-import type { Env } from "./index";
+import type { Env } from "./types";
 
 type RateLimitRow = { count?: number; reset_at?: number };
 type RateLimitResult = { allowed: boolean; remaining?: number; resetAt?: number };
@@ -57,11 +57,12 @@ export async function checkPublicRateLimit(
     await env.DB.prepare(`UPDATE ${TABLE_NAME} SET count = ? WHERE key = ?`).bind(nextCount, key).run();
     return { allowed: true, remaining: Math.max(0, limit - nextCount), resetAt: row.reset_at * 1000 };
   } catch (err) {
-    console.error("E-VIBECODR-0310 public rate limit check failed", {
+    // SAFETY: Fail-closed on rate limit errors to prevent abuse during DB outages.
+    console.error("E-VIBECODR-0310 public rate limit check failed (fail-closed)", {
       key,
       error: err instanceof Error ? err.message : String(err),
     });
-    return { allowed: true };
+    return { allowed: false, remaining: 0, resetAt: Date.now() + windowSec * 1000 };
   }
 }
 

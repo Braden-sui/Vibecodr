@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { __resetAuthStateForTests, verifyAuth } from "./auth";
-import type { Env } from "./index";
+import type { Env } from "./types";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();

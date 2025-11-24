@@ -1,16 +1,9 @@
 // Moderation and safety handlers
 // References: checklist.mdx Section 11 (Moderation & Safety)
 
-import type { Handler, Env } from "../index";
+import type { Handler, Env } from "../types";
 import { requireAuth as requireWorkerAuth, isModeratorOrAdmin, type AuthenticatedUser, requireUser, requireAdmin } from "../auth";
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init
-  });
-}
+import { json } from "../lib/responses";
 
 const requireModerator = (
   handler: (
@@ -141,11 +134,12 @@ export const getPostModerationStatus: Handler = requireModerator(async (req: Req
       "SELECT COUNT(*) as pending_flags FROM moderation_reports WHERE target_type = 'post' AND target_id = ? AND status = 'pending'"
     ).bind(postId).first();
 
-    const pendingFlags = Number((pendingRow as any)?.pending_flags ?? 0);
+    const pendingFlagsRaw = pendingRow && typeof pendingRow === "object" ? (pendingRow as { pending_flags?: unknown }).pending_flags : null;
+    const pendingFlags = Number(pendingFlagsRaw ?? 0);
 
     return json({
       postId,
-      quarantined: ((postRow as any).quarantined ?? 0) === 1,
+      quarantined: Number((postRow as { quarantined?: unknown }).quarantined ?? 0) === 1,
       pendingFlags,
     });
   } catch (error) {
@@ -167,7 +161,8 @@ async function enforceModeratorRateLimit(env: Env, moderatorId: string, maxPerMi
   const row = await env.DB.prepare(
     "SELECT COUNT(*) as count FROM moderation_audit_log WHERE moderator_id = ? AND created_at >= (strftime('%s','now') - 60)"
   ).bind(moderatorId).first();
-  const count = Number((row as any)?.count ?? 0);
+  const count =
+    row && typeof row === "object" ? Number((row as { count?: unknown }).count ?? 0) : 0;
   return count < maxPerMinute;
 }
 

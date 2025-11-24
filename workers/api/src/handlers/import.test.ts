@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import JSZip from "jszip";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import { importZip } from "./import";
 import { Plan, getUserPlan, getUserRunQuotaState } from "../storage/quotas";
 
@@ -62,7 +62,7 @@ vi.mock("../auth", () => ({
       }),
 }));
 
-type TestEnv = Env & { __capsules: any[]; __assets: any[] };
+type TestEnv = Env & { __capsules: any[]; __assets: any[]; __storage: { usage: number; version: number; plan: Plan } };
 
 function createEnv(): TestEnv {
   const capsules: any[] = [];

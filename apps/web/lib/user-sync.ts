@@ -1,3 +1,4 @@
+import { Plan, normalizePlan } from "@vibecodr/shared";
 import { getWorkerApiBase } from "@/lib/worker-api";
 
 let syncedOnce = false;
@@ -11,7 +12,7 @@ export type SyncUserPayload = {
   name: string | null;
   avatarUrl: string | null;
   bio?: string | null;
-  plan?: string | null;
+  plan?: Plan | null;
 };
 
 export type EnsureUserSyncedInput = {
@@ -21,13 +22,15 @@ export type EnsureUserSyncedInput = {
 
 async function postSyncRequest(input: EnsureUserSyncedInput): Promise<void> {
   const { user, token } = input;
+  const plan = user.plan == null ? null : normalizePlan(user.plan, Plan.FREE);
+  const normalizedUser = { ...user, plan };
   const response = await fetch(`${getWorkerApiBase()}/users/sync`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(user),
+    body: JSON.stringify(normalizedUser),
   });
   if (!response.ok) {
     let body = "";

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env, Handler } from "./index";
+import type { Env, Handler } from "./types";
 import type { AuthenticatedUser } from "./auth";
 
 vi.mock("./auth", () => {
@@ -40,6 +40,9 @@ function makeDbForFeed(rows: DbRow[]) {
           return state;
         },
         async all() {
+          if (query.startsWith("PRAGMA table_info(posts)")) {
+            return { results: [{ name: "visibility" }] };
+          }
           if (query.includes("FROM posts p") && query.includes("INNER JOIN users u")) {
             expect(query).toMatch(/p\.visibility = 'public'/);
             return { results: rows };
@@ -75,6 +78,9 @@ function makeDbForPost(row: DbRow) {
           return state;
         },
         async all() {
+          if (query.startsWith("PRAGMA table_info(posts)")) {
+            return { results: [{ name: "visibility" }] };
+          }
           if (query.includes("FROM posts p") && query.includes("WHERE p.id = ?")) {
             return { results: [row] };
           }

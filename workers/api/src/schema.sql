@@ -135,6 +135,19 @@ CREATE TABLE IF NOT EXISTS runs (
   error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS runtime_events (
+  id TEXT PRIMARY KEY,
+  event_name TEXT NOT NULL,
+  capsule_id TEXT,
+  artifact_id TEXT,
+  runtime_type TEXT,
+  runtime_version TEXT,
+  code TEXT,
+  message TEXT,
+  properties TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
 CREATE TABLE IF NOT EXISTS comments (
   id TEXT PRIMARY KEY,
   post_id TEXT NOT NULL REFERENCES posts(id),
@@ -254,3 +267,36 @@ CREATE TABLE IF NOT EXISTS handle_history (
   valid_until INTEGER NOT NULL,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
+
+-- ============================================
+-- Indexes for hot paths (idempotent)
+-- ============================================
+
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
+CREATE INDEX IF NOT EXISTS idx_posts_quarantined ON posts (quarantined, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_public_recent ON posts (created_at DESC) WHERE visibility = 'public' AND (quarantined IS NULL OR quarantined = 0);
+
+CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows (follower_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_follows_unique ON follows (follower_id, followee_id);
+
+CREATE INDEX IF NOT EXISTS idx_likes_post_id ON likes (post_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_likes_unique ON likes (user_id, post_id);
+
+CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments (post_id);
+CREATE INDEX IF NOT EXISTS idx_comments_post_quarantined ON comments (post_id, quarantined, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments (parent_comment_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_comments_visible_post_created ON comments (post_id, created_at ASC) WHERE quarantined IS NULL OR quarantined = 0;
+
+CREATE INDEX IF NOT EXISTS idx_runs_capsule_id ON runs (capsule_id);
+CREATE INDEX IF NOT EXISTS idx_remixes_parent_capsule_id ON remixes (parent_capsule_id);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_capsule ON artifacts (capsule_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_owner_created ON artifacts (owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_policy_status ON artifacts (policy_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_active_visible_capsule ON artifacts (capsule_id, created_at DESC) WHERE status = 'active' AND policy_status = 'active' AND visibility IN ('public','unlisted');
+CREATE INDEX IF NOT EXISTS idx_artifact_manifests_artifact ON artifact_manifests (artifact_id, version DESC);
+
+CREATE INDEX IF NOT EXISTS idx_profile_blocks_user_id ON profile_blocks (user_id);
+CREATE INDEX IF NOT EXISTS idx_runtime_events_created_at ON runtime_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runtime_events_event_name ON runtime_events (event_name);

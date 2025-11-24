@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import { createArtifactUpload, uploadArtifactSources, completeArtifact, getArtifactManifest, getArtifactBundle } from "./artifacts";
 import { getUserRunQuotaState, Plan } from "../storage/quotas";
 

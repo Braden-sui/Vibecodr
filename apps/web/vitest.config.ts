@@ -1,12 +1,12 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import type { PluginOption } from "vite";
 import path from "path";
 
-// SAFETY: Vitest pulls Vite 5 types while the workspace uses Vite 6; cast to align plugin typing.
-const reactPlugin = react() as any;
+const reactPlugin = react();
 
-export default defineConfig({
-  plugins: [reactPlugin],
+const config = {
+  plugins: [reactPlugin] as unknown as PluginOption[],
   test: {
     globals: true,
     environment: "jsdom",
@@ -41,4 +41,6 @@ export default defineConfig({
       "@testing-library/user-event": path.resolve(__dirname, "./test-utils/user-event-stub.ts"),
     },
   },
-});
+};
+
+export default defineConfig(config as unknown as import("vitest/config").UserConfigExport);

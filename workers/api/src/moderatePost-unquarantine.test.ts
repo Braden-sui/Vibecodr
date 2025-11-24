@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 import type { AuthenticatedUser } from "./auth";
 
 vi.mock("./auth", () => {
@@ -86,4 +86,3 @@ describe("moderatePostAction unquarantine", () => {
     expect(state.updatedTo).toContain(0);
   });
 });
-

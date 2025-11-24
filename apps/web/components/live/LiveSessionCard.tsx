@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Clock, Radio, Users, Sparkles } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
+import { Plan } from "@vibecodr/shared";
 
 export type LiveSession = {
   id: string;
@@ -12,7 +13,7 @@ export type LiveSession = {
   host: {
     handle: string;
     avatarUrl?: string;
-    plan: "creator" | "pro" | "team";
+    plan: Plan;
   };
   status: "live" | "scheduled" | "completed";
   startTime: string;

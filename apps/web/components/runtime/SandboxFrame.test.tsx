@@ -70,4 +70,18 @@ describe("SandboxFrame", () => {
 
     expect(onError).toHaveBeenCalledWith("Failed to load runtime frame");
   });
+
+  it("includes the provided nonce across CSP and scripts", () => {
+    const manifestWithNonce = { ...manifest, cspNonce: "abc123" };
+    const { getByTitle } = render(
+      <SandboxFrame manifest={manifestWithNonce} title="nonce-test" />
+    );
+
+    const iframe = getByTitle("nonce-test");
+    const srcdoc = iframe.getAttribute("srcdoc") || "";
+
+    expect(srcdoc).toContain("'nonce-abc123'");
+    expect(srcdoc).toContain('nonce="abc123"');
+    expect(srcdoc).not.toContain("unsafe-inline");
+  });
 });

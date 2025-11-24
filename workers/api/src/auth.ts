@@ -1,4 +1,4 @@
-import type { Env, Handler } from "./index";
+import type { Env, Handler } from "./types";
 import {
   ERROR_AUTH_AUDIENCE_MISMATCH,
   ERROR_AUTH_CLAIMS_INVALID,
@@ -37,12 +37,13 @@ export function requireAdmin(
 }
 
 export function isModeratorOrAdmin(user: AuthenticatedUser | { claims: ClerkJwtPayload }): boolean {
-  const claims = user.claims as any;
-  const publicMetadata = (claims.public_metadata || claims.publicMetadata || {}) as any;
+  const claims = user.claims;
+  const publicMetadata = getPublicMetadata(claims);
 
-  const role = (claims.role as string | undefined) ?? (publicMetadata.role as string | undefined);
-  const isModeratorFlag =
-    (claims.isModerator as boolean | undefined) ?? (publicMetadata.isModerator as boolean | undefined);
+  const role =
+    (typeof claims.role === "string" ? claims.role : undefined) ??
+    (typeof publicMetadata.role === "string" ? publicMetadata.role : undefined);
+  const isModeratorFlag = claims.isModerator === true || publicMetadata.isModerator === true;
 
   if (role === "admin" || role === "moderator") {
     return true;
@@ -52,9 +53,11 @@ export function isModeratorOrAdmin(user: AuthenticatedUser | { claims: ClerkJwtP
 }
 
 export function isAdmin(user: AuthenticatedUser | { claims: ClerkJwtPayload }): boolean {
-  const claims = user.claims as any;
-  const publicMetadata = (claims.public_metadata || claims.publicMetadata || {}) as any;
-  const role = (claims.role as string | undefined) ?? (publicMetadata.role as string | undefined);
+  const claims = user.claims;
+  const publicMetadata = getPublicMetadata(claims);
+  const role =
+    (typeof claims.role === "string" ? claims.role : undefined) ??
+    (typeof publicMetadata.role === "string" ? publicMetadata.role : undefined);
   return role === "admin";
 }
 
@@ -75,6 +78,13 @@ type ClerkJwtPayload = {
   azp?: string;
   [key: string]: unknown;
 };
+
+function getPublicMetadata(claims: ClerkJwtPayload): Record<string, unknown> {
+  const metadataCandidate =
+    (claims as { public_metadata?: unknown }).public_metadata ??
+    (claims as { publicMetadata?: unknown }).publicMetadata;
+  return metadataCandidate && typeof metadataCandidate === "object" ? (metadataCandidate as Record<string, unknown>) : {};
+}
 
 class WorkerAuthError extends Error {
   constructor(public readonly code: ErrorCode, message: string) {
@@ -132,12 +142,16 @@ export async function verifyAuth(request: Request, env: Env): Promise<Authentica
   try {
     const { payload } = await verifyClerkJwt(token, env);
 
-    const userId = (payload.sub || (payload as any).userId) as string | undefined;
+    const userId =
+      (typeof payload.sub === "string" ? payload.sub : undefined) ??
+      (typeof payload["userId"] === "string" ? payload["userId"] : undefined);
     if (!userId) {
       throw new Error("Missing Clerk user id");
     }
 
-    const sessionId = (payload.sid || (payload as any).session_id || "") as string;
+    const sessionId =
+      (typeof payload.sid === "string" ? payload.sid : undefined) ??
+      (typeof payload["session_id"] === "string" ? payload["session_id"] : "");
 
     return {
       userId,

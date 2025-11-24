@@ -1,10 +1,11 @@
 // Social interaction handlers: likes, follows, comments, notifications
 // References: research-social-platforms.md
 
-import type { Handler, Env } from "../index";
+import type { Handler, Env } from "../types";
 import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
-import { incrementPostStats, ERROR_POST_STATS_UPDATE_FAILED } from "./counters";
+import { incrementPostStats, runCounterUpdate, ERROR_POST_STATS_UPDATE_FAILED } from "./counters";
 import { createCommentBodySchema } from "../schema";
+import { json } from "../lib/responses";
 
 type Params = Record<string, string>;
 
@@ -12,16 +13,13 @@ const COMMENT_VALIDATION_ERROR = "E-VIBECODR-0400";
 const COMMENT_PARENT_NOT_FOUND_ERROR = "E-VIBECODR-0401";
 const COMMENT_PARENT_MISMATCH_ERROR = "E-VIBECODR-0402";
 
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init
-  });
-}
-
 function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+}
+
+function toNumber(value: unknown): number {
+  const num = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(num) ? num : 0;
 }
 
 // ============================================================================
@@ -51,13 +49,11 @@ export const likePost: Handler = requireUser(async (req, env, ctx, params, userI
         "INSERT INTO likes (user_id, post_id) VALUES (?, ?)"
       ).bind(userId, postId).run();
 
-      // Best-effort: update post like stats (no-op today) and ignore failures
-      incrementPostStats(env, postId, { likesDelta: 1 }).catch((err: unknown) => {
-        console.error(`${ERROR_POST_STATS_UPDATE_FAILED} likePost counter update failed`, {
-          postId,
-          userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      // Ensure post like count stays in sync; waitUntil prevents drops after response returns.
+      await runCounterUpdate(ctx, () => incrementPostStats(env, postId, { likesDelta: 1 }), {
+        code: ERROR_POST_STATS_UPDATE_FAILED,
+        op: "likePost increment likes_count",
+        details: { postId, userId },
       });
 
       // Create notification for post author (but not if liking own post)
@@ -97,13 +93,11 @@ export const unlikePost: Handler = requireUser(async (req, env, ctx, params, use
     ).bind(userId, postId).run();
 
     // Only decrement if a row was deleted (idempotent)
-    // D1 run() doesn't always return changes; attempt best-effort decrement
-    incrementPostStats(env, postId, { likesDelta: -1 }).catch((err: unknown) => {
-      console.error(`${ERROR_POST_STATS_UPDATE_FAILED} unlikePost counter update failed`, {
-        postId,
-        userId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    // D1 run() doesn't always return changes; attempt decrement but keep it reliable with waitUntil.
+    await runCounterUpdate(ctx, () => incrementPostStats(env, postId, { likesDelta: -1 }), {
+      code: ERROR_POST_STATS_UPDATE_FAILED,
+      op: "unlikePost decrement likes_count",
+      details: { postId, userId },
     });
 
     return json({ ok: true, liked: false });
@@ -381,7 +375,9 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
         );
       }
 
-      if ((parent as any).post_id !== postId) {
+      const parentPostId =
+        parent && typeof parent === "object" ? (parent as { post_id?: unknown }).post_id : null;
+      if (String(parentPostId) !== postId) {
         return json(
           {
             error: "Parent comment belongs to a different post",
@@ -411,14 +407,11 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
       )
       .run();
 
-    // Best-effort: update post comment stats and ignore failures
-    incrementPostStats(env, postId, { commentsDelta: 1 }).catch((err: unknown) => {
-      console.error(`${ERROR_POST_STATS_UPDATE_FAILED} createComment counter update failed`, {
-        postId,
-        userId,
-        commentId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    // Keep post comment counters consistent; do not drop the update if the request returns early.
+    await runCounterUpdate(ctx, () => incrementPostStats(env, postId, { commentsDelta: 1 }), {
+      code: ERROR_POST_STATS_UPDATE_FAILED,
+      op: "createComment increment comments_count",
+      details: { postId, userId, commentId },
     });
 
     // Create notification for post author (but not if commenting on own post)
@@ -430,30 +423,33 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
     }
 
     // Fetch the created comment with user info
-    const comment = (await env.DB.prepare(`
+    const comment = await env.DB.prepare(`
       SELECT c.id, c.body, c.at_ms, c.bbox, c.created_at,
              u.id as user_id, u.handle, u.name, u.avatar_url
       FROM comments c
       INNER JOIN users u ON c.user_id = u.id
       WHERE c.id = ?
-    `).bind(commentId).first()) as any | null;
+    `)
+      .bind(commentId)
+      .first();
 
-    if (!comment) {
+    if (!comment || typeof comment !== "object") {
       return json({ error: "Failed to load created comment" }, 500);
     }
+    const commentRow = comment as Record<string, unknown>;
 
     return json({
       comment: {
-        id: comment.id,
-        body: comment.body,
-        atMs: comment.at_ms,
-        bbox: comment.bbox,
-        createdAt: comment.created_at,
+        id: commentRow.id,
+        body: commentRow.body,
+        atMs: commentRow.at_ms,
+        bbox: commentRow.bbox,
+        createdAt: commentRow.created_at,
         user: {
-          id: comment.user_id,
-          handle: comment.handle,
-          name: comment.name,
-          avatarUrl: comment.avatar_url,
+          id: commentRow.user_id,
+          handle: commentRow.handle,
+          name: commentRow.name,
+          avatarUrl: commentRow.avatar_url,
         },
       },
     }, 201);
@@ -530,31 +526,35 @@ export const deleteComment: Handler = requireUser(async (req, env, ctx, params, 
 
   try {
     // Check if comment exists and user is author or post author
-    const row = (await env.DB.prepare(
+    const row = await env.DB.prepare(
       `SELECT c.user_id as comment_user_id, c.post_id as post_id, p.author_id as post_author_id
        FROM comments c
        INNER JOIN posts p ON c.post_id = p.id
        WHERE c.id = ?`
-    ).bind(commentId).first()) as any;
+    ).bind(commentId).first();
 
-    if (!row) {
+    if (!row || typeof row !== "object") {
       return json({ error: "Comment not found" }, 404);
     }
 
-    if (row.comment_user_id !== userId && row.post_author_id !== userId) {
+    const commentRow = row as { comment_user_id?: unknown; post_id?: unknown; post_author_id?: unknown };
+    const commentAuthorId = typeof commentRow.comment_user_id === "string" ? commentRow.comment_user_id : null;
+    const postAuthorId = typeof commentRow.post_author_id === "string" ? commentRow.post_author_id : null;
+    const targetPostId = commentRow.post_id !== undefined && commentRow.post_id !== null ? String(commentRow.post_id) : "";
+
+    if (commentAuthorId !== userId && postAuthorId !== userId) {
       return json({ error: "Forbidden" }, 403);
     }
 
     await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
 
-    incrementPostStats(env, row.post_id, { commentsDelta: -1 }).catch((err: unknown) => {
-      console.error(`${ERROR_POST_STATS_UPDATE_FAILED} deleteComment counter update failed`, {
-        commentId,
-        postId: row.post_id,
-        userId,
-        error: err instanceof Error ? err.message : String(err),
+    if (targetPostId) {
+      await runCounterUpdate(ctx, () => incrementPostStats(env, targetPostId, { commentsDelta: -1 }), {
+        code: ERROR_POST_STATS_UPDATE_FAILED,
+        op: "deleteComment decrement comments_count",
+        details: { commentId, postId: targetPostId, userId },
       });
-    });
+    }
 
     return json({ ok: true });
   } catch (error) {
@@ -737,7 +737,7 @@ export const getNotificationSummary: Handler = requireUser(async (req, env, ctx,
     })) || [];
 
     return json({
-      unreadCount: Number((countRow as any)?.count ?? 0),
+      unreadCount: toNumber((countRow as { count?: unknown } | null)?.count),
       notifications,
       limit,
       offset,

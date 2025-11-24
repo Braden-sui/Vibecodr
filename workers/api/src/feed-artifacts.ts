@@ -1,4 +1,4 @@
-import type { Env } from "./index";
+import type { Env } from "./types";
 
 export type CapsuleArtifactRow = {
   capsule_id?: string | null;
@@ -146,12 +146,18 @@ async function fetchLatestArtifactsFromDb(env: ArtifactEnv, capsuleIds: string[]
   const { results } = await env.DB.prepare(query).bind(...capsuleIds).all();
   const latest = new Map<string, LatestArtifactInfo>();
   for (const row of results || []) {
-    const capsuleId = (row as any).capsule_id;
-    const artifactId = (row as any).id;
+    const record = row as Record<string, unknown>;
+    const capsuleId =
+      typeof record.capsule_id === "string" || typeof record.capsule_id === "number"
+        ? String(record.capsule_id)
+        : null;
+    const artifactId = typeof record.id === "string" || typeof record.id === "number" ? String(record.id) : null;
     if (!capsuleId || !artifactId) continue;
-    latest.set(String(capsuleId), {
-      artifactId: String(artifactId),
-      createdAt: normalizeTimestamp((row as any).created_at),
+    latest.set(capsuleId, {
+      artifactId,
+      createdAt: normalizeTimestamp(
+        typeof record.created_at === "string" || typeof record.created_at === "number" ? record.created_at : null
+      ),
     });
   }
   return latest;
@@ -174,9 +180,17 @@ async function fetchLatestActiveTimestamps(env: ArtifactEnv, capsuleIds: string[
   const { results } = await env.DB.prepare(query).bind(...capsuleIds).all();
   const latest = new Map<string, number>();
   for (const row of results || []) {
-    const capsuleId = (row as any).capsule_id;
+    const record = row as Record<string, unknown>;
+    const capsuleId =
+      typeof record.capsule_id === "string" || typeof record.capsule_id === "number"
+        ? String(record.capsule_id)
+        : null;
     if (!capsuleId) continue;
-    latest.set(String(capsuleId), normalizeTimestamp((row as any).max_created_at));
+    const maxCreatedAt =
+      typeof record.max_created_at === "string" || typeof record.max_created_at === "number"
+        ? record.max_created_at
+        : null;
+    latest.set(capsuleId, normalizeTimestamp(maxCreatedAt));
   }
   return latest;
 }

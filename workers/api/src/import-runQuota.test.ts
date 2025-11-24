@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 import { importGithub, importZip } from "./handlers/import";
 import { getUserRunQuotaState, Plan } from "./storage/quotas";
 

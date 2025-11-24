@@ -1,9 +1,10 @@
-import type { Handler, Env } from "../index";
+import type { Handler, Env } from "../types";
 import { requireAdmin } from "../auth";
 import {
   ERROR_RUNTIME_ANALYTICS_FAILED,
   ERROR_RUNTIME_ANALYTICS_SUMMARY_FAILED,
 } from "@vibecodr/shared";
+import { json } from "../lib/responses";
 
 type RateLimitState = {
   tokens: number;
@@ -85,14 +86,6 @@ type RuntimeEventPayload = {
   properties?: Record<string, unknown>;
   timestamp?: number;
 };
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
 
 // INVARIANT: Rate limit key uses Cloudflare-assigned IP only to prevent spoofing via user headers.
 export function getClientIp(req: Request) {

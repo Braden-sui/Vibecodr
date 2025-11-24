@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { computeForYouScore, routes, type ForYouScoreInput } from "./index";
+import { Plan } from "@vibecodr/shared";
+import { computeForYouScore, type ForYouScoreInput } from "./feed/scoring";
+import { routes } from "./routes";
 import { appendRunLogs } from "./handlers/runs";
 
 describe("computeForYouScore", () => {
@@ -12,7 +14,7 @@ describe("computeForYouScore", () => {
       stats: { runs: 10, likes: 5, remixes: 1 },
       authorFollowers: 100,
       authorIsFeatured: false,
-      authorPlan: "free",
+      authorPlan: Plan.FREE,
       hasCapsule: false,
     };
 

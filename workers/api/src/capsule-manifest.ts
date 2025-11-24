@@ -10,7 +10,7 @@ export type ManifestParseContext = {
   postId?: string | null;
 };
 
-export type CapsuleSummary = ({ id: string } & Partial<Manifest>) | null;
+export type CapsuleSummary = ({ id: string; artifactId?: string; bundleKey?: string; contentHash?: string } & Partial<Manifest>) | null;
 
 export function safeParseCapsuleManifest(
   manifestJson: unknown,

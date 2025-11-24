@@ -164,7 +164,12 @@ function normalizeSourceList(value) {
   return [];
 }
 
-function buildContentSecurityPolicy({ allowEmbedding = false, frameAncestors } = {}) {
+function buildContentSecurityPolicy({
+  allowEmbedding = false,
+  frameAncestors,
+  scriptNonce,
+  styleNonce,
+} = {}) {
   const runtimeCdnSource = resolveRuntimeCdnSource();
   const playerOrigin = resolvePlayerOrigin();
   const workerApiOrigin = resolveWorkerApiOrigin();
@@ -173,12 +178,15 @@ function buildContentSecurityPolicy({ allowEmbedding = false, frameAncestors } =
   const fontOrigin = resolveFontOrigin();
   const cloudflareBeaconOrigin = DEFAULTS.cloudflareBeaconOrigin;
   const clerkImageOrigins = resolveClerkImageOrigins();
+  const scriptNonceSource = scriptNonce ? `'nonce-${scriptNonce}'` : null;
+  const styleNonceSource = styleNonce ? `'nonce-${styleNonce}'` : null;
 
   const scriptSrc = uniqueSources([
     "'self'",
     runtimeCdnSource !== "'self'" ? runtimeCdnSource : null,
     clerkScriptOrigin,
     cloudflareBeaconOrigin,
+    scriptNonceSource,
   ]);
 
   const connectSrc = uniqueSources([
@@ -208,6 +216,11 @@ function buildContentSecurityPolicy({ allowEmbedding = false, frameAncestors } =
     ...clerkImageOrigins,
   ]);
 
+  const styleSrc = uniqueSources([
+    "'self'",
+    styleNonceSource,
+  ]);
+
   const frameAncestorsSources = normalizeSourceList(frameAncestors);
   const resolvedFrameAncestors =
     frameAncestorsSources.length > 0 ? frameAncestorsSources.join(" ") : allowEmbedding ? "*" : "'none'";
@@ -221,9 +234,9 @@ function buildContentSecurityPolicy({ allowEmbedding = false, frameAncestors } =
     `frame-ancestors ${resolvedFrameAncestors}`,
     `img-src ${imgSrc.join(" ")}`,
     `object-src 'none'`,
-    `script-src ${scriptSrc.join(" ")} 'unsafe-inline'`,
+    `script-src ${scriptSrc.join(" ")}`,
     `worker-src ${workerSrc.join(" ")}`,
-    `style-src 'self' 'unsafe-inline'`,
+    `style-src ${styleSrc.join(" ")}`,
     `connect-src ${connectSrc.join(" ")}`,
     `upgrade-insecure-requests`,
   ];
@@ -231,8 +244,14 @@ function buildContentSecurityPolicy({ allowEmbedding = false, frameAncestors } =
   return directives.join("; ").replace(/\s{2,}/g, " ").trim();
 }
 
-function buildSecurityHeaders({ allowEmbedding = false, frameAncestors, crossOriginEmbedderPolicy } = {}) {
-  const csp = buildContentSecurityPolicy({ allowEmbedding, frameAncestors });
+function buildSecurityHeaders({
+  allowEmbedding = false,
+  frameAncestors,
+  crossOriginEmbedderPolicy,
+  scriptNonce,
+  styleNonce,
+} = {}) {
+  const csp = buildContentSecurityPolicy({ allowEmbedding, frameAncestors, scriptNonce, styleNonce });
   const headers = [
     { key: "Content-Security-Policy", value: csp },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
@@ -268,12 +287,24 @@ function buildSecurityHeaders({ allowEmbedding = false, frameAncestors, crossOri
 const BASE_HEADERS = buildSecurityHeaders({ allowEmbedding: false });
 const EMBED_HEADERS = buildSecurityHeaders({ allowEmbedding: true });
 
-function getSecurityHeaderSet({ allowEmbedding = false } = {}) {
+function getSecurityHeaderSet(options = {}) {
+  const {
+    allowEmbedding = false,
+    frameAncestors,
+    crossOriginEmbedderPolicy,
+    scriptNonce,
+    styleNonce,
+  } = options;
+
+  if (scriptNonce || styleNonce || frameAncestors !== undefined || crossOriginEmbedderPolicy !== undefined) {
+    return buildSecurityHeaders({ allowEmbedding, frameAncestors, crossOriginEmbedderPolicy, scriptNonce, styleNonce });
+  }
+
   return allowEmbedding ? EMBED_HEADERS : BASE_HEADERS;
 }
 
-function applySecurityHeaders(response, { allowEmbedding = false } = {}) {
-  const headerSet = getSecurityHeaderSet({ allowEmbedding });
+function applySecurityHeaders(response, options = {}) {
+  const headerSet = getSecurityHeaderSet(options);
   for (const header of headerSet) {
     response.headers.set(header.key, header.value);
   }

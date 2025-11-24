@@ -42,4 +42,14 @@ describe("securityHeaders", () => {
     expect(cspHeader?.value).toContain("img-src");
     expect(cspHeader?.value).toContain("https://img.clerk.com");
   });
+
+  it("supports nonces and omits unsafe-inline", () => {
+    const headers = securityHeaders.buildSecurityHeaders({ scriptNonce: "abc123", styleNonce: "def456" });
+    const cspHeader = headers.find((header) => header.key === "Content-Security-Policy");
+
+    expect(cspHeader).toBeDefined();
+    expect(cspHeader?.value).toContain("'nonce-abc123'");
+    expect(cspHeader?.value).toContain("'nonce-def456'");
+    expect(cspHeader?.value).not.toContain("unsafe-inline");
+  });
 });

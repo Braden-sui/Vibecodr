@@ -14,6 +14,8 @@ describe("runtimeHeaders", () => {
     expect(secured.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
     expect(secured.headers.get("Permissions-Policy")).toContain("camera=()");
     expect(secured.headers.get("Cross-Origin-Embedder-Policy")).toBe("require-corp");
+    expect(secured.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'nonce-[^';]+'/);
+    expect(secured.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
   });
 
   it("skips non-runtime assets", () => {

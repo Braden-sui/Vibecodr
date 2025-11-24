@@ -1,15 +1,7 @@
-import type { Handler, Env } from "../index";
+import { PlanSchema } from "@vibecodr/shared";
+import type { Handler, Env } from "../types";
 import { verifyAuth } from "../auth";
-
-const VALID_PLANS = ["free", "creator", "pro", "team"] as const;
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
+import { json } from "../lib/responses";
 
 export const joinLiveWaitlist: Handler = async (req, env) => {
   try {
@@ -17,13 +9,19 @@ export const joinLiveWaitlist: Handler = async (req, env) => {
       sessionId?: string;
       email?: string;
       handle?: string;
-      plan?: string;
+      plan?: unknown;
     };
 
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const handle = typeof body.handle === "string" ? body.handle.trim() : "";
-    const plan = typeof body.plan === "string" ? body.plan.toLowerCase().trim() : "";
+    const planParse = PlanSchema.safeParse(
+      typeof body.plan === "string" ? body.plan.trim().toLowerCase() : null
+    );
+    if (!planParse.success) {
+      return json({ error: "Invalid plan" }, 400);
+    }
+    const plan = planParse.data;
 
     if (!sessionId) {
       return json({ error: "sessionId is required" }, 400);
@@ -35,10 +33,6 @@ export const joinLiveWaitlist: Handler = async (req, env) => {
 
     if (!handle) {
       return json({ error: "Handle is required" }, 400);
-    }
-
-    if (!VALID_PLANS.includes(plan as typeof VALID_PLANS[number])) {
-      return json({ error: "Invalid plan" }, 400);
     }
 
     let userId: string | null = null;

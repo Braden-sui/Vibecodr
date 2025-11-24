@@ -38,6 +38,7 @@ type RuntimeBudgetReason = "boot_timeout" | "run_timeout" | "concurrency_limit";
 
 const RUNTIME_BUDGETS = getRuntimeBudgets();
 const CLIENT_STATIC_BOOT_BUDGET_MS = RUNTIME_BUDGETS.clientStaticBootMs;
+const WEB_CONTAINER_BOOT_BUDGET_MS = RUNTIME_BUDGETS.webContainerBootMs;
 const RUN_SESSION_BUDGET_MS = RUNTIME_BUDGETS.runSessionMs;
 const MAX_CONCURRENT_RUNNERS = RUNTIME_BUDGETS.maxConcurrentRunners;
 
@@ -45,6 +46,16 @@ function isClientStaticRunnerType(runner?: string | null): boolean {
   if (!runner) return true;
   const normalized = runner.toLowerCase();
   return normalized === "client-static" || normalized === "html";
+}
+
+function resolveBootBudgetMs(runner?: string | null): number {
+  if (isClientStaticRunnerType(runner)) {
+    return CLIENT_STATIC_BOOT_BUDGET_MS;
+  }
+  if (runner && runner.toLowerCase() === "webcontainer") {
+    return WEB_CONTAINER_BOOT_BUDGET_MS;
+  }
+  return CLIENT_STATIC_BOOT_BUDGET_MS;
 }
 
 export default function StudioParams() {
@@ -69,6 +80,32 @@ export default function StudioParams() {
     budgetViolated: false,
   });
   const previewRunIdRef = useRef<string | null>(null);
+  const clearPreviewTimers = useCallback(() => {
+    if (bootTimerRef.current) {
+      clearTimeout(bootTimerRef.current);
+      bootTimerRef.current = null;
+    }
+    if (runTimerRef.current) {
+      clearTimeout(runTimerRef.current);
+      runTimerRef.current = null;
+    }
+  }, []);
+
+  const releasePreviewSlot = useCallback(() => {
+    if (runtimeSlotRef.current) {
+      releaseRuntimeSlot(runtimeSlotRef.current);
+      runtimeSlotRef.current = null;
+    }
+  }, []);
+
+  const resetPreviewBudgetState = useCallback(() => {
+    budgetStateRef.current = {
+      bootStartedAt: null,
+      runStartedAt: null,
+      budgetViolated: false,
+    };
+    previewRunIdRef.current = null;
+  }, []);
 
   const loadSummary = useCallback(async () => {
     if (!capsuleId) return;
@@ -168,29 +205,6 @@ export default function StudioParams() {
     }
   }, [summary, paramsDraft, capsuleId]);
 
-  const clearPreviewTimers = useCallback(() => {
-    if (bootTimerRef.current) {
-      clearTimeout(bootTimerRef.current);
-      bootTimerRef.current = null;
-    }
-    if (runTimerRef.current) {
-      clearTimeout(runTimerRef.current);
-      runTimerRef.current = null;
-    }
-  }, []);
-
-  const releasePreviewSlot = useCallback(() => {
-    if (runtimeSlotRef.current) {
-      releaseRuntimeSlot(runtimeSlotRef.current);
-      runtimeSlotRef.current = null;
-    }
-  }, []);
-
-  const resetPreviewBudgetState = useCallback(() => {
-    budgetStateRef.current = { bootStartedAt: null, runStartedAt: null, budgetViolated: false };
-    previewRunIdRef.current = null;
-  }, []);
-
   const manifestParams = useMemo(() => paramsDraft, [paramsDraft]);
 
   const handleParamValueChange = (name: string, value: unknown) => {
@@ -237,10 +251,11 @@ export default function StudioParams() {
     }
     budgetStateRef.current = { bootStartedAt: Date.now(), runStartedAt: null, budgetViolated: false };
     clearPreviewTimers();
-    if (isClientStaticRunnerType(runner)) {
+    const bootBudgetMs = resolveBootBudgetMs(runner);
+    if (Number.isFinite(bootBudgetMs) && bootBudgetMs > 0) {
       bootTimerRef.current = window.setTimeout(() => {
         handlePreviewBudgetViolation("boot_timeout");
-      }, CLIENT_STATIC_BOOT_BUDGET_MS);
+      }, bootBudgetMs);
     }
     setIsPreviewRunning(true);
   }, [clearPreviewTimers, handlePreviewBudgetViolation, summary?.manifest.runner]);

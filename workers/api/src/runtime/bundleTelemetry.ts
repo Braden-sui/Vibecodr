@@ -1,4 +1,4 @@
-import type { Env } from "../index";
+import type { Env } from "../types";
 import type { PublishWarning } from "../handlers/capsules";
 import { ERROR_BUNDLE_WARNING_TELEMETRY_FAILED } from "@vibecodr/shared";
 

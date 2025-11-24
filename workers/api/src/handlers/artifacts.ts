@@ -1,4 +1,4 @@
-import type { Env, Handler } from "../index";
+import type { Env, Handler } from "../types";
 import { requireAuth, type AuthenticatedUser } from "../auth";
 import {
   getUserPlan,
@@ -15,16 +15,10 @@ import {
 } from "@vibecodr/shared";
 import { invalidateLatestArtifactCache } from "../feed-artifacts";
 import { buildBundleCsp, normalizeBundleNetworkMode } from "../security/bundleCsp";
+import { generateNonce } from "../security/nonce";
 import { guessContentType } from "../runtime/mime";
 import { checkPublicRateLimit, getClientIp } from "../rateLimit";
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
+import { json } from "../lib/responses";
 
 type ArtifactRow = {
   id: string;
@@ -468,13 +462,15 @@ export const getArtifactManifest: Handler = async (req, env, _ctx, params) => {
     }
 
     const { artifact, manifest, runtimeVersion, version } = manifestResult.data;
+    const cspNonce = generateNonce();
+    const manifestWithNonce = { ...manifest, cspNonce };
 
     return json({
       artifactId,
       type: artifact.type,
       runtimeVersion,
       version,
-      manifest,
+      manifest: manifestWithNonce,
     });
   } catch (error) {
     console.error(`${ERROR_RUNTIME_MANIFEST_LOAD_FAILED} getArtifactManifest failed`, {
@@ -543,7 +539,10 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
     );
   }
 
-  const storedContentType = (object as any)?.httpMetadata?.contentType;
+  const storedContentType =
+    object.httpMetadata && typeof object.httpMetadata.contentType === "string"
+      ? object.httpMetadata.contentType
+      : undefined;
   const contentType = storedContentType || guessContentType(bundleKey);
   const bundleMode = normalizeBundleNetworkMode(env.CAPSULE_BUNDLE_NETWORK_MODE);
   const cspHeader = buildBundleCsp(bundleMode);

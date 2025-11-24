@@ -136,6 +136,20 @@ export const runs = sqliteTable("runs", {
   errorMessage: text("error_message"),
 });
 
+// Runtime telemetry events (admin analytics + debugging)
+export const runtimeEvents = sqliteTable("runtime_events", {
+  id: text("id").primaryKey(),
+  eventName: text("event_name").notNull(),
+  capsuleId: text("capsule_id"),
+  artifactId: text("artifact_id"),
+  runtimeType: text("runtime_type"),
+  runtimeVersion: text("runtime_version"),
+  code: text("code"),
+  message: text("message"),
+  properties: text("properties"),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
 // Comments table
 export const comments = sqliteTable("comments", {
   id: text("id").primaryKey(),

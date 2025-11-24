@@ -1,8 +1,10 @@
 // Extended profile handlers: layout, theming, and search
 // References: research-social-platforms.md (Profiles section)
 
-import type { Handler, Env } from "../index";
+import { Plan, normalizePlan } from "@vibecodr/shared";
+import type { Handler, Env } from "../types";
 import { verifyAuth } from "../auth";
+import { json } from "../lib/responses";
 import {
   updateProfileSchema,
   type UpdateProfileInput,
@@ -13,14 +15,6 @@ import {
 } from "../schema";
 
 type Params = Record<string, string>;
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
 
 async function viewerFollowsOwner(env: Env, viewerId: string | null, ownerId: string): Promise<boolean> {
   if (!viewerId) return false;
@@ -33,25 +27,26 @@ async function viewerFollowsOwner(env: Env, viewerId: string | null, ownerId: st
   return !!row;
 }
 
-function mapThemeRow(row: any | null | undefined): ProfileThemeInput | null {
-  if (!row) return null;
+function mapThemeRow(row: unknown): ProfileThemeInput | null {
+  if (!row || typeof row !== "object") return null;
+  const data = row as Record<string, unknown>;
   const base = {
-    mode: row.mode ?? "system",
-    accentHue: Number(row.accent_hue ?? 260),
-    accentSaturation: Number(row.accent_saturation ?? 80),
-    accentLightness: Number(row.accent_lightness ?? 60),
-    radiusScale: Number(row.radius_scale ?? 2),
-    density: row.density ?? "comfortable",
-    accentColor: row.accent_color ?? null,
-    bgColor: row.bg_color ?? null,
-    textColor: row.text_color ?? null,
-    fontFamily: row.font_family ?? null,
-    coverImageUrl: row.cover_image_url ?? null,
-    glass: row.glass === 1 || row.glass === true,
+    mode: typeof data.mode === "string" ? data.mode : "system",
+    accentHue: Number(data.accent_hue ?? 260),
+    accentSaturation: Number(data.accent_saturation ?? 80),
+    accentLightness: Number(data.accent_lightness ?? 60),
+    radiusScale: Number(data.radius_scale ?? 2),
+    density: typeof data.density === "string" ? data.density : "comfortable",
+    accentColor: (data.accent_color as string | null | undefined) ?? null,
+    bgColor: (data.bg_color as string | null | undefined) ?? null,
+    textColor: (data.text_color as string | null | undefined) ?? null,
+    fontFamily: (data.font_family as string | null | undefined) ?? null,
+    coverImageUrl: (data.cover_image_url as string | null | undefined) ?? null,
+    glass: data.glass === 1 || data.glass === true,
     canvasBlur:
-      row.canvas_blur === null || row.canvas_blur === undefined
+      data.canvas_blur === null || data.canvas_blur === undefined
         ? undefined
-        : Number(row.canvas_blur),
+        : Number(data.canvas_blur),
   };
   // Validate to avoid leaking malformed rows
   const parsed = profileThemeSchema.safeParse(base);
@@ -88,17 +83,35 @@ function allowEmbedHost(url: string): boolean {
   }
 }
 
+function readLinks(raw: unknown): Array<{ label: string; url: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    if (entry && typeof entry === "object") {
+      const candidate = entry as { label?: unknown; url?: unknown };
+      return {
+        label: typeof candidate.label === "string" ? candidate.label : "",
+        url: typeof candidate.url === "string" ? candidate.url : "",
+      };
+    }
+    return { label: "", url: "" };
+  });
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 function sanitizeBlock(block: ProfileBlockConfig): ProfileBlockConfig | null {
-  const next = { ...block, props: { ...(block.props ?? {}) } as Record<string, unknown> };
+  const props = { ...(block.props ?? {}) } as Record<string, unknown>;
+  const next: ProfileBlockConfig = { ...block, props };
 
   switch (block.type) {
     case "links": {
-      const rawLinks = Array.isArray((next.props as any).links) ? ((next.props as any).links as any[]) : [];
+      const rawLinks = readLinks(props.links);
       const links: Array<{ label: string; url: string }> = [];
       for (const entry of rawLinks) {
-        const label =
-          typeof (entry as any)?.label === "string" ? (entry as any).label.trim().slice(0, 80) : "";
-        const url = typeof (entry as any)?.url === "string" ? (entry as any).url.trim() : "";
+        const label = typeof entry.label === "string" ? entry.label.trim().slice(0, 80) : "";
+        const url = typeof entry.url === "string" ? entry.url.trim() : "";
         if (!label || !url) continue;
         try {
           const parsed = new URL(url);
@@ -109,24 +122,24 @@ function sanitizeBlock(block: ProfileBlockConfig): ProfileBlockConfig | null {
         }
         if (links.length >= 12) break;
       }
-      (next.props as any).links = links;
+      props.links = links;
       break;
     }
     case "markdown":
     case "text": {
-      const content = typeof (next.props as any)?.content === "string" ? (next.props as any).content : "";
-      (next.props as any).content = content.slice(0, block.type === "markdown" ? 8000 : 2000);
+      const content = typeof props.content === "string" ? props.content : "";
+      props.content = content.slice(0, block.type === "markdown" ? 8000 : 2000);
       break;
     }
     case "capsuleEmbed": {
-      const embedUrl = typeof (next.props as any)?.embedUrl === "string" ? (next.props as any).embedUrl.trim() : "";
+      const embedUrl = typeof props.embedUrl === "string" ? props.embedUrl.trim() : "";
       if (embedUrl && !allowEmbedHost(embedUrl)) {
         return null;
       }
-      const heightRaw = Number((next.props as any)?.height ?? 360);
+      const heightRaw = Number(props.height ?? 360);
       const height = Number.isFinite(heightRaw) ? Math.min(1200, Math.max(240, Math.round(heightRaw))) : 360;
-      (next.props as any).embedUrl = embedUrl;
-      (next.props as any).height = height;
+      props.embedUrl = embedUrl;
+      props.height = height;
       break;
     }
     default:
@@ -157,9 +170,9 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       return json({ error: "User not found" }, 404);
     }
 
-    const ownerId = String((user as any).id);
+    const ownerId = String((user as { id?: unknown }).id ?? "");
 
-    let themeRow: any = null;
+    let themeRow: unknown = null;
     try {
       themeRow = await env.DB.prepare(
         `SELECT mode, accent_hue, accent_saturation, accent_lightness, radius_scale, density,
@@ -176,7 +189,7 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       themeRow = null;
     }
 
-    let badgesResult: any = { results: [] };
+    let badgesResult: unknown = { results: [] as unknown[] };
     try {
       badgesResult = await env.DB.prepare(
         "SELECT b.id, b.slug, b.label, b.description, b.icon, b.tier FROM user_badges ub INNER JOIN badges b ON ub.badge_id = b.id WHERE ub.user_id = ?",
@@ -220,7 +233,7 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       config: ProfileBlockConfig;
     }> = [];
 
-    for (const row of (blocksResult.results || []) as any[]) {
+    for (const row of asArray<Record<string, unknown>>(blocksResult.results)) {
       const visibility = (row.visibility || "public") as
         | "public"
         | "followers"
@@ -235,8 +248,8 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
 
       let parsedConfig: ProfileBlockConfig | null = null;
       try {
-        const parsedJson = row.config_json ? JSON.parse(row.config_json) : {};
-        const rawConfig = parseBlockConfig(parsedJson, ownerId, String(row.id));
+        const parsedJson = row.config_json ? JSON.parse(row.config_json as string) : {};
+        const rawConfig = parseBlockConfig(parsedJson, ownerId, String(row.id ?? ""));
         parsedConfig = rawConfig ? sanitizeBlock(rawConfig) : null;
       } catch (error) {
         console.error("E-VIBECODR-1004 profile block JSON parse failed", {
@@ -257,7 +270,7 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       });
     }
 
-    const projects = (projectsResult.results || []).map((row: any) => ({
+    const projects = asArray<Record<string, unknown>>(projectsResult.results).map((row) => ({
       id: String(row.id),
       title: String(row.title),
       description: row.description as string | null,
@@ -266,7 +279,7 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       createdAt: Number(row.created_at ?? 0),
     }));
 
-    const badges = (badgesResult.results || []).map((row: any) => ({
+    const badges = asArray<Record<string, unknown>>((badgesResult as { results?: unknown }).results).map((row) => ({
       id: String(row.id),
       slug: String(row.slug),
       label: String(row.label),
@@ -296,11 +309,13 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
       }
     }
 
-    const theme = mapThemeRow(themeRow as any) ?? profileThemeSchema.parse({});
+    const theme = mapThemeRow(themeRow) ?? profileThemeSchema.parse({});
 
-    const resolvedName = profileRow?.display_name ?? (user as any).name ?? null;
-    const resolvedAvatar = profileRow?.avatar_url ?? (user as any).avatar_url ?? null;
-    const resolvedBio = profileRow?.bio ?? (user as any).bio ?? null;
+    const userRecord = user as Record<string, unknown>;
+  const resolvedName = profileRow?.display_name ?? (userRecord.name as string | null | undefined) ?? null;
+  const resolvedAvatar = profileRow?.avatar_url ?? (userRecord.avatar_url as string | null | undefined) ?? null;
+  const resolvedBio = profileRow?.bio ?? (userRecord.bio as string | null | undefined) ?? null;
+  const plan = normalizePlan(userRecord.plan, Plan.FREE);
 
     let pinnedCapsules: string[] = [];
     if (profileRow?.pinned_capsules) {
@@ -319,15 +334,15 @@ export const getProfileWithLayout: Handler = async (req, env, ctx, params) => {
         : null;
 
     const payload = {
-      user: {
-        id: String(user.id),
-        handle: String(user.handle),
-        name: resolvedName,
-        avatarUrl: resolvedAvatar,
-        bio: resolvedBio,
-        plan: (user as any).plan ?? "free",
-        createdAt: (user as any).created_at,
-      },
+    user: {
+      id: String(user.id),
+      handle: String(user.handle),
+      name: resolvedName,
+      avatarUrl: resolvedAvatar,
+      bio: resolvedBio,
+      plan,
+      createdAt: userRecord.created_at,
+    },
       header: {
         tagline: profileRow?.tagline ?? null,
         location: profileRow?.location ?? null,
@@ -511,15 +526,16 @@ export const updateProfile: Handler = async (req, env, ctx, params) => {
         if (!sanitized) {
           return json({ error: "Validation failed", details: "Invalid block config" }, 400);
         }
-        const id = (block as any).id ?? crypto.randomUUID();
-        const position = (block as any).position ?? index;
+        const blockId = typeof (block as { id?: unknown }).id === "string" ? (block as { id?: string }).id : crypto.randomUUID();
+        const positionValue = (block as { position?: unknown }).position;
+        const position = typeof positionValue === "number" ? positionValue : index;
         const visibility = sanitized.visibility ?? "public";
         await env.DB.prepare(
           `INSERT INTO profile_blocks (id, user_id, type, position, visibility, config_json, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
-            id,
+            blockId,
             userId,
             sanitized.type,
             position,

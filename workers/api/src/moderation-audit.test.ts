@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 import type { AuthenticatedUser } from "./auth";
 
 vi.mock("./auth", () => {
@@ -236,4 +236,3 @@ describe("moderation audit logging", () => {
     expect(record.targetId).toBe("comment-1");
   });
 });
-

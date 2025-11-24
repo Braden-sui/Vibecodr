@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi } from "vitest";
 import { checkPublicRateLimit } from "./rateLimit";
-import type { Env } from "./index";
+import type { Env } from "./types";
 
 type Row = { count: number; reset_at: number };
 

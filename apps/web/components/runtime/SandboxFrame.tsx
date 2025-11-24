@@ -29,14 +29,25 @@ export type BuildSandboxFrameOptions = {
   params?: Record<string, unknown>;
 };
 
-function buildSandboxCsp(): string {
+function generateNonce(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now()}`;
+}
+
+function buildSandboxCsp(nonce: string): string {
   const mode = getRuntimeBundleNetworkMode();
   const connectSrc = mode === "allow-https" ? "connect-src 'self' https:" : "connect-src 'none'";
 
   return [
     "default-src 'none'",
-    "script-src 'self' 'unsafe-inline' https: blob:",
-    "style-src 'self' 'unsafe-inline'",
+    `script-src 'self' 'nonce-${nonce}' https: blob:`,
+    `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data: blob:",
     connectSrc,
   ].join("; ");
@@ -53,9 +64,10 @@ export function buildSandboxFrameSrcDoc({
     params: params || null,
   });
   const hasBundleUrl = typeof bundleUrl === "string" && bundleUrl.length > 0;
+  const nonce = manifest.cspNonce || generateNonce();
 
   const bundleScript = hasBundleUrl
-    ? `<script defer src="${bundleUrl}"></script>`
+    ? `<script nonce="${nonce}" defer src="${bundleUrl}"></script>`
     : "";
 
   return `<!DOCTYPE html>
@@ -65,10 +77,10 @@ export function buildSandboxFrameSrcDoc({
     <meta name="robots" content="noindex" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="${buildSandboxCsp()}"
+      content="${buildSandboxCsp(nonce)}"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
+    <style nonce="${nonce}">
       html,
       body,
       #root {
@@ -80,14 +92,14 @@ export function buildSandboxFrameSrcDoc({
         background: transparent;
       }
     </style>
-    <script src="${manifest.runtimeAssets.guardUrl}"></script>
-    <script src="${manifest.runtimeAssets.bridgeUrl}"></script>
-    <script>
+    <script nonce="${nonce}" src="${manifest.runtimeAssets.guardUrl}"></script>
+    <script nonce="${nonce}" src="${manifest.runtimeAssets.bridgeUrl}"></script>
+    <script nonce="${nonce}">
       window.vibecodrRuntimeManifest = ${manifestJson};
       window.vibecodrRuntimeOptions = ${optionsJson};
     </script>
     ${bundleScript}
-    <script src="${manifest.runtimeAssets.runtimeScriptUrl}"></script>
+    <script nonce="${nonce}" src="${manifest.runtimeAssets.runtimeScriptUrl}"></script>
   </head>
   <body>
     <div id="root"></div>

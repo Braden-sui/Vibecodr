@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 
 vi.mock("./auth", () => {
   return {
@@ -105,4 +105,3 @@ describe("getUserPosts quarantine visibility", () => {
     expect(res.status).toBe(200);
   });
 });
-

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 import type { AuthenticatedUser } from "./auth";
 
 vi.mock("./auth", () => {
@@ -14,7 +14,7 @@ vi.mock("./auth", () => {
 
 import { getPostById } from "./index";
 import { verifyAuth, isModeratorOrAdmin } from "./auth";
-import type { Handler } from "./index";
+import type { Handler } from "./types";
 
 // Import getPosts via the routes table to avoid exporting internals directly.
 // The route pattern for GET /posts is wired to the same handler used by the feed.
@@ -33,6 +33,9 @@ function makeDbForGetPosts(row: DbRow) {
           return state;
         },
         async all() {
+          if (query.startsWith("PRAGMA table_info(posts)")) {
+            return { results: [{ name: "visibility" }] };
+          }
           if (query.includes("FROM posts p") && query.includes("INNER JOIN users u")) {
             // Enforce that the query always filters out quarantined posts.
             expect(query).toMatch(/p\.quarantined IS NULL OR p\.quarantined = 0/);
@@ -146,4 +149,3 @@ describe("feed getPosts quarantine visibility", () => {
     expect(res.status).toBe(200);
   });
 });
-

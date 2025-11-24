@@ -1,8 +1,50 @@
-import type { Env } from "../index";
+import type { Env } from "../types";
 
 // Small, centralized counter helpers. No schema changes. Safe against negatives.
 export const ERROR_USER_COUNTER_UPDATE_FAILED = "E-VIBECODR-0108";
 export const ERROR_POST_STATS_UPDATE_FAILED = "E-VIBECODR-0109";
+
+type CounterUpdateMeta = {
+  code: string;
+  op: string;
+  details?: Record<string, unknown>;
+};
+
+/**
+ * Run a counter update reliably.
+ * - If a request context is available, use waitUntil so work isn't dropped after the response.
+ * - Without a context (tests or background tasks), await the update to avoid silent loss.
+ */
+export async function runCounterUpdate(
+  ctx: Pick<ExecutionContext, "waitUntil"> | null,
+  update: () => Promise<void>,
+  meta: CounterUpdateMeta
+): Promise<void> {
+  let task: Promise<void>;
+  try {
+    task = update();
+  } catch (err) {
+    console.error(`${meta.code} ${meta.op} failed`, {
+      ...(meta.details ?? {}),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const wrapped = task.catch((err) => {
+    console.error(`${meta.code} ${meta.op} failed`, {
+      ...(meta.details ?? {}),
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(wrapped);
+    return;
+  }
+
+  await wrapped;
+}
 
 function clampDelta(currentExpr: string, deltaParam: string) {
   // SQLite doesn't have GREATEST; MAX avoids double-binding while preventing negatives
@@ -46,17 +88,9 @@ export async function incrementUserCounters(
 
   if (updates.length === 0) return; // nothing to do
 
-  try {
-    await env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
-      .bind(...binds, userId)
-      .run();
-  } catch (err) {
-    console.error(`${ERROR_USER_COUNTER_UPDATE_FAILED} incrementUserCounters failed`, {
-      userId,
-      deltas,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  await env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...binds, userId)
+    .run();
 }
 
 // Placeholder for future post metrics denormalization. Currently stats are derived in queries.
@@ -87,15 +121,7 @@ export async function incrementPostStats(
 
   if (updates.length === 0) return;
 
-  try {
-    await env.DB.prepare(`UPDATE posts SET ${updates.join(", ")} WHERE id = ?`)
-      .bind(...binds, postId)
-      .run();
-  } catch (err) {
-    console.error(`${ERROR_POST_STATS_UPDATE_FAILED} incrementPostStats failed`, {
-      postId,
-      deltas,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  await env.DB.prepare(`UPDATE posts SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...binds, postId)
+    .run();
 }

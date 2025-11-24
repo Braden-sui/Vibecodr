@@ -1,10 +1,11 @@
 // Network proxy with allowlist enforcement and rate limiting
 // References: research-sandbox-and-runner.md (Capability Model)
 
-import type { Env, Handler } from "../index";
+import type { Env, Handler } from "../types";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { requireUser } from "../auth";
 import { getUserPlan, Plan } from "../storage/quotas";
+import { json } from "../lib/responses";
 
 interface RateLimitState {
   count: number;
@@ -52,14 +53,6 @@ const ERROR_PROXY_DISABLED = "E-VIBECODR-0300";
 const ERROR_PROXY_HOST_BLOCKED = "E-VIBECODR-0302";
 const ERROR_PROXY_RATE_LIMIT_STORAGE = "E-VIBECODR-0303";
 const ERROR_PROXY_RATE_LIMIT_STORAGE_MISCONFIG = "E-VIBECODR-0304";
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init
-  });
-}
 
 /**
  * Check if a URL is allowed by the allowlist
@@ -217,11 +210,12 @@ async function checkD1RateLimit(env: Env, key: string, limit: number, windowSec 
     await env.DB.prepare(`UPDATE ${RATE_LIMIT_TABLE} SET count = ? WHERE key = ?`).bind(nextCount, key).run();
     return { allowed: true, remaining: Math.max(0, limit - nextCount), resetAt: row.reset_at * 1000 };
   } catch (err) {
-    console.error("E-VIBECODR-0308 proxy D1 rate limit check failed", {
+    // SAFETY: Fail-closed on rate limit errors to prevent abuse during DB outages.
+    console.error("E-VIBECODR-0308 proxy D1 rate limit check failed (fail-closed)", {
       key,
       error: err instanceof Error ? err.message : String(err),
     });
-    return { allowed: true };
+    return { allowed: false, remaining: 0, resetAt: Date.now() + windowSec * 1000 };
   }
 }
 

@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "./index";
+import type { Env } from "./types";
 import { getPostById } from "./index";
 import { getCapsuleKey } from "./storage/r2";
 import { getLatestArtifactsWithCache } from "./feed-artifacts";

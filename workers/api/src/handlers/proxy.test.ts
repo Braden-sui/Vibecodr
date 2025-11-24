@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, afterEach } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import { netProxy, isHostAllowed, isAllowedProtocol, getBlockedAddressReason } from "./proxy";
 import { Plan } from "../storage/quotas";
 

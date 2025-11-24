@@ -7,7 +7,7 @@ export function normalizeBundleNetworkMode(raw?: string | null): BundleNetworkMo
 
 export function buildBundleCsp(mode: BundleNetworkMode): string {
   const base =
-    "default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;";
+    "default-src 'none'; script-src 'self' blob:; style-src 'none'; img-src 'self' data: blob:;";
   const connect = mode === "allow-https" ? " connect-src 'self' https:;" : " connect-src 'none';";
   return `${base}${connect}`;
 }

@@ -21,6 +21,7 @@ export interface ClientRuntimeManifest {
   version: number;
   runtimeAssets: ClientRuntimeAssets;
   bundle: ClientRuntimeBundle;
+  cspNonce?: string;
 }
 
 interface WorkerRuntimeManifestResponse {
@@ -31,6 +32,7 @@ interface WorkerRuntimeManifestResponse {
   manifest?: {
     artifactId?: string | number;
     type?: string;
+    cspNonce?: string | null;
     runtime?: {
       version?: string;
       assets?: {
@@ -91,6 +93,7 @@ export async function loadRuntimeManifest(artifactId: string): Promise<ClientRun
   );
 
   const bundle = serverManifest.bundle ?? {};
+  const cspNonce = typeof serverManifest.cspNonce === "string" ? serverManifest.cspNonce : undefined;
 
   return {
     artifactId: String(data.artifactId ?? serverManifest.artifactId ?? artifactId),
@@ -107,5 +110,6 @@ export async function loadRuntimeManifest(artifactId: string): Promise<ClientRun
       sizeBytes: Number(bundle.sizeBytes ?? 0),
       digest: String(bundle.digest ?? ""),
     },
+    cspNonce,
   };
 }

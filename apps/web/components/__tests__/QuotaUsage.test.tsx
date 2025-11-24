@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QuotaUsage } from "../QuotaUsage";
+import { Plan } from "@vibecodr/shared";
 
 const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
@@ -28,16 +29,18 @@ describe("QuotaUsage", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        plan: "free",
+        plan: Plan.FREE,
         usage: {
           storage: 500 * 1024 * 1024, // 500 MB
           runs: 2500,
           bundleSize: 10 * 1024 * 1024,
+          liveMinutes: 0,
         },
         limits: {
           maxStorage: 1024 * 1024 * 1024, // 1 GB
           maxRuns: 5000,
           maxBundleSize: 25 * 1024 * 1024,
+          liveMinutes: 0,
         },
       }),
     });
@@ -57,16 +60,18 @@ describe("QuotaUsage", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        plan: "free",
+        plan: Plan.FREE,
         usage: {
           storage: 800 * 1024 * 1024, // 800 MB (80%)
           runs: 1000,
           bundleSize: 10 * 1024 * 1024,
+          liveMinutes: 0,
         },
         limits: {
           maxStorage: 1024 * 1024 * 1024,
           maxRuns: 5000,
           maxBundleSize: 25 * 1024 * 1024,
+          liveMinutes: 0,
         },
       }),
     });
@@ -82,16 +87,18 @@ describe("QuotaUsage", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        plan: "free",
+        plan: Plan.FREE,
         usage: {
           storage: 950 * 1024 * 1024, // 950 MB (95%)
           runs: 4500, // 90%
           bundleSize: 10 * 1024 * 1024,
+          liveMinutes: 0,
         },
         limits: {
           maxStorage: 1024 * 1024 * 1024,
           maxRuns: 5000,
           maxBundleSize: 25 * 1024 * 1024,
+          liveMinutes: 0,
         },
       }),
     });
@@ -108,16 +115,18 @@ describe("QuotaUsage", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        plan: "pro",
+        plan: Plan.PRO,
         usage: {
           storage: 2.5 * 1024 * 1024 * 1024, // 2.5 GB
           runs: 50000,
           bundleSize: 50 * 1024 * 1024,
+          liveMinutes: 0,
         },
         limits: {
           maxStorage: 50 * 1024 * 1024 * 1024,
           maxRuns: 250000,
           maxBundleSize: 100 * 1024 * 1024,
+          liveMinutes: 2500,
         },
       }),
     });
@@ -133,12 +142,13 @@ describe("QuotaUsage", () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        plan: "pro",
-        usage: { storage: 0, runs: 0, bundleSize: 0 },
+        plan: Plan.PRO,
+        usage: { storage: 0, runs: 0, bundleSize: 0, liveMinutes: 0 },
         limits: {
           maxStorage: 50 * 1024 * 1024 * 1024,
           maxRuns: 250000,
           maxBundleSize: 100 * 1024 * 1024,
+          liveMinutes: 2500,
         },
       }),
     });

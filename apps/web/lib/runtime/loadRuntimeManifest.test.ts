@@ -34,6 +34,7 @@ describe("loadRuntimeManifest", () => {
       manifest: {
         artifactId: "a1",
         type: "react-jsx",
+        cspNonce: "nonce123",
         runtime: {
           version: "v0.1.0",
           assets: {
@@ -71,6 +72,7 @@ describe("loadRuntimeManifest", () => {
     expect(result.bundle.r2Key).toBe("capsules/hash/index.html");
     expect(result.bundle.sizeBytes).toBe(1234);
     expect(result.bundle.digest).toBe("deadbeef");
+    expect(result.cspNonce).toBe("nonce123");
   });
 
   it("throws when worker returns non-OK status", async () => {

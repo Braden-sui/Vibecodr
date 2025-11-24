@@ -1,27 +1,48 @@
 // Profile and user-related handlers
 // References: research-social-platforms.md (Profiles section)
 
-import type { Handler, Env } from "../index";
+import type { Handler, Env } from "../types";
 import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
 import { ApiUserProfileResponseSchema, ApiUserPostsResponseSchema } from "../contracts";
 import { buildCapsuleSummary } from "../capsule-manifest";
 import { buildLatestArtifactMap, type CapsuleArtifactRow } from "../feed-artifacts";
 import { getCapsuleKey } from "../storage/r2";
+import { json } from "../lib/responses";
+import { Plan, normalizePlan } from "@vibecodr/shared";
 
 type Params = Record<string, string>;
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init
-  });
-}
 
 function runtimeArtifactsEnabled(env: Env): boolean {
   const flag = env.RUNTIME_ARTIFACTS_ENABLED;
   if (typeof flag !== "string") return true;
   return flag.trim().toLowerCase() !== "false";
+}
+
+type ProfilePostRow = {
+  id: string;
+  type: string;
+  title: string | null;
+  description: string | null;
+  tags: string | null;
+  cover_key?: string | null;
+  created_at: number | string;
+  capsule_id?: string | null;
+  manifest_json?: string | null;
+  capsule_hash?: string | null;
+};
+
+type CountRow = { post_id?: unknown; count?: unknown };
+type CapsuleCountRow = { capsule_id?: unknown; count?: unknown };
+type RemixCountRow = { parent_capsule_id?: unknown; count?: unknown };
+type ViewerLikeRow = { post_id?: unknown };
+
+function toNumber(value: unknown): number {
+  const num = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
 }
 
 /**
@@ -74,7 +95,7 @@ export const getUserProfile: Handler = async (req, env, ctx, params) => {
         name: user.name,
         avatarUrl: user.avatar_url,
         bio: user.bio,
-        plan: user.plan,
+        plan: normalizePlan(user.plan, Plan.FREE),
         createdAt: user.created_at,
         stats: {
           followers: followerCount?.count || 0,
@@ -136,15 +157,15 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
 
     const { results } = await env.DB.prepare(query).bind(user.id, limit, offset).all();
 
-    const rows = results || [];
-    const postIds = rows.map((row: any) => row.id);
+    const rows = asArray<ProfilePostRow>(results);
+    const postIds = rows.map((row) => row.id);
     const capsuleIds = Array.from(
       new Set(
         rows
-          .map((row: any) => row.capsule_id)
-          .filter((id: string | null | undefined) => !!id)
+          .map((row) => row.capsule_id)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
       )
-    ) as string[];
+    );
 
     const likesByPost = new Map<string, number>();
     const commentsByPost = new Map<string, number>();
@@ -182,11 +203,13 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         env.DB.prepare(commentsQuery).bind(...postIds).all(),
       ]);
 
-      for (const row of likesResult.results || []) {
-        likesByPost.set((row as any).post_id, Number((row as any).count ?? 0));
+      for (const row of asArray<CountRow>(likesResult.results)) {
+        if (row.post_id === undefined || row.post_id === null) continue;
+        likesByPost.set(String(row.post_id), toNumber(row.count));
       }
-      for (const row of commentsResult.results || []) {
-        commentsByPost.set((row as any).post_id, Number((row as any).count ?? 0));
+      for (const row of asArray<CountRow>(commentsResult.results)) {
+        if (row.post_id === undefined || row.post_id === null) continue;
+        commentsByPost.set(String(row.post_id), toNumber(row.count));
       }
     }
 
@@ -229,11 +252,13 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         artifactsPromise,
       ]);
 
-      for (const row of runsResult.results || []) {
-        runsByCapsule.set((row as any).capsule_id, Number((row as any).count ?? 0));
+      for (const row of asArray<CapsuleCountRow>(runsResult.results)) {
+        if (row.capsule_id === undefined || row.capsule_id === null) continue;
+        runsByCapsule.set(String(row.capsule_id), toNumber(row.count));
       }
-      for (const row of remixesResult.results || []) {
-        remixesByCapsule.set((row as any).parent_capsule_id, Number((row as any).count ?? 0));
+      for (const row of asArray<RemixCountRow>(remixesResult.results)) {
+        if (row.parent_capsule_id === undefined || row.parent_capsule_id === null) continue;
+        remixesByCapsule.set(String(row.parent_capsule_id), toNumber(row.count));
       }
 
       if (runtimeEnabled) {
@@ -252,8 +277,10 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         )
           .bind(authedUser.userId, ...postIds)
           .all();
-        for (const row of viewerLikes.results || []) {
-          viewerLikedPosts.add(String((row as any).post_id));
+        for (const row of asArray<ViewerLikeRow>(viewerLikes.results)) {
+          if (row.post_id !== undefined && row.post_id !== null) {
+            viewerLikedPosts.add(String(row.post_id));
+          }
         }
       }
       const followRow = await env.DB.prepare(
@@ -264,30 +291,31 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
       viewerFollowsAuthor = !!followRow;
     }
 
+    const userRecord = user as Record<string, unknown>;
     const authorProfile = {
-      displayName: (user as any).profile_display_name ?? null,
-      avatarUrl: (user as any).profile_avatar_url ?? null,
-      bio: (user as any).profile_bio ?? null,
+      displayName: typeof userRecord.profile_display_name === "string" ? userRecord.profile_display_name : null,
+      avatarUrl: typeof userRecord.profile_avatar_url === "string" ? userRecord.profile_avatar_url : null,
+      bio: typeof userRecord.profile_bio === "string" ? userRecord.profile_bio : null,
     };
-    const authorName = authorProfile.displayName ?? (user as any).name ?? null;
-    const authorAvatar = authorProfile.avatarUrl ?? (user as any).avatar_url ?? null;
-    const authorBio = authorProfile.bio ?? (user as any).bio ?? null;
-    const authorPlan = (user as any).plan ?? "free";
+    const authorName = authorProfile.displayName ?? (typeof userRecord.name === "string" ? userRecord.name : null);
+    const authorAvatar = authorProfile.avatarUrl ?? (typeof userRecord.avatar_url === "string" ? userRecord.avatar_url : null);
+    const authorBio = authorProfile.bio ?? (typeof userRecord.bio === "string" ? userRecord.bio : null);
+    const authorPlan = normalizePlan(userRecord.plan, Plan.FREE);
     const author = {
-      id: (user as any).id,
-      handle: (user as any).handle,
+      id: String(userRecord.id),
+      handle: typeof userRecord.handle === "string" ? userRecord.handle : handle,
       name: authorName,
       avatarUrl: authorAvatar,
       bio: authorBio,
-      followersCount: Number((user as any).followers_count ?? 0),
-      runsCount: Number((user as any).runs_count ?? 0),
-      remixesCount: Number((user as any).remixes_count ?? 0),
-      isFeatured: Number((user as any).is_featured ?? 0) === 1,
+      followersCount: toNumber(userRecord.followers_count),
+      runsCount: toNumber(userRecord.runs_count),
+      remixesCount: toNumber(userRecord.remixes_count),
+      isFeatured: Number(userRecord.is_featured ?? 0) === 1,
       plan: authorPlan,
       profile: authorProfile,
     };
 
-    const posts = rows.map((row: any) => {
+    const posts = rows.map((row) => {
       const likeCount = likesByPost.get(row.id) ?? 0;
       const commentCount = commentsByPost.get(row.id) ?? 0;
       const runsCount = row.capsule_id ? runsByCapsule.get(row.capsule_id) ?? 0 : 0;
@@ -309,11 +337,11 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         if (runtimeEnabled) {
           const artifactId = artifactIdsByCapsule.get(row.capsule_id);
           if (artifactId) {
-            (capsuleSummary as any).artifactId = artifactId;
+            capsuleSummary.artifactId = artifactId;
           }
-        } else if (contentHash && typeof (capsuleSummary as any).entry === "string") {
-          (capsuleSummary as any).bundleKey = getCapsuleKey(contentHash, (capsuleSummary as any).entry);
-          (capsuleSummary as any).contentHash = contentHash;
+        } else if (contentHash && typeof capsuleSummary.entry === "string") {
+          capsuleSummary.bundleKey = getCapsuleKey(contentHash, capsuleSummary.entry);
+          capsuleSummary.contentHash = contentHash;
         }
       }
 

@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import { compileDraftArtifact, getCapsuleFilesSummary, updateCapsuleManifest, publishCapsuleDraft } from "./studio";
 import { Plan } from "../storage/quotas";
 

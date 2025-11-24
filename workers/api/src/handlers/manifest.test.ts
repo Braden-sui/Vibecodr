@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Manifest } from "@vibecodr/shared/manifest";
-import type { Env } from "../index";
+import type { Env } from "../types";
 import { getCapsuleBundle, getManifest } from "./manifest";
 import { verifyAuth, isModeratorOrAdmin } from "../auth";
 

@@ -1,3 +1,4 @@
+import { Plan } from "@vibecodr/shared";
 import type { ApiFeedPost } from "@vibecodr/shared";
 import type { Manifest } from "@vibecodr/shared/manifest";
 import type { UpdateProfilePayload } from "@/lib/profile/schema";
@@ -572,10 +573,7 @@ export const artifactsApi = {
 } as const;
 
 export const liveApi = {
-  joinWaitlist(
-    input: { sessionId: string; email: string; handle: string; plan: string },
-    init?: RequestInit,
-  ) {
+  joinWaitlist(input: { sessionId: string; email: string; handle: string; plan: Plan }, init?: RequestInit) {
     return fetch(workerUrl("/live/waitlist"), {
       method: "POST",
       headers: {

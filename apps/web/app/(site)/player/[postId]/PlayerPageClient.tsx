@@ -23,7 +23,7 @@ import { toast } from "@/lib/toast";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { budgeted } from "@/lib/perf";
-import { ApiPostResponseSchema } from "@vibecodr/shared";
+import { ApiPostResponseSchema, Plan, normalizePlan } from "@vibecodr/shared";
 import { usePageMeta } from "@/lib/seo";
 
 type PlayerPageClientProps = {
@@ -37,6 +37,7 @@ const PERF_SAMPLE_RATE = 0.25;
 const PERF_EVENT_MIN_INTERVAL_MS = 2000;
 const RUNTIME_BUDGETS = getRuntimeBudgets();
 const CLIENT_STATIC_BOOT_BUDGET_MS = RUNTIME_BUDGETS.clientStaticBootMs;
+const WEB_CONTAINER_BOOT_BUDGET_MS = RUNTIME_BUDGETS.webContainerBootMs;
 const RUN_SESSION_BUDGET_MS = RUNTIME_BUDGETS.runSessionMs;
 const MAX_CONCURRENT_RUNNERS = RUNTIME_BUDGETS.maxConcurrentRunners;
 
@@ -64,6 +65,16 @@ function isClientStaticRunnerType(runner?: string | null): boolean {
   if (!runner) return true;
   const normalized = runner.toLowerCase();
   return normalized === "client-static" || normalized === "html";
+}
+
+function resolveBootBudgetMs(runner?: string | null): number {
+  if (isClientStaticRunnerType(runner)) {
+    return CLIENT_STATIC_BOOT_BUDGET_MS;
+  }
+  if (runner && runner.toLowerCase() === "webcontainer") {
+    return WEB_CONTAINER_BOOT_BUDGET_MS;
+  }
+  return CLIENT_STATIC_BOOT_BUDGET_MS;
 }
 export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isRunning, setIsRunning] = useState(false);
@@ -629,6 +640,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     if (!post?.capsule?.id || !post?.id) {
       return null;
     }
+    const capsule = post.capsule!;
+    const postId = post.id;
     if (currentRunRef.current) {
       return currentRunRef.current;
     }
@@ -657,24 +670,24 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           trackClientError("E-VIBECODR-0517", {
             area: "player.startRun",
             runId: provisionalRunId,
-            capsuleId: post.capsule.id,
-            postId: post.id,
+            capsuleId: capsule.id,
+            postId,
             message: "Missing auth token for run start",
           });
           releaseRuntimeSlotGuard();
           return null;
         }
 
-      const response = await runsApi.start(
-        { runId: provisionalRunId, capsuleId: post.capsule.id, postId: post.id },
-        init
-      );
+        const response = await runsApi.start(
+          { runId: provisionalRunId, capsuleId: capsule.id, postId },
+          init
+        );
 
       if (!response.ok) {
         let reason = `status=${response.status}`;
         let errorCode: string | undefined;
         let limit: number | undefined;
-        let plan: string | undefined;
+        let plan: Plan | undefined;
         let runsUsed: number | null = null;
         let maxRuns: number | null = null;
         try {
@@ -682,7 +695,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             reason?: string;
             code?: string;
             limit?: number;
-            plan?: string;
+            plan?: unknown;
             limits?: { maxRuns?: number };
             runsThisMonth?: number;
           };
@@ -692,15 +705,15 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           if (typeof body?.code === "string") {
             errorCode = body.code;
           }
-          if (typeof body?.limit === "number") {
-            limit = body.limit;
-          }
-          if (typeof body?.plan === "string") {
-            plan = body.plan;
-          }
-          if (typeof body?.runsThisMonth === "number") {
-            runsUsed = body.runsThisMonth;
-          }
+            if (typeof body?.limit === "number") {
+              limit = body.limit;
+            }
+            if (typeof body?.plan === "string") {
+              plan = normalizePlan(body.plan);
+            }
+            if (typeof body?.runsThisMonth === "number") {
+              runsUsed = body.runsThisMonth;
+            }
           if (typeof body?.limits?.maxRuns === "number") {
             maxRuns = body.limits.maxRuns;
           }
@@ -716,24 +729,24 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             } else {
               const planLabel = (() => {
                 switch (plan) {
-                  case "free":
+                  case Plan.FREE:
                     return "Free";
-                  case "creator":
+                  case Plan.CREATOR:
                     return "Creator";
-                  case "pro":
+                  case Plan.PRO:
                     return "Pro";
-                  case "team":
+                  case Plan.TEAM:
                     return "Team";
                   default:
                     return null;
-                }
-              })();
+                  }
+                })();
               const usageSummary =
                 runsUsed != null && maxRuns != null
                   ? `${runsUsed}/${maxRuns} runs this month`
                   : null;
               const planAwareDescription = (() => {
-                if (plan === "free") {
+                if (plan === Plan.FREE) {
                   return [
                     "You are out of run time on the free plan.",
                     usageSummary ? `You have used ${usageSummary}.` : null,
@@ -766,8 +779,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         trackClientError("E-VIBECODR-0517", {
             area: "player.startRun",
             runId: provisionalRunId,
-            capsuleId: post.capsule.id,
-            postId: post.id,
+            capsuleId: capsule.id,
+            postId,
             message: reason,
             status: response.status,
           });
@@ -848,13 +861,14 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     budgetStateRef.current.bootStartedAt = Date.now();
     budgetStateRef.current.runStartedAt = null;
     clearBudgetTimers();
-    if (isClientStaticRunnerType(post?.capsule?.runner ?? null)) {
+    const bootBudgetMs = resolveBootBudgetMs(post?.capsule?.runner ?? null);
+    if (Number.isFinite(bootBudgetMs) && bootBudgetMs > 0) {
       bootTimerRef.current = window.setTimeout(() => {
         handleBudgetViolation("boot_timeout", {
-          limitMs: CLIENT_STATIC_BOOT_BUDGET_MS,
-          observedMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+          limitMs: bootBudgetMs,
+          observedMs: bootBudgetMs,
         });
-      }, CLIENT_STATIC_BOOT_BUDGET_MS);
+      }, bootBudgetMs);
     }
     setIsRunning(true);
     void (async () => {
@@ -885,11 +899,12 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         iframeHandleRef.current?.kill();
         return;
       }
-      if (isClientStaticRunnerType(post?.capsule?.runner ?? null) && budgetStateRef.current.bootStartedAt) {
+      const bootBudgetMs = resolveBootBudgetMs(post?.capsule?.runner ?? null);
+      if (budgetStateRef.current.bootStartedAt) {
         const bootElapsed = Math.max(0, Date.now() - budgetStateRef.current.bootStartedAt);
-        if (bootElapsed > CLIENT_STATIC_BOOT_BUDGET_MS) {
+        if (bootElapsed > bootBudgetMs) {
           handleBudgetViolation("boot_timeout", {
-            limitMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+            limitMs: bootBudgetMs,
             observedMs: bootElapsed,
           });
           return;
@@ -916,9 +931,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const handleBootMetrics = useCallback(
     (metrics: { bootTimeMs: number }) => {
       setStats((prev) => ({ ...prev, bootTime: metrics.bootTimeMs }));
-      if (isClientStaticRunnerType(post?.capsule?.runner ?? null) && metrics.bootTimeMs > CLIENT_STATIC_BOOT_BUDGET_MS) {
+      const bootBudgetMs = resolveBootBudgetMs(post?.capsule?.runner ?? null);
+      if (metrics.bootTimeMs > bootBudgetMs) {
         handleBudgetViolation("boot_timeout", {
-          limitMs: CLIENT_STATIC_BOOT_BUDGET_MS,
+          limitMs: bootBudgetMs,
           observedMs: metrics.bootTimeMs,
         });
       }

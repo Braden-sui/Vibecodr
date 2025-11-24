@@ -1,14 +1,7 @@
-import type { Handler } from "../index";
+import type { Handler } from "../types";
 import { updateUserSchema } from "../schema";
 import { requireUser } from "../auth";
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
+import { json } from "../lib/responses";
 
 // POST /users/sync
 // Upsert user from Clerk payload. users.id == Clerk user.id

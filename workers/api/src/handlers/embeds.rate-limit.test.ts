@@ -8,7 +8,7 @@ import {
   oEmbedHandler,
   ogImageHandler,
 } from "./embeds";
-import type { Env } from "../index";
+import type { Env } from "../types";
 
 const checkPublicRateLimitMock = vi.fn();
 const getClientIpMock = vi.fn();
@@ -123,7 +123,14 @@ describe("embeds rate limits", () => {
     const req = new Request("https://worker.test/oembed?url=https://vibecodr.space/player/post1&format=json&maxwidth=640");
     const res = await oEmbedHandler(req, createEnv(), {} as any, {} as any);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      provider_name: string;
+      html: string;
+      thumbnail_url: string;
+      width: number;
+      height: number;
+      author_url: string;
+    };
     expect(body.provider_name).toBe("Vibecodr");
     expect(body.html).toContain("/e/post1");
     expect(body.thumbnail_url).toContain("/api/og-image/post1");

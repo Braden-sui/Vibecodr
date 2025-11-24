@@ -18,15 +18,37 @@ import StudioIndex from "@/app/(site)/studio/page";
 import { SignIn as ClerkSignIn, SignUp as ClerkSignUp } from "@clerk/clerk-react";
 import { Comments } from "@/components/Comments";
 import { mapApiFeedPostToFeedPost, type FeedPost, profileApi, postsApi } from "@/lib/api";
-import { ApiPostResponseSchema } from "@vibecodr/shared";
-import { ProfileHeader } from "@/components/profile/ProfileHeader";
-import { ProfileBlocks } from "@/components/profile/ProfileBlocks";
+import { ApiPostResponseSchema, Plan, normalizePlan } from "@vibecodr/shared";
+import { ProfileHeader, type ProfileHeaderProps } from "@/components/profile/ProfileHeader";
+import { ProfileBlocks, type ProfileBlocksProps } from "@/components/profile/ProfileBlocks";
 import { themeToInlineStyle } from "@/lib/profile/theme";
 import { usePageMeta } from "@/lib/seo";
 
 import Layout from "@/src/components/Layout";
 import KineticHeader from "@/src/components/KineticHeader";
 import VibeCard from "@/src/components/VibeCard";
+
+type ProfilePageResponse = ProfileBlocksProps["profile"] &
+  ProfileHeaderProps["profile"] & {
+    profile?: {
+      displayName?: string | null;
+      bio?: string | null;
+    };
+  };
+
+function isProfilePageResponse(value: unknown): value is ProfilePageResponse {
+  if (!value || typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as { user?: unknown; header?: unknown; blocks?: unknown };
+  return (
+    !!candidate.user &&
+    !!candidate.header &&
+    typeof candidate.user === "object" &&
+    typeof candidate.header === "object" &&
+    Array.isArray(candidate.blocks)
+  );
+}
 
 function PlayerRouteWrapper() {
   const params = useParams();
@@ -171,7 +193,7 @@ export function PostDetailRoute() {
 
 function ProfileRouteWrapper() {
   const { handle } = useParams();
-  const [profile, setProfile] = useState<any | null>(null);
+  const [profile, setProfile] = useState<ProfilePageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | "not_found" | null>(null);
   const origin =
@@ -213,7 +235,17 @@ function ProfileRouteWrapper() {
         }
         const json = await res.json();
         if (!cancelled) {
-          setProfile(json);
+          if (!isProfilePageResponse(json)) {
+            throw new Error("E-VIBECODR-2002 invalid profile response shape");
+          }
+          const normalizedProfile: ProfilePageResponse = {
+            ...json,
+            user: {
+              ...json.user,
+              plan: json.user?.plan ? normalizePlan(json.user.plan, Plan.FREE) : null,
+            },
+          };
+          setProfile(normalizedProfile);
         }
       } catch (err) {
         if (!cancelled) {
@@ -249,7 +281,7 @@ function ProfileRouteWrapper() {
     return <div className="py-10 text-center text-muted-foreground">Unable to load profile.</div>;
   }
 
-  const styleVars = themeToInlineStyle((profile as any).theme ?? null);
+  const styleVars = themeToInlineStyle(profile?.theme ?? null);
   const style = { ...styleVars, fontFamily: "var(--vc-font)" };
 
   return (

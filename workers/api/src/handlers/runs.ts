@@ -1,19 +1,12 @@
-import type { Env, Handler } from "../index";
+import type { Env, Handler } from "../types";
 import { requireAuth, type AuthenticatedUser } from "../auth";
-import { incrementPostStats, incrementUserCounters } from "./counters";
+import { incrementPostStats, incrementUserCounters, runCounterUpdate } from "./counters";
 import { getUserRunQuotaState, Plan } from "../storage/quotas";
+import { json } from "../lib/responses";
 
 const DEFAULT_MAX_CONCURRENT_ACTIVE = 2;
 const DEFAULT_RUNTIME_SESSION_MAX_MS = 60_000;
 const ERROR_RUN_LOG_ANALYTICS_FAILED = "E-VIBECODR-2136";
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
 
 type AuthedHandler = (
   req: Request,
@@ -130,22 +123,18 @@ function normalizeDurationMs(candidate: unknown, startedAtSec: number | null): n
   return null;
 }
 
-function incrementRunCounters(env: Env, userId: string, postId: string | null, runId: string) {
-  incrementUserCounters(env, userId, { runsDelta: 1 }).catch((err) => {
-    console.error("E-VIBECODR-0601 run counter increment failed", {
-      userId,
-      runId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+async function incrementRunCounters(ctx: ExecutionContext | null, env: Env, userId: string, postId: string | null, runId: string) {
+  await runCounterUpdate(ctx, () => incrementUserCounters(env, userId, { runsDelta: 1 }), {
+    code: "E-VIBECODR-0601",
+    op: "increment user runs_count",
+    details: { userId, runId },
   });
 
   if (postId) {
-    incrementPostStats(env, postId, { runsDelta: 1 }).catch((err) => {
-      console.error("E-VIBECODR-0602 post run counter increment failed", {
-        postId,
-        runId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    await runCounterUpdate(ctx, () => incrementPostStats(env, postId, { runsDelta: 1 }), {
+      code: "E-VIBECODR-0602",
+      op: "increment post runs_count",
+      details: { postId, runId },
     });
   }
 }
@@ -164,7 +153,7 @@ function writeRunAnalytics(
   }
 ) {
   try {
-    const analytics = (env as any).vibecodr_analytics_engine;
+    const analytics = env.vibecodr_analytics_engine;
     if (!analytics || typeof analytics.writeDataPoint !== "function") return;
     analytics.writeDataPoint({
       blobs: [
@@ -216,7 +205,7 @@ async function recordRunQuotaObservation(env: Env, userId: string) {
  * POST /runs/start
  * Body: { capsuleId: string; postId?: string; runId?: string }
  */
-const startRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => {
+const startRunHandler: AuthedHandler = async (req, env, ctx, _params, user) => {
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
   }
@@ -284,7 +273,7 @@ const startRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => 
     throw e;
   }
 
-  incrementRunCounters(env, user.userId, postId, runId);
+  await incrementRunCounters(ctx, env, user.userId, postId, runId);
   recordRunQuotaObservation(env, user.userId);
   writeRunAnalytics(env, {
     event: "run_start",
@@ -314,7 +303,7 @@ export const startRun: Handler = requireAuth(startRunHandler);
  * POST /runs/complete
  * Body: { capsuleId: string; postId?: string; runId?: string; durationMs?: number; status?: 'completed'|'failed'; errorMessage?: string }
  */
-const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) => {
+const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) => {
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
   }
@@ -433,7 +422,7 @@ const completeRunHandler: AuthedHandler = async (req, env, _ctx, _params, user) 
       throw e;
     }
 
-    incrementRunCounters(env, user.userId, postId, runId);
+    await incrementRunCounters(ctx, env, user.userId, postId, runId);
     recordRunQuotaObservation(env, user.userId);
     writeRunAnalytics(env, {
       event: "run_complete",

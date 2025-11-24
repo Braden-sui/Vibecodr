@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
-import type { Env } from "./index";
+import { PlanSchema, type Plan } from "@vibecodr/shared";
+import type { Env } from "./types";
 
 export function getDb(env: Env) {
   return drizzle(env.DB, { schema });
@@ -29,9 +30,12 @@ export async function upsertUser(
     name?: string | null;
     avatarUrl?: string | null;
     bio?: string | null;
-    plan?: "free" | "creator" | "pro" | "team" | null;
+    plan?: Plan | null;
   }
 ) {
+  const parsedPlan = user.plan == null ? null : PlanSchema.safeParse(user.plan);
+  const plan = parsedPlan?.success ? parsedPlan.data : null;
+
   await env.DB.prepare(
     `INSERT INTO users (id, handle, name, avatar_url, bio, plan)
      VALUES (?, ?, ?, ?, ?, ?)
@@ -48,7 +52,7 @@ export async function upsertUser(
       user.name ?? null,
       user.avatarUrl ?? null,
       user.bio ?? null,
-      user.plan ?? null
+      plan
     )
     .run();
 }

@@ -548,16 +548,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           src="about:blank"
           data-capsule-id={capsuleId}
           data-runtime-network-mode={runtimeNetworkMode}
-          className="h-full w-full"
+          className="h-full w-full border-0"
           sandbox={RUNTIME_IFRAME_SANDBOX}
           allow={RUNTIME_IFRAME_PERMISSIONS}
           referrerPolicy="no-referrer"
           title="Vibe Runner"
-          style={{
-            border: "none",
-            width: "100%",
-            height: "100%",
-          }}
         />
       ) : (
         <iframe
@@ -565,16 +560,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           src={bundleUrl}
           data-capsule-id={capsuleId}
           data-runtime-network-mode={runtimeNetworkMode}
-          className="h-full w-full"
+          className="h-full w-full border-0"
           sandbox={RUNTIME_IFRAME_SANDBOX}
           allow={RUNTIME_IFRAME_PERMISSIONS}
           referrerPolicy="no-referrer"
           title="Vibe Runner"
-          style={{
-            border: "none",
-            width: "100%",
-            height: "100%",
-          }}
         />
       ));
 

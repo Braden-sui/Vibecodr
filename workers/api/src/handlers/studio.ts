@@ -1,5 +1,5 @@
 import { requireAuth, type AuthenticatedUser } from "../auth";
-import type { Env, Handler } from "../index";
+import type { Env, Handler } from "../types";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import { CapsuleFile, getCapsuleKey, listCapsuleFiles } from "../storage/r2";
@@ -8,6 +8,7 @@ import { PublishCapsuleError, createRuntimeArtifactForCapsule, resolveRuntimeArt
 import { buildRuntimeManifest } from "../runtime/runtimeManifest";
 import { bundleInlineJs } from "./inlineBundle";
 import { createPostSchema } from "../schema";
+import { json } from "../lib/responses";
 
 type CapsuleRow = { id: string; owner_id: string; manifest_json: string; hash: string };
 
@@ -34,7 +35,10 @@ function totalAssetSize(rows: Array<{ size?: number }>): number {
 const RUNTIME_ARTIFACT_VERSION = "v0.1.0";
 
 async function hashUint8(data: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data);
+  // SAFETY: Ensure we have a proper ArrayBuffer for crypto.subtle.digest.
+  // We re-wrap through Uint8Array to guarantee ArrayBuffer type compatibility.
+  const safeBuffer = new Uint8Array(data).buffer as ArrayBuffer;
+  const digest = await crypto.subtle.digest("SHA-256", safeBuffer);
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -408,11 +412,3 @@ export const publishCapsuleDraft: Handler = requireAuth(async (req, env, _ctx, p
     return json({ error: err instanceof Error ? err.message : "Failed to publish capsule" }, 500);
   }
 });
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}

@@ -1,4 +1,5 @@
-import type { Env } from "../index";
+import type { Env } from "../types";
+import { UserQuotaResponseSchema, type UserQuotaResponse } from "@vibecodr/shared";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import {
@@ -17,16 +18,18 @@ import {
   checkBundleSize,
   checkStorageQuota,
   incrementStorageUsage,
+  PLAN_LIMITS,
   Plan,
 } from "../storage/quotas";
 import { requireAuth, type AuthenticatedUser } from "../auth";
-import { incrementUserCounters } from "./counters";
+import { incrementUserCounters, runCounterUpdate } from "./counters";
 import { buildRuntimeManifest, type RuntimeArtifactType } from "../runtime/runtimeManifest";
 import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
 import { recordBundleWarningMetrics } from "../runtime/bundleTelemetry";
 import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClient";
 import { bundleInlineJs } from "./inlineBundle";
 import { checkPublicRateLimit, getClientIp } from "../rateLimit";
+import { json } from "../lib/responses";
 
 const ERROR_REMIX_COUNTER_UPDATE_FAILED = "E-VIBECODR-0110";
 const ERROR_REMIX_LINK_INSERT_FAILED = "E-VIBECODR-0111";
@@ -35,7 +38,7 @@ function writePublishAnalytics(
   env: Env,
   payload: {
     outcome: "success" | "error";
-    plan?: string;
+    plan?: Plan;
     totalSize?: number;
     fileCount?: number;
     warnings?: number;
@@ -45,7 +48,7 @@ function writePublishAnalytics(
   }
 ) {
   try {
-    const analytics = (env as any).vibecodr_analytics_engine;
+    const analytics = env.vibecodr_analytics_engine;
     if (!analytics || typeof analytics.writeDataPoint !== "function") return;
     analytics.writeDataPoint({
       blobs: ["publish", payload.outcome, payload.plan ?? "", payload.code ?? "", payload.capsuleId ?? ""],
@@ -121,14 +124,6 @@ type Handler = (
   user?: AuthenticatedUser
 ) => Promise<Response>;
 
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-}
-
 const RUNTIME_ARTIFACT_VERSION = "v0.1.0";
 const RUNTIME_ARTIFACT_RUNNERS = new Set<Manifest["runner"]>(["client-static", "webcontainer"]);
 
@@ -165,12 +160,11 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
 
     // Get manifest
     const manifestEntry = formData.get("manifest");
-    if (!manifestEntry || typeof (manifestEntry as any).text !== "function") {
+    if (!(manifestEntry instanceof File)) {
       return json({ error: "Missing manifest file" }, 400);
     }
 
-    const manifestFile = manifestEntry as unknown as File;
-    const manifestText = await manifestFile.text();
+    const manifestText = await manifestEntry.text();
     const manifestData = JSON.parse(manifestText);
 
     // Validate manifest
@@ -192,22 +186,25 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     const files: CapsuleFile[] = [];
     let totalSize = 0;
 
-    for (const [key, value] of (formData as any)) {
-      if (key === "manifest") continue; // Already processed
-
-      const fileLike = value as any;
-      if (fileLike && typeof fileLike.arrayBuffer === "function") {
-        const content = await fileLike.arrayBuffer();
-        const size = content.byteLength;
-        totalSize += size;
-
-        files.push({
-          path: key,
-          content,
-          contentType: (fileLike.type as string) || "application/octet-stream",
-          size,
-        });
+    const pendingFiles: Array<{ key: string; file: File }> = [];
+    formData.forEach((value, key) => {
+      if (key === "manifest") return; // Already processed
+      if (typeof value !== "string") {
+        pendingFiles.push({ key, file: value });
       }
+    });
+
+    for (const { key, file } of pendingFiles) {
+      const content = await file.arrayBuffer();
+      const size = content.byteLength;
+      totalSize += size;
+
+      files.push({
+        path: key,
+        content,
+        contentType: file.type || "application/octet-stream",
+        size,
+      });
     }
 
     // Add manifest to files
@@ -271,14 +268,15 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
           .bind(publishResult.capsule.id, parentCapsuleId.trim())
           .run();
 
-        // Increment user's remixes count best-effort
-        incrementUserCounters(env, user.userId, { remixesDelta: 1 }).catch((err) => {
-          console.error(`${ERROR_REMIX_COUNTER_UPDATE_FAILED} publishCapsule remixes counter failed`, {
+        // Increment user's remixes count and ensure it runs even if the request returns early.
+        await runCounterUpdate(ctx, () => incrementUserCounters(env, user.userId, { remixesDelta: 1 }), {
+          code: ERROR_REMIX_COUNTER_UPDATE_FAILED,
+          op: "publishCapsule increment remixes_count",
+          details: {
             userId: user.userId,
             capsuleId: publishResult?.capsule.id,
             parentCapsuleId,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          },
         });
       }
     } catch (err) {
@@ -926,17 +924,17 @@ async function bootstrapUserStorageAccount(params: {
 function collectHandleCandidates(user: AuthenticatedUser): { candidates: string[]; fallbackBase: string } {
   const seen = new Set<string>();
   const candidates: string[] = [];
-  const claims = user.claims as Record<string, unknown> | undefined;
+  const claims = user.claims;
+  const publicMetadataRaw =
+    (claims as { public_metadata?: unknown }).public_metadata ??
+    (claims as { publicMetadata?: unknown }).publicMetadata;
+  const publicMetadata =
+    publicMetadataRaw && typeof publicMetadataRaw === "object" ? (publicMetadataRaw as Record<string, unknown>) : null;
   const claimHandles = [
-    claims && typeof (claims as any).username === "string" ? (claims as any).username : null,
-    claims && typeof (claims as any).preferred_username === "string" ? (claims as any).preferred_username : null,
-    claims && typeof (claims as any).handle === "string" ? (claims as any).handle : null,
-    claims && (claims as any).public_metadata && typeof (claims as any).public_metadata.handle === "string"
-      ? ((claims as any).public_metadata.handle as string)
-      : null,
-    claims && (claims as any).publicMetadata && typeof (claims as any).publicMetadata.handle === "string"
-      ? ((claims as any).publicMetadata.handle as string)
-      : null,
+    typeof claims.username === "string" ? claims.username : null,
+    typeof claims.preferred_username === "string" ? claims.preferred_username : null,
+    typeof claims.handle === "string" ? claims.handle : null,
+    publicMetadata && typeof publicMetadata.handle === "string" ? publicMetadata.handle : null,
   ];
 
   for (const raw of claimHandles) {
@@ -1174,44 +1172,23 @@ export const getUserQuota: Handler = requireAuth(async (req, env, ctx, params, u
 
     const runsThisMonth = (runResults?.[0]?.count as number) || 0;
 
-    const limits = {
-      free: {
-        maxBundleSize: 25 * 1024 * 1024,
-        maxRuns: 5_000,
-        maxStorage: 1 * 1024 * 1024 * 1024,
-      },
-      creator: {
-        maxBundleSize: 25 * 1024 * 1024,
-        maxRuns: 50_000,
-        maxStorage: 10 * 1024 * 1024 * 1024,
-      },
-      pro: {
-        maxBundleSize: 100 * 1024 * 1024,
-        maxRuns: 250_000,
-        maxStorage: 50 * 1024 * 1024 * 1024,
-      },
-      team: {
-        maxBundleSize: 250 * 1024 * 1024,
-        maxRuns: 1_000_000,
-        maxStorage: 250 * 1024 * 1024 * 1024,
-      },
-    };
-
-    const planLimits = limits[plan];
-
-    return json({
+    const planLimits = PLAN_LIMITS[plan];
+    const payload: UserQuotaResponse = {
       plan,
       usage: {
         storage: storageUsage,
         runs: runsThisMonth,
         bundleSize: 0,
+        liveMinutes: 0,
       },
       limits: planLimits,
       percentUsed: {
-        storage: (storageUsage / planLimits.maxStorage) * 100,
-        runs: (runsThisMonth / planLimits.maxRuns) * 100,
+        storage: planLimits.maxStorage > 0 ? (storageUsage / planLimits.maxStorage) * 100 : 0,
+        runs: planLimits.maxRuns > 0 ? (runsThisMonth / planLimits.maxRuns) * 100 : 0,
       },
-    });
+    };
+
+    return json(UserQuotaResponseSchema.parse(payload));
   } catch (error) {
     return json(
       {

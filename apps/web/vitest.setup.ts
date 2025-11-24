@@ -1,7 +1,7 @@
 import { expect, afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { createElement } from "react";
+import { createElement, type ComponentProps, type PropsWithChildren } from "react";
 
 // Extend Vitest matchers
 expect.extend(matchers);
@@ -25,11 +25,13 @@ vi.mock("next/navigation", () => ({
 }));
 
 // Mock Next.js Link
-vi.mock("next/link", () => ({
-  default: ({ children, href, ...props }: any) => {
-    return createElement("a", { href, ...props }, children);
-  },
-}));
+vi.mock("next/link", () => {
+  type LinkProps = ComponentProps<"a">;
+  return {
+    default: ({ children, href = "#", ...props }: LinkProps) =>
+      createElement("a", { href, ...props }, children),
+  };
+});
 
 
 // Mock Clerk hooks/components with safe defaults for tests.
@@ -49,8 +51,9 @@ vi.mock("@clerk/clerk-react", () => {
     sessionId: "sess-test",
     orgId: null,
   }));
-  const passthrough = ({ children }: any) => createElement("div", null, children);
-  const button = ({ children, ...props }: any) => createElement("button", { type: "button", ...props }, children);
+  const passthrough = ({ children }: PropsWithChildren) => createElement("div", null, children);
+  const button = ({ children, ...props }: ComponentProps<"button">) =>
+    createElement("button", { type: "button", ...props }, children);
   return {
     useUser,
     useAuth,
@@ -79,23 +82,28 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 // Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  constructor() {}
-  disconnect() {}
-  observe() {}
-  takeRecords() {
+class MockIntersectionObserver implements IntersectionObserver {
+  readonly root: Element | null = null;
+  readonly rootMargin = "";
+  readonly thresholds: ReadonlyArray<number> = [];
+  constructor(private readonly callback: IntersectionObserverCallback = () => undefined) {}
+  disconnect(): void {}
+  observe(_target: Element): void {}
+  takeRecords(): IntersectionObserverEntry[] {
     return [];
   }
-  unobserve() {}
-} as any;
+  unobserve(_target: Element): void {}
+}
+global.IntersectionObserver = MockIntersectionObserver;
 
 // Mock ResizeObserver
-global.ResizeObserver = class ResizeObserver {
-  constructor() {}
-  disconnect() {}
-  observe() {}
-  unobserve() {}
-} as any;
+class MockResizeObserver implements ResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback = () => undefined) {}
+  disconnect(): void {}
+  observe(_target: Element, _options?: ResizeObserverOptions | undefined): void {}
+  unobserve(_target: Element): void {}
+}
+global.ResizeObserver = MockResizeObserver;
 
 const RADIX_STACK_REGEX = /@radix-ui\/react-/i;
 const originalConsoleError = console.error;

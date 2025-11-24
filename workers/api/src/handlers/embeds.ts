@@ -1,16 +1,10 @@
 // Embed and SEO handlers (Open Graph, oEmbed)
 // References: checklist.mdx Section 12 (Sharing, Embeds, and SEO)
 
-import type { Env, Handler } from "../index";
+import type { Env, Handler } from "../types";
 import { checkPublicRateLimit, getClientIp } from "../rateLimit";
-
-function json(data: unknown, status = 200, init?: ResponseInit) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json" },
-    ...init
-  });
-}
+import { generateNonce } from "../security/nonce";
+import { json } from "../lib/responses";
 
 type PostSchemaInfo = { hasVisibility: boolean; hasQuarantined: boolean };
 let cachedPostSchemaInfo: PostSchemaInfo | null = null;
@@ -43,12 +37,17 @@ export const EMBED_IFRAME_ALLOW =
 export const EMBED_PERMISSIONS_POLICY_HEADER =
   "accelerometer=(); autoplay=(); camera=(); display-capture=(); encrypted-media=(); fullscreen=(self); geolocation=(); gyroscope=(); microphone=(); midi=(); payment=(); usb=()";
 
-function buildEmbedContentSecurityPolicy(): string {
+function buildEmbedContentSecurityPolicy(styleNonce?: string): string {
+  const styleSrc = ["'self'"];
+  if (styleNonce) {
+    styleSrc.push(`'nonce-${styleNonce}'`);
+  }
+
   return [
     "default-src 'none'",
     "base-uri 'none'",
     "frame-ancestors *",
-    "style-src 'self' 'unsafe-inline'",
+    `style-src ${styleSrc.join(" ")}`,
     "img-src 'self' data:",
     "frame-src 'self'",
     "script-src 'none'",
@@ -301,7 +300,8 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
     const author = authorName || (authorHandle ? `@${authorHandle}` : "Unknown creator");
     const description =
       (post.description || "").trim().slice(0, 280) || `Playable capsule by ${author}`;
-    const embedCsp = buildEmbedContentSecurityPolicy();
+    const styleNonce = generateNonce();
+    const embedCsp = buildEmbedContentSecurityPolicy(styleNonce);
 
     // Generate minimal HTML with embedded player
     const html = `<!DOCTYPE html>
@@ -324,7 +324,7 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
   <meta property="twitter:description" content="${escapeHtml(description)}">
   <meta property="twitter:image" content="${ogImageUrl}">
   <meta name="author" content="${escapeHtml(author)}">
-  <style>
+  <style nonce="${styleNonce}">
     * {
       margin: 0;
       padding: 0;
@@ -379,10 +379,17 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
       background: #0b1221;
       border-top: 1px solid rgba(148,163,184,0.25);
     }
-    iframe {
+    .player iframe {
       width: 100%;
       height: 100%;
       border: none;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .author-meta {
+      font-size: 12px;
+      color: #cbd5e1;
+      margin-top: 2px;
     }
   </style>
 </head>
@@ -391,7 +398,7 @@ export const embedIframeHandler: Handler = async (req, env, ctx, params) => {
     <div class="header">
       <div>
         <h1>${escapeHtml(title)}</h1>
-        <p style="font-size:12px; color:#cbd5e1; margin-top:2px;">by ${escapeHtml(author)}</p>
+        <p class="author-meta">by ${escapeHtml(author)}</p>
       </div>
       <a href="${playerUrl}" target="_blank" rel="noopener noreferrer">Open in Vibecodr</a>
     </div>

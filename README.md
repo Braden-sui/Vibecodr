@@ -3,7 +3,7 @@
 This repository contains a minimal, navigable skeleton for the Vibecodr MVP:
 
 - apps/web - React Router SPA built with Vite. Page components live under `apps/web/app/(site)` for organization but render exclusively through the SPA entry in `apps/web/src`.
-- apps/web/app/live - Placeholder Phase 5 live capsules hub route; UI experiments for waitlist and sample sessions, no live infra or backend wiring yet.
+- apps/web/app/live - Placeholder Phase 5 live capsules hub route; UI experiments for waitlist and sample sessions, plus `/live/waitlist` Worker endpoint for signups (no streaming infra yet).
 - workers/api - Cloudflare Worker API backing feed, capsules, social, notifications, and moderation. Most endpoints are implemented; see `SITEMAP.md` and `workers/api/README.md`.
 - docs - Research and MVP planning documents.
 - docs/phase-5-plan.md - Expansion & activation plan for post-MVP capabilities.
@@ -12,12 +12,12 @@ This repository contains a minimal, navigable skeleton for the Vibecodr MVP:
 ## Phase 5 Snapshot
 
 - Feed now supports search, tag filters, and a For You lane with analytics events.
-- Live Capsules surfaces include a `/live` placeholder route and prototype live-session card + waitlist UI components; no streaming infra or Worker endpoints yet.
+- Live Capsules surfaces include a `/live` placeholder route, prototype live-session card, and waitlist UI wired to `/live/waitlist`; no streaming infra yet.
 - Shared manifest schema understands worker-edge runners, live settings, and concurrency caps.
 
 Next steps:
-- Wire the live waitlist form to the Workers API.
-- Refine feed search/filter behaviour and For You ranking now that the backend query and analytics wiring are in place.
+- Harden runtime analytics + admin dashboard now that `/runtime-analytics/summary` is live.
+- Refine feed search/filter behaviour and For You ranking now that backend scoring and analytics wiring are in place.
 
 ## UI architecture cheat sheet
 
