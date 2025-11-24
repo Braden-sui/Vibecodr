@@ -212,7 +212,8 @@ const EtheriaSkyBackground = () => {
       rotation: number;
     }[] = [];
 
-    const clusterCount = 95;
+    // Increase density to roughly 3x previous particle count.
+    const clusterCount = 285;
     const puffsPerCluster = 10;
     const totalPuffs = clusterCount * puffsPerCluster;
     const puffMesh = new THREE.InstancedMesh(puffGeometry, puffMaterial, totalPuffs);
