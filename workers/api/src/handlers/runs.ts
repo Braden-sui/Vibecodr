@@ -5,6 +5,7 @@ import { getUserRunQuotaState, Plan } from "../storage/quotas";
 
 const DEFAULT_MAX_CONCURRENT_ACTIVE = 2;
 const DEFAULT_RUNTIME_SESSION_MAX_MS = 60_000;
+const ERROR_RUN_LOG_ANALYTICS_FAILED = "E-VIBECODR-2136";
 
 function json(data: unknown, status = 200, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
@@ -589,7 +590,7 @@ const appendRunLogsHandler: AuthedHandler = async (req, env, _ctx, params, user)
           doubles: [entry.timestamp, entry.sampleRate],
         });
       } catch (err) {
-        console.error("E-API-0015 appendRunLogs analytics write failed", {
+        console.error(`${ERROR_RUN_LOG_ANALYTICS_FAILED} appendRunLogs analytics write failed`, {
           runId,
           error: err instanceof Error ? err.message : String(err),
         });

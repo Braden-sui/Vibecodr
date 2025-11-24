@@ -28,6 +28,9 @@ import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClie
 import { bundleInlineJs } from "./inlineBundle";
 import { checkPublicRateLimit, getClientIp } from "../rateLimit";
 
+const ERROR_REMIX_COUNTER_UPDATE_FAILED = "E-VIBECODR-0110";
+const ERROR_REMIX_LINK_INSERT_FAILED = "E-VIBECODR-0111";
+
 function writePublishAnalytics(
   env: Env,
   payload: {
@@ -270,7 +273,7 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
 
         // Increment user's remixes count best-effort
         incrementUserCounters(env, user.userId, { remixesDelta: 1 }).catch((err) => {
-          console.error("E-API-0010 publishCapsule remixes counter failed", {
+          console.error(`${ERROR_REMIX_COUNTER_UPDATE_FAILED} publishCapsule remixes counter failed`, {
             userId: user.userId,
             capsuleId: publishResult?.capsule.id,
             parentCapsuleId,
@@ -279,7 +282,7 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
         });
       }
     } catch (err) {
-      console.error("E-API-0011 publishCapsule remix insert failed", {
+      console.error(`${ERROR_REMIX_LINK_INSERT_FAILED} publishCapsule remix insert failed`, {
         error: err instanceof Error ? err.message : String(err),
       });
     }

@@ -97,6 +97,13 @@ const EtheriaSkyBackground = () => {
     // We'll store initial random offsets to maintain "shape" during recycling
     const randomOffsets = new Float32Array(cloudCount * 3);
 
+    // Deterministic random helper
+    // Allows us to get the same "random" value for a specific particle index every time
+    const getDeterministicRandom = (seed: number) => {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    };
+
     // Create clusters of clouds
     const clusterCount = 40;
     for (let i = 0; i < cloudCount; i++) {
@@ -157,33 +164,60 @@ const EtheriaSkyBackground = () => {
       colors[i * 3 + 1] = mixedColor.g;
       colors[i * 3 + 2] = mixedColor.b;
 
-      // Randomize sizes slightly for variety
-      sizes[i] = 150 + Math.random() * 100;
+      // Randomize sizes slightly for variety (deterministic)
+      const rSize = getDeterministicRandom(i * 91.345);
+      sizes[i] = 150 + rSize * 100;
     }
 
     // Store original positions for parallax calculations (base reference)
     // We act on a "virtual" Z position that loops
-    const originalPositions = new Float32Array(cloudCount * 3);
+    const originalPositions = new Float32Array(positions); // Correctly initialize from initial positions
     const originalZ = new Float32Array(cloudCount);
     for(let i=0; i<cloudCount; i++) {
-        originalPositions[i * 3] = positions[i * 3];
-        originalPositions[i * 3 + 1] = positions[i * 3 + 1];
-        originalPositions[i * 3 + 2] = positions[i * 3 + 2];
         originalZ[i] = positions[i * 3 + 2];
     }
 
+    // Opacity buffer for fade in/out
+    const opacities = new Float32Array(cloudCount);
+    opacities.fill(1); // Start fully visible, animate loop will adjust
+
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute("opacity", new THREE.BufferAttribute(opacities, 1));
+    geometry.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
 
-    const material = new THREE.PointsMaterial({
-      size: 180,
-      map: cloudTexture,
-      vertexColors: true,
+    // Custom shader to support per-particle opacity and size attenuation
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: cloudTexture },
+        scale: { value: height / (2 * Math.tan((35 * Math.PI) / 360)) } // Perspective scale for fov 35
+      },
+      vertexShader: `
+        attribute float opacity;
+        attribute float size;
+        varying float vOpacity;
+        varying vec3 vColor;
+        void main() {
+          vOpacity = opacity;
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          // Size attenuation matches THREE.PointsMaterial
+          gl_PointSize = size * (scale / -mvPosition.z);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        varying float vOpacity;
+        varying vec3 vColor;
+        void main() {
+          vec4 texColor = texture2D(map, gl_PointCoord);
+          gl_FragColor = vec4(vColor, texColor.a * vOpacity);
+        }
+      `,
       transparent: true,
-      opacity: 0.45,
       depthWrite: false,
-      blending: THREE.NormalBlending, // Normal blending for "solid" looking clouds, Additive for "glow"
-      sizeAttenuation: true,
+      blending: THREE.NormalBlending
     });
 
     const cloudSystem = new THREE.Points(geometry, material);
@@ -198,10 +232,6 @@ const EtheriaSkyBackground = () => {
       const scrollY = window.scrollY;
       
       // 1. Infinite Camera Movement
-      // Instead of moving the camera to a limit, we move it continuously.
-      // However, precision issues happen if camera.z gets too small/large.
-      // Better approach: Move the world (clouds) relative to the camera.
-      
       // "Virtual" camera Z based on scroll. 
       // 800 is start. We move deeper (negative) as we scroll.
       // We multiply scrollY to make the journey feel faster/longer.
@@ -216,54 +246,54 @@ const EtheriaSkyBackground = () => {
 
       // 3. Infinite Cloud Looping
       const currentPositions = geometry.attributes.position.array as Float32Array;
+      const currentOpacities = geometry.attributes.opacity.array as Float32Array;
       const tunnelLength = 2000; // Depth of the cloud tunnel
       const tunnelStart = 800;   // Where particles "start" relative to camera (behind)
       const tunnelEnd = -1200;   // Where particles "end" (far distance)
+      const fadeDistance = 600;  // Distance over which to fade in/out
 
       for (let i = 0; i < cloudCount; i++) {
         const ix = i * 3;
         
         // Calculate relative Z distance to the "virtual camera"
-        // We add a modulo to create the loop.
-        // The particle's "true" Z is its original Z minus the camera's travel distance.
         let relativeZ = originalZ[i] - virtualCameraZ;
         
         // Wrap the Z coordinate within the tunnel length to create infinity
-        // We want z to be in range [tunnelEnd, tunnelStart]
-        // If it goes > tunnelStart (behind camera), wrap to tunnelEnd (far front)
-        // If it goes < tunnelEnd (too far), wrap to tunnelStart (behind)
-        
-        // Shift relativeZ so 0 is at tunnelEnd
         const offsetZ = relativeZ - tunnelEnd;
         const wrappedZ = ((offsetZ % tunnelLength) + tunnelLength) % tunnelLength;
         const finalZ = wrappedZ + tunnelEnd;
         
         // Parallax / Cloud Parting Logic
-        // As particles get closer to the camera (finalZ approaches 800), they spread out (X/Y)
-        // Normalized progress from 0 (far) to 1 (near)
         const progress = (finalZ - tunnelEnd) / tunnelLength; 
-        // Exponential spread for "flying through" effect
         const spread = 1 + (progress * progress * progress * 2);
 
-        // Base positions
-        // We re-derive X/Y from cluster logic or just noise to keep it deterministic but shifting
-        // Here we just use the original X/Y and expand them
-        // To make it feel "procedural", we can add a slight rotation or wave based on scroll
-        const baseX = (Math.sin(i * 0.1 + time * 0.05) * 50) + (originalPositions[ix] || positions[ix]); 
-        // We don't strictly store originalPositions X/Y because we overwrite them in the loop, 
-        // so we can just use the current buffer or re-calc. 
-        // Ideally, we should have stored original X/Y. Let's fix that briefly above by using a separate buffer if needed.
-        // But for "virtually never ending", reusing the buffer with a math function is fine.
-        
-        // Let's actually rely on the `originalPositions` we defined earlier but missed populating fully in the previous block.
-        // Let's assume originalPositions[ix] is valid static data.
-        
+        // Deterministic X/Y expansion
+        // We use the stored original positions to ensure the cloud shape is preserved but expanded
         currentPositions[ix] = originalPositions[ix] * spread;
         currentPositions[ix + 1] = originalPositions[ix+1] * spread;
         currentPositions[ix + 2] = finalZ;
+
+        // Fade Logic
+        // We want to fade IN at the far end (tunnelEnd) and OUT at the near end (tunnelStart)
+        // Distance from far end
+        const distFromFar = finalZ - tunnelEnd; // 0 to 2000
+        
+        let alpha = 0.45; // Max base opacity
+        
+        if (distFromFar < fadeDistance) {
+           // Fading in from distance
+           alpha *= (distFromFar / fadeDistance);
+        } else if (distFromFar > (tunnelLength - fadeDistance)) {
+           // Fading out near camera/behind
+           const distFromNear = tunnelLength - distFromFar;
+           alpha *= (distFromNear / fadeDistance);
+        }
+        
+        currentOpacities[i] = Math.max(0, alpha);
       }
       
       geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.opacity.needsUpdate = true;
 
       renderer.render(scene, camera);
     };
@@ -276,6 +306,9 @@ const EtheriaSkyBackground = () => {
       renderer.setSize(nextWidth, nextHeight);
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
+      
+      // Update shader scale uniform for correct point sizing
+      material.uniforms.scale.value = nextHeight / (2 * Math.tan((35 * Math.PI) / 360));
     };
 
     window.addEventListener("resize", handleResize);

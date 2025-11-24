@@ -91,6 +91,8 @@ export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const endpoints = summary?.health?.endpoints;
+  const runtimeHealth = summary?.health?.runtime;
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -151,6 +153,12 @@ export default function AdminAnalyticsPage() {
     };
   }, [isAdmin, isSignedIn, getToken]);
 
+  useEffect(() => {
+    if (summary && (!endpoints || !runtimeHealth)) {
+      console.warn("E-VIBECODR-2401 runtime analytics summary missing health metrics");
+    }
+  }, [summary, endpoints, runtimeHealth]);
+
   if (authzState === "unauthenticated") {
     return (
       <section className="space-y-3">
@@ -203,33 +211,46 @@ export default function AdminAnalyticsPage() {
                 5xx signals come from client_error telemetry; runtime outcomes from player events.
               </p>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {[
-                { key: "artifacts", label: "Artifacts 5xx", data: summary.health.endpoints.artifacts },
-                { key: "runs", label: "Runs 5xx", data: summary.health.endpoints.runs },
-                { key: "import", label: "Import 5xx", data: summary.health.endpoints["import"] },
-              ].map((item) => (
-                <div key={item.key} className="rounded-lg border border-border/80 bg-background/40 p-3 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                  <div className="mt-2 flex items-baseline gap-2">
-                    <span className="text-2xl font-semibold">{formatPercent(item.data.rate)}</span>
-                    <span className="text-xs text-muted-foreground">({item.data.fiveXx}/{item.data.total || 1})</span>
+            <div className="mt-4">
+              {endpoints && runtimeHealth ? (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { key: "artifacts", label: "Artifacts 5xx", data: endpoints.artifacts },
+                    { key: "runs", label: "Runs 5xx", data: endpoints.runs },
+                    { key: "import", label: "Import 5xx", data: endpoints["import"] },
+                  ].map((item) => (
+                    <div key={item.key} className="rounded-lg border border-border/80 bg-background/40 p-3 shadow-sm">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                      <div className="mt-2 flex items-baseline gap-2">
+                        <span className="text-2xl font-semibold">{formatPercent(item.data.rate)}</span>
+                        <span className="text-xs text-muted-foreground">({item.data.fiveXx}/{item.data.total || 1})</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">5xx events vs. total client_error signals</p>
+                    </div>
+                  ))}
+                  <div className="rounded-lg border border-border/80 bg-background/40 p-3 shadow-sm">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Runtime killed vs completed</p>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="text-2xl font-semibold">{formatPercent(runtimeHealth.killRate)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({runtimeHealth.killed}/{runtimeHealth.killed + runtimeHealth.completed || 1})
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {runtimeHealth.killed} killed / {runtimeHealth.completed} completed
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">5xx events vs. total client_error signals</p>
                 </div>
-              ))}
-              <div className="rounded-lg border border-border/80 bg-background/40 p-3 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Runtime killed vs completed</p>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-2xl font-semibold">{formatPercent(summary.health.runtime.killRate)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({summary.health.runtime.killed}/{summary.health.runtime.killed + summary.health.runtime.completed || 1})
-                  </span>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-sm">
+                  {/* INVARIANT: Only render health cards when the Worker response provides endpoint and runtime snapshots. */}
+                  <p className="font-semibold text-foreground">Health data unavailable</p>
+                  <p className="text-xs text-muted-foreground">
+                    The runtime analytics payload is missing health metrics. Check ingestion and Worker logs for
+                    E-VIBECODR-2401.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {summary.health.runtime.killed} killed / {summary.health.runtime.completed} completed
-                </p>
-              </div>
+              )}
             </div>
           </div>
 

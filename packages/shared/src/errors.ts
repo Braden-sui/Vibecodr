@@ -140,6 +140,38 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Quarantine is temporarily unavailable. Please contact an administrator.",
     logMessage: "Direct comment unquarantine failed",
   },
+  "E-VIBECODR-0108": {
+    code: "E-VIBECODR-0108",
+    category: "api",
+    httpStatus: 202,
+    severity: "warning",
+    userMessage: "We saved your action, but profile counts may be temporarily stale.",
+    logMessage: "User counters update failed",
+  },
+  "E-VIBECODR-0109": {
+    code: "E-VIBECODR-0109",
+    category: "api",
+    httpStatus: 202,
+    severity: "warning",
+    userMessage: "We saved your action, but post stats may be temporarily stale.",
+    logMessage: "Post stats update failed",
+  },
+  "E-VIBECODR-0110": {
+    code: "E-VIBECODR-0110",
+    category: "capsule",
+    httpStatus: 202,
+    severity: "warning",
+    userMessage: "Remix counts may be temporarily delayed.",
+    logMessage: "Remix counter update failed during publish",
+  },
+  "E-VIBECODR-0111": {
+    code: "E-VIBECODR-0111",
+    category: "capsule",
+    httpStatus: 202,
+    severity: "warning",
+    userMessage: "We published your remix, but linking to the parent may be delayed.",
+    logMessage: "Remix relationship insert failed during publish",
+  },
 
   // 02xx: capsule manifest parsing and validation in feed/player paths
   "E-VIBECODR-0201": {
@@ -317,6 +349,14 @@ const definitions: Record<string, ErrorDefinition> = {
     severity: "error",
     userMessage: "Unable to load runtime analytics data right now.",
     logMessage: "Runtime analytics summary fetch failed",
+  },
+  "E-VIBECODR-2136": {
+    code: "E-VIBECODR-2136",
+    category: "runtime",
+    httpStatus: 202,
+    severity: "warning",
+    userMessage: "Run log telemetry is temporarily unavailable; some logs may be missing.",
+    logMessage: "Runtime appendRunLogs analytics write failed",
   },
 };
 

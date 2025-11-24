@@ -1,6 +1,8 @@
 import type { Env } from "../index";
 
 // Small, centralized counter helpers. No schema changes. Safe against negatives.
+export const ERROR_USER_COUNTER_UPDATE_FAILED = "E-VIBECODR-0108";
+export const ERROR_POST_STATS_UPDATE_FAILED = "E-VIBECODR-0109";
 
 function clampDelta(currentExpr: string, deltaParam: string) {
   // SQLite doesn't have GREATEST; MAX avoids double-binding while preventing negatives
@@ -49,7 +51,7 @@ export async function incrementUserCounters(
       .bind(...binds, userId)
       .run();
   } catch (err) {
-    console.error("E-API-0001 incrementUserCounters failed", {
+    console.error(`${ERROR_USER_COUNTER_UPDATE_FAILED} incrementUserCounters failed`, {
       userId,
       deltas,
       error: err instanceof Error ? err.message : String(err),
@@ -90,7 +92,7 @@ export async function incrementPostStats(
       .bind(...binds, postId)
       .run();
   } catch (err) {
-    console.error("E-API-0012 incrementPostStats failed", {
+    console.error(`${ERROR_POST_STATS_UPDATE_FAILED} incrementPostStats failed`, {
       postId,
       deltas,
       error: err instanceof Error ? err.message : String(err),

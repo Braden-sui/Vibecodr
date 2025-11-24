@@ -3,7 +3,7 @@
 
 import type { Handler, Env } from "../index";
 import { requireUser, verifyAuth, isModeratorOrAdmin } from "../auth";
-import { incrementPostStats } from "./counters";
+import { incrementPostStats, ERROR_POST_STATS_UPDATE_FAILED } from "./counters";
 import { createCommentBodySchema } from "../schema";
 
 type Params = Record<string, string>;
@@ -53,7 +53,7 @@ export const likePost: Handler = requireUser(async (req, env, ctx, params, userI
 
       // Best-effort: update post like stats (no-op today) and ignore failures
       incrementPostStats(env, postId, { likesDelta: 1 }).catch((err: unknown) => {
-        console.error("E-API-0002 likePost counter update failed", {
+        console.error(`${ERROR_POST_STATS_UPDATE_FAILED} likePost counter update failed`, {
           postId,
           userId,
           error: err instanceof Error ? err.message : String(err),
@@ -99,7 +99,7 @@ export const unlikePost: Handler = requireUser(async (req, env, ctx, params, use
     // Only decrement if a row was deleted (idempotent)
     // D1 run() doesn't always return changes; attempt best-effort decrement
     incrementPostStats(env, postId, { likesDelta: -1 }).catch((err: unknown) => {
-      console.error("E-API-0003 unlikePost counter update failed", {
+      console.error(`${ERROR_POST_STATS_UPDATE_FAILED} unlikePost counter update failed`, {
         postId,
         userId,
         error: err instanceof Error ? err.message : String(err),
@@ -413,7 +413,7 @@ export const createComment: Handler = requireUser(async (req, env, ctx, params, 
 
     // Best-effort: update post comment stats and ignore failures
     incrementPostStats(env, postId, { commentsDelta: 1 }).catch((err: unknown) => {
-      console.error("E-API-0013 createComment counter update failed", {
+      console.error(`${ERROR_POST_STATS_UPDATE_FAILED} createComment counter update failed`, {
         postId,
         userId,
         commentId,
@@ -548,7 +548,7 @@ export const deleteComment: Handler = requireUser(async (req, env, ctx, params, 
     await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
 
     incrementPostStats(env, row.post_id, { commentsDelta: -1 }).catch((err: unknown) => {
-      console.error("E-API-0014 deleteComment counter update failed", {
+      console.error(`${ERROR_POST_STATS_UPDATE_FAILED} deleteComment counter update failed`, {
         commentId,
         postId: row.post_id,
         userId,
