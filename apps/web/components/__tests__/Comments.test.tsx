@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 const mockUseUser = vi.fn(() => ({
@@ -87,6 +87,10 @@ describe("Comments", () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("should display loading state initially", () => {
     commentsFetchMock.mockReturnValue(new Promise(() => {}) as any);
 
@@ -150,6 +154,42 @@ describe("Comments", () => {
     await waitFor(() => {
       expect(screen.getByText(/at 5s/)).toBeInTheDocument();
     });
+  });
+
+  it("should refresh relative timestamps over time", async () => {
+    vi.useFakeTimers();
+    const base = new Date("2024-01-01T00:00:00Z");
+    vi.setSystemTime(base);
+
+    commentsFetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        comments: [
+          {
+            id: "comment1",
+            body: "Time anchored",
+            createdAt: Math.floor(base.getTime() / 1000),
+            user: { id: "user1", handle: "alice" },
+          },
+        ],
+      }),
+    });
+
+    render(<Comments postId="post1" />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/just now/i)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(90_000);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/1m ago/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
   it("should allow posting new comments", async () => {

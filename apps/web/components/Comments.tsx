@@ -62,6 +62,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
 
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -109,6 +110,16 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   useEffect(() => {
     fetchComments();
   }, [fetchComments]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowSeconds(Math.floor(Date.now() / 1000));
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -292,7 +303,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   };
 
   const formatRelativeTime = (timestamp: number) => {
-    const now = Math.floor(Date.now() / 1000);
+    const now = nowSeconds;
     const diff = now - timestamp;
 
     if (diff < 60) return "just now";
