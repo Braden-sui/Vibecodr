@@ -14,6 +14,7 @@ import { postsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { ApiFeedResponseSchema } from "@vibecodr/shared";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import KineticHeader from "@/src/components/KineticHeader";
+import { usePageMeta } from "@/lib/seo";
 
 type FeedMode = "latest" | "following" | "foryou";
 
@@ -31,6 +32,19 @@ export default function FeedPage() {
   const { getToken } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const prefersReducedMotion = useReducedMotion();
+  const origin =
+    typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
+      ? window.location.origin
+      : "";
+
+  usePageMeta({
+    title: "Vibecodr | Run, remix, and publish vibes",
+    description: "Playable capsule feed. Run inline, tweak params, remix, and share embeds.",
+    url: origin || undefined,
+    type: "website",
+    siteName: "Vibecodr",
+    canonicalUrl: origin || undefined,
+  });
 
   // Keep searchTerm synced with URL `q`
   useEffect(() => {

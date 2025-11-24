@@ -18,6 +18,7 @@ import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { budgeted } from "@/lib/perf";
 import { ApiPostResponseSchema } from "@vibecodr/shared";
+import { usePageMeta } from "@/lib/seo";
 
 type PlayerPageClientProps = {
   postId: string;
@@ -100,6 +101,25 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       }),
     []
   );
+  const origin =
+    typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
+      ? window.location.origin
+      : "";
+  const canonicalUrl = origin ? `${origin}/player/${postId}` : undefined;
+  const ogImageUrl = canonicalUrl ? `${origin}/api/og-image/${postId}` : undefined;
+  const oEmbedUrl = canonicalUrl
+    ? `${origin}/api/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`
+    : undefined;
+
+  usePageMeta({
+    title: post ? `${post.title} | Vibecodr Player` : "Vibecodr Player",
+    description: post?.description ?? undefined,
+    url: canonicalUrl,
+    image: ogImageUrl,
+    type: post?.capsule ? "video.other" : "article",
+    oEmbedUrl,
+    canonicalUrl,
+  });
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;

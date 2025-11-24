@@ -20,10 +20,12 @@ import { ApiPostResponseSchema } from "@vibecodr/shared";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ProfileBlocks } from "@/components/profile/ProfileBlocks";
 import { themeToInlineStyle } from "@/lib/profile/theme";
+import { usePageMeta } from "@/lib/seo";
 
 import Layout from "@/src/components/Layout";
 import KineticHeader from "@/src/components/KineticHeader";
 import VibeCard from "@/src/components/VibeCard";
+import { usePageMeta } from "@/lib/seo";
 
 function PlayerRouteWrapper() {
   const params = useParams();
@@ -37,6 +39,26 @@ function PostDetailRoute() {
   const [post, setPost] = useState<FeedPost | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | "not_found" | null>(null);
+  const origin =
+    typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
+      ? window.location.origin
+      : "";
+  const canonicalUrl = origin && id ? `${origin}/post/${id}` : undefined;
+  const ogImageUrl = origin && id ? `${origin}/api/og-image/${id}` : undefined;
+  const oEmbedUrl =
+    canonicalUrl && id
+      ? `${origin}/api/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`
+      : undefined;
+
+  usePageMeta({
+    title: post ? `${post.title} | Vibecodr` : "Vibecodr Post",
+    description: post?.description ?? undefined,
+    url: canonicalUrl,
+    image: ogImageUrl,
+    type: post?.type === "app" ? "video.other" : "article",
+    oEmbedUrl,
+    canonicalUrl,
+  });
 
   useEffect(() => {
     if (!id) {
@@ -151,6 +173,20 @@ function ProfileRouteWrapper() {
   const [profile, setProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | "not_found" | null>(null);
+  const origin =
+    typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
+      ? window.location.origin
+      : "";
+  const canonicalUrl = origin && handle ? `${origin}/u/${encodeURIComponent(handle)}` : undefined;
+
+  usePageMeta({
+    title: profile ? `${profile?.profile?.displayName || profile?.user?.name || `@${profile?.user?.handle}`} | Vibecodr` : "Vibecodr Profile",
+    description: profile?.profile?.bio ?? profile?.user?.bio ?? undefined,
+    url: canonicalUrl,
+    type: "profile",
+    siteName: "Vibecodr",
+    canonicalUrl,
+  });
 
   useEffect(() => {
     if (!handle) {
