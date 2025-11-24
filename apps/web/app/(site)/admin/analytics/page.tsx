@@ -148,7 +148,7 @@ export default function AdminAnalyticsPage() {
 
       {summary && (
         <div className="space-y-4">
-          <div className="rounded-xl border bg-card/60 p-4">
+          <div className="rounded-xl vc-surface p-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Event summary</h2>
               <p className="text-xs text-muted-foreground">
@@ -179,7 +179,7 @@ export default function AdminAnalyticsPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-card/60 p-4">
+          <div className="rounded-xl vc-surface p-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Recent events</h2>
               <Link to="/admin/moderation" className="text-xs text-primary underline">

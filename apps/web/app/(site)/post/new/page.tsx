@@ -3,7 +3,6 @@
 import { Sparkles } from "lucide-react";
 import { VibesComposer } from "@/components/VibesComposer";
 import KineticHeader from "@/src/components/KineticHeader";
-import VibeCard from "@/src/components/VibeCard";
 
 export default function ShareVibePage() {
   return (
@@ -19,9 +18,7 @@ export default function ShareVibePage() {
         </p>
       </header>
 
-      <VibeCard className="shadow-sm p-0 overflow-visible border-0 bg-transparent shadow-none">
-        <VibesComposer className="shadow-none border-0" />
-      </VibeCard>
+      <VibesComposer />
     </section>
   );
 }

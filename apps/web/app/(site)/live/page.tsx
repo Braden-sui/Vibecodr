@@ -49,7 +49,7 @@ export default function LivePage() {
 
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
         {highlights.map((item) => (
-          <Card key={item.title} className="h-full border-muted">
+          <Card key={item.title} className="h-full vc-surface border-0">
             <CardHeader className="flex flex-row items-center gap-3">
               <div className="rounded-full bg-muted p-2 text-muted-foreground">
                 <item.icon className="h-4 w-4" />

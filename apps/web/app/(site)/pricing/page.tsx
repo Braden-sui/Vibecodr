@@ -101,7 +101,7 @@ export default function PricingPage() {
           return (
             <Card
               key={plan.name}
-              className={`relative ${plan.popular ? "border-2 border-blue-500 shadow-lg" : ""}`}
+              className={`relative vc-surface border-0 ${plan.popular ? "ring-2 ring-blue-500 shadow-lg" : ""}`}
             >
               {plan.popular && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2">
@@ -158,7 +158,7 @@ export default function PricingPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-          <Card>
+          <Card className="vc-surface border-0">
             <CardHeader>
               <CardTitle className="text-lg">Fast & Secure</CardTitle>
             </CardHeader>
@@ -170,7 +170,7 @@ export default function PricingPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="vc-surface border-0">
             <CardHeader>
               <CardTitle className="text-lg">Zero Egress Fees</CardTitle>
             </CardHeader>
@@ -181,7 +181,7 @@ export default function PricingPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="vc-surface border-0">
             <CardHeader>
               <CardTitle className="text-lg">Built-in Analytics</CardTitle>
             </CardHeader>

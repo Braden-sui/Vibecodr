@@ -168,8 +168,8 @@ export default function FlaggedPostsPage() {
       ) : (
         <div className="grid gap-4">
           {items.map((it) => (
-            <Card key={it.id}>
-              <CardHeader className="pb-2">
+            <div key={it.id} className="vc-surface rounded-xl p-4">
+              <div className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <Link to={`/player/${it.id}`} className="font-medium hover:underline">
@@ -269,16 +269,16 @@ export default function FlaggedPostsPage() {
                     </Button>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-0">
+              </div>
+              <div className="pt-0">
                 {it.description && (
                   <p className="line-clamp-2 text-sm text-muted-foreground">{it.description}</p>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
       )}
-    </div>
+    </div >
   );
 }
