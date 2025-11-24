@@ -157,6 +157,29 @@ export function computeForYouScore(input: ForYouScoreInput): number {
 const DEFAULT_FEED_LIMIT = 20;
 const MAX_FEED_LIMIT = 50;
 
+let cachedPostsVisibilityColumn: boolean | null = null;
+
+async function hasPostVisibilityColumn(env: Env): Promise<boolean> {
+  if (cachedPostsVisibilityColumn !== null) {
+    return cachedPostsVisibilityColumn;
+  }
+
+  try {
+    const { results } = await env.DB.prepare(`PRAGMA table_info(posts)`).all();
+    const hasCol = Array.isArray(results)
+      ? results.some((row: any) => (row?.name ?? "").toLowerCase() === "visibility")
+      : false;
+    cachedPostsVisibilityColumn = hasCol;
+    return hasCol;
+  } catch (err) {
+    console.error("E-VIBECODR-2201 post visibility column check failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    cachedPostsVisibilityColumn = false;
+    return false;
+  }
+}
+
 function runtimeArtifactsEnabled(env: Env): boolean {
   const flag = env.RUNTIME_ARTIFACTS_ENABLED;
   if (typeof flag !== "string") return true;
@@ -254,9 +277,10 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     const authedUser = await verifyAuth(req, env);
     const runtimeEnabled = runtimeArtifactsEnabled(env);
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+    const hasVisibility = await hasPostVisibilityColumn(env);
     let query = `
       SELECT
-        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.visibility, p.created_at,
+        p.id, p.type, p.title, p.description, p.tags, p.cover_key, ${hasVisibility ? "p.visibility" : "'public' as visibility"}, p.created_at,
         u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar, u.bio as author_bio,
         u.followers_count as author_followers_count,
         u.runs_count as author_runs_count,
@@ -282,7 +306,9 @@ async function getPosts(req: Request, env: Env): Promise<Response> {
     // Safety: exclude suspended or shadow-banned authors from surfaced feeds
     where.push("(u.is_suspended = 0 AND u.shadow_banned = 0)");
     // Only surface public posts in feeds; legacy rows without visibility are treated as public.
-    where.push("(p.visibility IS NULL OR p.visibility = 'public')");
+    if (hasVisibility) {
+      where.push("(p.visibility IS NULL OR p.visibility = 'public')");
+    }
     // Hide quarantined posts from all surfaced feeds, including moderators/admins.
     where.push("(p.quarantined IS NULL OR p.quarantined = 0)");
 
@@ -575,10 +601,11 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
     const authedUser = await verifyAuth(req, env);
     const runtimeEnabled = runtimeArtifactsEnabled(env);
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+    const hasVisibility = await hasPostVisibilityColumn(env);
 
     let query = `
       SELECT
-        p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.visibility, p.created_at,
+        p.id, p.type, p.title, p.description, p.tags, p.cover_key, ${hasVisibility ? "p.visibility" : "'public' as visibility"}, p.created_at,
         u.id as author_id, u.handle as author_handle, u.name as author_name, u.avatar_url as author_avatar, u.bio as author_bio,
         u.followers_count as author_followers_count,
         u.runs_count as author_runs_count,
@@ -621,7 +648,7 @@ async function getPostById(req: Request, env: Env, _ctx: ExecutionContext, param
     const viewerId = authedUser?.userId ?? null;
     const viewerIsAuthor = viewerId === row.author_id;
     const canBypassVisibility = isMod || viewerIsAuthor;
-    const isPublic = !row.visibility || row.visibility === "public";
+    const isPublic = !hasVisibility || !row.visibility || row.visibility === "public";
     if (!isPublic && !canBypassVisibility) {
       return json({ error: "Post not found" }, 404);
     }
