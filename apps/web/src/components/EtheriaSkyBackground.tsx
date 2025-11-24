@@ -212,8 +212,8 @@ const EtheriaSkyBackground = () => {
       rotation: number;
     }[] = [];
 
-    // Increase density to roughly 3x previous particle count.
-    const clusterCount = 285;
+    // Increase density while keeping cohesive, cloud-like masses.
+    const clusterCount = 140;
     const puffsPerCluster = 10;
     const totalPuffs = clusterCount * puffsPerCluster;
     const puffMesh = new THREE.InstancedMesh(puffGeometry, puffMaterial, totalPuffs);
@@ -231,19 +231,19 @@ const EtheriaSkyBackground = () => {
       const baseX = Math.random() * 1100 - 550;
       const baseY = Math.random() * (yMax - yMin) + yMin;
       const baseZ = c * 1.8 - 320;
-      const drift = 0.11 + Math.random() * 0.09;
-      const rotation = (Math.random() - 0.5) * 0.35;
+      const drift = 0.08 + Math.random() * 0.06;
+      const rotation = (Math.random() - 0.5) * 0.25;
 
       const puffIndices: number[] = [];
       for (let p = 0; p < puffsPerCluster; p++) {
         const idx = c * puffsPerCluster + p;
         puffIndices.push(idx);
 
-        const offsetX = (Math.random() - 0.5) * 140;
-        const offsetY = (Math.random() - 0.1) * 60 + Math.max(0, (baseY - yMin) * 0.15);
-        const offsetZ = (Math.random() - 0.5) * 30;
-        const scale = 1.15 + Math.random() * 1.9;
-        const flatten = 0.6 + Math.random() * 0.3;
+        const offsetX = (Math.random() - 0.5) * 110;
+        const offsetY = (Math.random() - 0.1) * 52 + Math.max(0, (baseY - yMin) * 0.1);
+        const offsetZ = (Math.random() - 0.5) * 26;
+        const scale = 1.6 + Math.random() * 2.3;
+        const flatten = 0.7 + Math.random() * 0.28;
 
         temp.position.set(baseX + offsetX, baseY + offsetY, baseZ + offsetZ);
         temp.scale.set(scale * 1.2, scale * flatten, scale * 1.05);
@@ -258,7 +258,7 @@ const EtheriaSkyBackground = () => {
         puffHighlightMesh.setMatrixAt(idx, temp.matrix);
 
         const opacityWeight = Math.max(0, Math.min(1, (baseY - yMin) / (yMax - yMin)));
-        const opacity = 0.75 + opacityWeight * 0.2;
+        const opacity = 0.82 + opacityWeight * 0.15;
         puffMesh.setColorAt(idx, new THREE.Color().setScalar(opacity));
         puffHighlightMesh.setColorAt(idx, new THREE.Color().setScalar(opacity));
       }
@@ -274,25 +274,28 @@ const EtheriaSkyBackground = () => {
       frameId = requestAnimationFrame(animate);
 
       clusters.forEach((cluster, clusterIdx) => {
+        const t = performance.now();
+        const buoyancy = Math.sin(t * 0.00008 + clusterIdx * 0.15) * 6;
         cluster.x -= cluster.drift * (1 + (clusterIdx % 5) * 0.02);
-        cluster.rotation += 0.00012;
+        cluster.y = cluster.y + buoyancy * 0.01;
+        cluster.rotation += 0.00008;
 
         if (cluster.x < -760) {
           cluster.x = 760;
         }
 
         cluster.puffIndices.forEach((idx) => {
-          const jitter = Math.sin((idx + clusterIdx) * 0.13 + performance.now() * 0.00012) * 2.5;
-          const wobble = Math.cos((idx + clusterIdx * 2) * 0.17 + performance.now() * 0.0001) * 1.5;
+          const jitter = Math.sin((idx + clusterIdx) * 0.12 + performance.now() * 0.00009) * 1.7;
+          const wobble = Math.cos((idx + clusterIdx * 2) * 0.15 + performance.now() * 0.00008) * 1.3;
 
           temp.position.set(cluster.x + jitter, cluster.y + wobble, cluster.z);
-          temp.rotation.set(0, 0, cluster.rotation + (idx % 3) * 0.05);
-          const baseScale = 1.1 + ((idx % puffsPerCluster) / puffsPerCluster) * 1.3;
-          temp.scale.set(baseScale * 1.25, baseScale * 0.7, baseScale * 1.15);
+          temp.rotation.set(0, 0, cluster.rotation + (idx % 3) * 0.04);
+          const baseScale = 1.5 + ((idx % puffsPerCluster) / puffsPerCluster) * 1.6;
+          temp.scale.set(baseScale * 1.3, baseScale * 0.75, baseScale * 1.18);
           temp.updateMatrix();
           puffMesh.setMatrixAt(idx, temp.matrix);
 
-          temp.scale.set(baseScale * 1.35, baseScale * 0.75, baseScale * 1.18);
+          temp.scale.set(baseScale * 1.42, baseScale * 0.8, baseScale * 1.22);
           temp.updateMatrix();
           puffHighlightMesh.setMatrixAt(idx, temp.matrix);
         });
