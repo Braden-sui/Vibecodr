@@ -182,7 +182,7 @@ const EtheriaSkyBackground = () => {
     opacities.fill(1); // Start fully visible, animate loop will adjust
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3)); // Renamed to aColor to avoid conflicts
     geometry.setAttribute("aOpacity", new THREE.BufferAttribute(opacities, 1));
     geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
 
@@ -193,13 +193,14 @@ const EtheriaSkyBackground = () => {
         scale: { value: height / (2 * Math.tan((35 * Math.PI) / 360)) } // Perspective scale for fov 35
       },
       vertexShader: `
+        attribute vec3 aColor;
         attribute float aOpacity;
         attribute float aSize;
         varying float vOpacity;
         varying vec3 vColor;
         void main() {
           vOpacity = aOpacity;
-          vColor = color;
+          vColor = aColor;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_Position = projectionMatrix * mvPosition;
           // Size attenuation matches THREE.PointsMaterial
