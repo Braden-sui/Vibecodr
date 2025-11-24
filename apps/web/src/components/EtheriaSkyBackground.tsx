@@ -40,7 +40,7 @@ const EtheriaSkyBackground = () => {
     scene.fog = new THREE.Fog(new THREE.Color(palette.midBlue), 180, 1100);
 
     const camera = new THREE.PerspectiveCamera(30, width / height, 1, 3000);
-    camera.position.z = 620;
+    camera.position.set(0, 40, 620);
 
     let renderer: THREE.WebGLRenderer;
     try {
