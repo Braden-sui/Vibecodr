@@ -214,6 +214,31 @@ describe("startRun", () => {
     expect(incrementPostStatsMock).toHaveBeenCalledTimes(1);
   });
 
+  it("records artifactId in analytics when provided", async () => {
+    const env = createEnv();
+
+    const res = await startRun(
+      new Request("https://example.com/api/runs/start", {
+        method: "POST",
+        body: JSON.stringify({
+          runId: "run-artifact",
+          capsuleId: "cap-start",
+          postId: "post-start",
+          artifactId: "art-1",
+        }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(200);
+    const writeSpy = env.vibecodr_analytics_engine.writeDataPoint as ReturnType<typeof vi.fn>;
+    const call = writeSpy.mock.calls.at(-1)?.[0] as { blobs?: unknown[] } | undefined;
+    expect(call?.blobs?.[0]).toBe("run_start");
+    expect(call?.blobs?.[call.blobs!.length - 1]).toBe("art-1");
+  });
+
   it("rejects when active run limit is reached", async () => {
     const env = createEnv([
       { id: "run-active", capsule_id: "cap-1", post_id: "post-1", user_id: "user-auth-1", status: "started", started_at: Math.floor(Date.now() / 1000) },
@@ -417,6 +442,30 @@ describe("appendRunLogs", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("logs array required");
+  });
+
+  it("includes artifactId in analytics blobs when provided", async () => {
+    const env = createEnv([{ id: "run-art", capsule_id: "cap1", post_id: "post1", user_id: "user-auth-1" }]);
+    const res = await appendRunLogs(
+      new Request("https://example.com", {
+        method: "POST",
+        body: JSON.stringify({
+          capsuleId: "cap1",
+          postId: "post1",
+          artifactId: "art-9",
+          logs: [{ level: "info", message: "test", timestamp: Date.now(), source: "player", sampleRate: 1 }],
+        }),
+      }),
+      env,
+      {} as any,
+      { p1: "run-art" }
+    );
+
+    expect(res.status).toBe(200);
+    const writeSpy = env.vibecodr_analytics_engine.writeDataPoint as ReturnType<typeof vi.fn>;
+    const call = writeSpy.mock.calls.at(-1)?.[0] as { blobs?: unknown[] } | undefined;
+    expect(call?.blobs?.[0]).toBe("player_console_log");
+    expect(call?.blobs?.[call.blobs!.length - 1]).toBe("art-9");
   });
 
   it("writes sanitized logs to Analytics Engine", async () => {

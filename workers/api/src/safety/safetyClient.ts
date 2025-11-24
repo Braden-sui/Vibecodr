@@ -1,7 +1,12 @@
 import type { Env } from "../types";
 
+// SOTP Decision: Quarantine by default for suspicious patterns, hard block for severe violations
+export type SafetyAction = "allow" | "quarantine" | "block";
+
 export type SafetyVerdict = {
   safe: boolean;
+  /** Recommended action: allow, quarantine (hide from feeds), or block (reject upload) */
+  action: SafetyAction;
   risk_level: "low" | "medium" | "high";
   reasons: string[];
   blocked_capabilities: string[];
@@ -21,16 +26,51 @@ type SafetyLog = {
   verdict: SafetyVerdict;
 };
 
-const HEURISTIC_PATTERNS = [
+export const SAFETY_STATE_BEHAVIOR: Record<
+  SafetyAction,
+  { db: string; feeds: string; directAccess: string; embed: string; message: string }
+> = {
+  allow: {
+    db: "quarantined = 0",
+    feeds: "Visible everywhere",
+    directAccess: "Public",
+    embed: "Allowed",
+    message: "Content is safe",
+  },
+  quarantine: {
+    db: "quarantined = 1",
+    feeds: "Hidden from feeds/search",
+    directAccess: "Owner/moderator only with flag",
+    embed: "Blocked with 403",
+    message: "Content under review",
+  },
+  block: {
+    db: "Not persisted",
+    feeds: "N/A",
+    directAccess: "Rejected with 403",
+    embed: "N/A",
+    message: "Content rejected",
+  },
+};
+
+// Patterns that trigger quarantine (medium confidence)
+const QUARANTINE_PATTERNS = [
   /child_process|exec|spawn|fork/i,
   /fs\./i,
   /eval|new Function/i,
-  /while\s*\(true\)|for\s*\(\s*;\s*;\s*\)/i,
   /process\.env/i,
   /fetch|axios|http\.request|net\.connect/i,
-  /stratum\+tcp|xmrig/i,
   /atob\(|Buffer\.from\(.*base64/i,
 ];
+
+// High-risk patterns that trigger hard block (high confidence, severe violations)
+const BLOCK_PATTERNS = [
+  /stratum\+tcp|xmrig|cryptonight|coinhive/i, // Crypto-miner signatures
+  /while\s*\(true\)|for\s*\(\s*;\s*;\s*\)/i, // Infinite loops
+];
+
+// Legacy combined list for collectSuspiciousPatterns
+const HEURISTIC_PATTERNS = [...QUARANTINE_PATTERNS, ...BLOCK_PATTERNS];
 
 const BLOCKLIST_KV_PREFIX = "safety:blocked-code-hash:";
 const DEFAULT_SAFETY_TAG = "mvp-allow";
@@ -58,20 +98,31 @@ export async function runSafetyCheck(env: Env, input: SafetyInput): Promise<Safe
     return block(`blocked code hash ${codeHash}`, buildTags(["hash_block", blocklistHit.sourceTag], blocklistHit.reason));
   }
 
-  // For MVP we only surface heuristics as visibility; we do not block unless hash-listed.
-  const suspicious = collectSuspiciousPatterns(input.code);
-  const reasons: string[] = suspicious.length > 0 ? [`${DEFAULT_SAFETY_TAG}: heuristics noted`] : [DEFAULT_SAFETY_TAG];
-  const tags = buildTags(
-    [DEFAULT_SAFETY_TAG, suspicious.length > 0 ? "heuristics" : undefined],
-    suspicious.length > 0 ? `patterns=${suspicious.slice(0, 5).join(",")}` : undefined
-  );
+  // SOTP Decision: Check for block-worthy patterns first
+  const blockHits = collectPatternHits(input.code, BLOCK_PATTERNS);
+  if (blockHits.length > 0) {
+    return block(
+      `high-risk pattern detected: ${blockHits.slice(0, 3).join(", ")}`,
+      buildTags(["heuristic_block"], `patterns=${blockHits.slice(0, 5).join(",")}`)
+    );
+  }
+
+  // SOTP Decision: Quarantine suspicious patterns (preserves evidence, lowers false-positive fallout)
+  const quarantineHits = collectPatternHits(input.code, QUARANTINE_PATTERNS);
+  if (quarantineHits.length > 0) {
+    return quarantine(
+      `suspicious pattern detected: ${quarantineHits.slice(0, 3).join(", ")}`,
+      buildTags(["heuristic_quarantine"], `patterns=${quarantineHits.slice(0, 5).join(",")}`)
+    );
+  }
 
   return {
     safe: true,
-    risk_level: suspicious.length > 0 ? "medium" : "low",
-    reasons,
+    action: "allow",
+    risk_level: "low",
+    reasons: [DEFAULT_SAFETY_TAG],
     blocked_capabilities: [],
-    tags,
+    tags: [DEFAULT_SAFETY_TAG],
   };
 }
 
@@ -86,6 +137,7 @@ function buildTags(tags: Array<string | undefined>, detail?: string): string[] {
 function block(reason: string, tags: string[] = []): SafetyVerdict {
   return {
     safe: false,
+    action: "block",
     risk_level: "high",
     reasons: [reason],
     blocked_capabilities: ["execution"],
@@ -93,14 +145,37 @@ function block(reason: string, tags: string[] = []): SafetyVerdict {
   };
 }
 
+// SOTP Decision: Quarantine hides from feeds/listings but preserves for moderator review
+function quarantine(reason: string, tags: string[] = []): SafetyVerdict {
+  return {
+    safe: false,
+    action: "quarantine",
+    risk_level: "medium",
+    reasons: [reason],
+    blocked_capabilities: [],
+    tags,
+  };
+}
+
 function allowWithNote(note: string): SafetyVerdict {
   return {
     safe: true,
+    action: "allow",
     risk_level: "low",
     reasons: [note],
     blocked_capabilities: [],
     tags: [],
   };
+}
+
+function collectPatternHits(code: string, patterns: RegExp[]): string[] {
+  const hits: string[] = [];
+  for (const pattern of patterns) {
+    if (pattern.test(code)) {
+      hits.push(pattern.source);
+    }
+  }
+  return hits;
 }
 
 export async function hashCode(content: string): Promise<string> {
@@ -118,7 +193,7 @@ export function logSafetyVerdict(env: Env, log: SafetyLog) {
         "safety_verdict",
         log.entryPath,
         log.verdict.risk_level,
-        log.verdict.safe ? "allow" : "block",
+        log.verdict.action,
         (log.verdict.tags || []).join(",") || "none",
         (log.verdict.reasons || []).slice(0, 3).join("|").slice(0, 512) || "n/a",
       ],

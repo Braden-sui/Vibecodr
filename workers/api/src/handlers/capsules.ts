@@ -30,6 +30,7 @@ import { hashCode, logSafetyVerdict, runSafetyCheck } from "../safety/safetyClie
 import { bundleInlineJs } from "./inlineBundle";
 import { checkPublicRateLimit, getClientIp } from "../rateLimit";
 import { json } from "../lib/responses";
+import { resolveCapsuleAccess } from "../capsule-access";
 
 const ERROR_REMIX_COUNTER_UPDATE_FAILED = "E-VIBECODR-0110";
 const ERROR_REMIX_LINK_INSERT_FAILED = "E-VIBECODR-0111";
@@ -89,7 +90,7 @@ export class PublishCapsuleError extends Error {
 export const listUserCapsules: Handler = requireAuth(async (req, env, ctx, params, user) => {
   const limit = 50;
   const { results } = await env.DB.prepare(
-    "SELECT id, manifest_json, created_at FROM capsules WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?",
+    "SELECT id, manifest_json, created_at, quarantined, quarantine_reason, quarantined_at FROM capsules WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?",
   )
     .bind(user.userId, limit)
     .all();
@@ -110,6 +111,9 @@ export const listUserCapsules: Handler = requireAuth(async (req, env, ctx, param
       id: String(row.id),
       title,
       createdAt: Number(row.created_at ?? 0),
+      quarantined: Number(row.quarantined ?? 0) === 1,
+      quarantineReason: (row as any).quarantine_reason ?? null,
+      quarantinedAt: Number((row as any).quarantined_at ?? 0) || null,
     };
   });
 
@@ -124,6 +128,8 @@ type Handler = (
   user?: AuthenticatedUser
 ) => Promise<Response>;
 
+// WHY: Terminology mapping for capsule/content hashes vs artifact IDs/digests lives in
+// workers/api/docs/capsule-artifact-glossary.md to avoid misusing identifiers.
 const RUNTIME_ARTIFACT_VERSION = "v0.1.0";
 const RUNTIME_ARTIFACT_RUNNERS = new Set<Manifest["runner"]>(["client-static", "webcontainer"]);
 
@@ -218,8 +224,10 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
     });
     totalSize += manifestBytes.byteLength;
 
+    // SOTP Decision: Capture quarantine status for suspicious patterns
+    let safetyResult: SafetyEnforcementResult = { shouldQuarantine: false };
     try {
-      await enforceSafetyForFiles(env, manifest, files);
+      safetyResult = await enforceSafetyForFiles(env, manifest, files);
     } catch (err) {
       if (err instanceof PublishCapsuleError) {
         return json(err.body, err.status);
@@ -250,6 +258,9 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
         files: sanitized.files,
         totalSize: sanitized.totalSize,
         warnings: validation.warnings,
+        // SOTP Decision: Pass quarantine info to persist function
+        shouldQuarantine: safetyResult.shouldQuarantine,
+        quarantineReason: safetyResult.quarantineReason,
       });
     } catch (err) {
       if (err instanceof PublishCapsuleError) {
@@ -334,6 +345,9 @@ type PersistCapsuleInput = {
   files: CapsuleFile[];
   totalSize: number;
   warnings?: PublishWarning[];
+  // SOTP Decision: Quarantine capsules with suspicious patterns
+  shouldQuarantine?: boolean;
+  quarantineReason?: string;
 };
 
 export function sanitizeHtmlEntryIfNeeded(
@@ -376,11 +390,29 @@ export function sanitizeHtmlEntryIfNeeded(
   return { files, totalSize };
 }
 
-export async function enforceSafetyForFiles(env: Env, manifest: Manifest, files: CapsuleFile[]): Promise<void> {
+// SOTP Decision: Return quarantine status instead of just throwing
+export type SafetyEnforcementResult = {
+  shouldQuarantine: boolean;
+  quarantineReason?: string;
+  quarantineTags?: string[];
+};
+
+export async function enforceSafetyForFiles(
+  env: Env,
+  manifest: Manifest,
+  files: CapsuleFile[]
+): Promise<SafetyEnforcementResult> {
   const decoder = new TextDecoder();
+  let shouldQuarantine = false;
+  let quarantineReason: string | undefined;
+  let quarantineTags: string[] | undefined;
+
   for (const file of files) {
     if (file.path === "manifest.json") continue;
-    const language = file.path.toLowerCase().endsWith(".html") || file.path.toLowerCase().endsWith(".htm") ? "html" : "javascript";
+    const language =
+      file.path.toLowerCase().endsWith(".html") || file.path.toLowerCase().endsWith(".htm")
+        ? "html"
+        : "javascript";
     const content =
       typeof file.content === "string"
         ? file.content
@@ -400,7 +432,8 @@ export async function enforceSafetyForFiles(env: Env, manifest: Manifest, files:
       verdict,
     });
 
-    if (!verdict.safe) {
+    // SOTP Decision: Hard block for severe violations, quarantine for suspicious patterns
+    if (verdict.action === "block") {
       throw new PublishCapsuleError(403, {
         error: "Unsafe code detected",
         code: "E-VIBECODR-SECURITY-BLOCK",
@@ -410,7 +443,22 @@ export async function enforceSafetyForFiles(env: Env, manifest: Manifest, files:
         path: file.path,
       });
     }
+
+    // SOTP Decision: Quarantine preserves evidence and lowers false-positive fallout
+    if (verdict.action === "quarantine") {
+      shouldQuarantine = true;
+      quarantineReason = verdict.reasons.join("; ");
+      quarantineTags = verdict.tags;
+      console.warn("E-VIBECODR-0507 capsule flagged for quarantine", {
+        path: file.path,
+        codeHash,
+        reasons: verdict.reasons,
+        tags: verdict.tags,
+      });
+    }
   }
+
+  return { shouldQuarantine, quarantineReason, quarantineTags };
 }
 
 type RuntimeArtifactSummary = {
@@ -642,7 +690,7 @@ export async function ensureUserStorageAccount(env: Env, user: AuthenticatedUser
 }
 
 export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<PersistCapsuleResult> {
-  const { env, user, manifest, manifestText, files, totalSize, warnings } = input;
+  const { env, user, manifest, manifestText, files, totalSize, warnings, shouldQuarantine, quarantineReason } = input;
   recordBundleWarningMetrics(env, warnings, "capsulePublish");
 
   const initialStorageState = await getUserStorageState(user.userId, env);
@@ -678,11 +726,38 @@ export async function persistCapsuleBundle(input: PersistCapsuleInput): Promise<
   }
 
   const capsuleId = crypto.randomUUID();
+  // SOTP Decision: Set quarantined=1 for suspicious patterns to hide from feeds
+  const quarantinedValue = shouldQuarantine ? 1 : 0;
+  const quarantinedAt = shouldQuarantine ? Math.floor(Date.now() / 1000) : null;
+  const quarantineReasonValue =
+    shouldQuarantine && typeof quarantineReason === "string" && quarantineReason.trim().length > 0
+      ? quarantineReason
+      : shouldQuarantine
+        ? "auto_quarantine"
+        : null;
   await env.DB.prepare(
-    "INSERT INTO capsules (id, owner_id, manifest_json, hash, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO capsules (id, owner_id, manifest_json, hash, created_at, quarantined, quarantine_reason, quarantined_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(capsuleId, user.userId, manifestText, uploadResult.contentHash, Math.floor(Date.now() / 1000))
+    .bind(
+      capsuleId,
+      user.userId,
+      manifestText,
+      uploadResult.contentHash,
+      Math.floor(Date.now() / 1000),
+      quarantinedValue,
+      quarantineReasonValue,
+      quarantinedAt
+    )
     .run();
+
+  // Log quarantine event for audit trail
+  if (shouldQuarantine) {
+    console.warn("E-VIBECODR-0508 capsule auto-quarantined on publish", {
+      capsuleId,
+      userId: user.userId,
+      reason: quarantineReason,
+    });
+  }
 
   for (const file of files) {
     await env.DB.prepare("INSERT INTO assets (id, capsule_id, key, size) VALUES (?, ?, ?, ?)")
@@ -1033,19 +1108,13 @@ export const getCapsule: Handler = async (req, env, ctx, params) => {
   }
 
   try {
-    // Get from D1
-    const { results } = await env.DB.prepare(
-      "SELECT * FROM capsules WHERE id = ? LIMIT 1"
-    )
-      .bind(capsuleId)
-      .all();
-
-    if (!results || results.length === 0) {
-      return json({ error: "Capsule not found" }, 404);
+    const access = await resolveCapsuleAccess(req, env, capsuleId);
+    if (access instanceof Response) {
+      return access;
     }
 
-    const capsule = results[0];
-    const contentHash = capsule.hash as string;
+    const { capsule, moderation } = access;
+    const contentHash = String((capsule as any).hash);
 
     // Verify integrity
     const integrityOk = await verifyCapsuleIntegrity(
@@ -1076,9 +1145,10 @@ export const getCapsule: Handler = async (req, env, ctx, params) => {
         capsuleId,
       }),
       contentHash,
-      createdAt: capsule.created_at,
+      createdAt: typeof capsule.created_at === "number" ? capsule.created_at : Number(capsule.created_at ?? 0),
       metadata,
       verified: true,
+      moderation,
     });
   } catch (error) {
     return json(
@@ -1117,17 +1187,13 @@ export const verifyCapsule: Handler = async (req, env, ctx, params) => {
   }
 
   try {
-    const { results } = await env.DB.prepare(
-      "SELECT hash FROM capsules WHERE id = ? LIMIT 1"
-    )
-      .bind(capsuleId)
-      .all();
-
-    if (!results || results.length === 0) {
-      return json({ error: "Capsule not found" }, 404);
+    const access = await resolveCapsuleAccess(req, env, capsuleId);
+    if (access instanceof Response) {
+      return access;
     }
 
-    const contentHash = results[0].hash as string;
+    const { capsule, moderation } = access;
+    const contentHash = String((capsule as any).hash);
     const verified = await verifyCapsuleIntegrity(env.R2, contentHash, contentHash);
 
     return json({
@@ -1135,6 +1201,7 @@ export const verifyCapsule: Handler = async (req, env, ctx, params) => {
       contentHash,
       verified,
       timestamp: Date.now(),
+      moderation,
     });
   } catch (error) {
     return json(

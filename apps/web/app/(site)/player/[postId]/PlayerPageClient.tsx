@@ -271,6 +271,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         return;
       }
       const capsuleId = post?.capsule?.id;
+      const artifactId = post?.capsule?.artifactId ?? null;
       if (!capsuleId || !post?.id) {
         pendingLogBatchRef.current = [];
         return;
@@ -303,6 +304,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             {
               capsuleId,
               postId: post.id,
+              artifactId,
               logs: payload.map((item) => ({
                 level: item.level,
                 message: item.message,
@@ -333,7 +335,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           });
         });
     },
-    [post?.capsule?.id, post?.id]
+    [post?.capsule?.id, post?.capsule?.artifactId, post?.id]
   );
 
   const enqueueAnalyticsLog = useCallback(
@@ -467,6 +469,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       const session = currentRunRef.current;
       const currentPost = post;
       const capsule = currentPost?.capsule;
+      const artifactId = capsule?.artifactId ?? null;
       if (!session || !capsule) {
         return;
       }
@@ -490,6 +493,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         durationMs,
         status,
         errorMessage,
+        artifactId,
       };
 
       buildAuthInit()
@@ -664,6 +668,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       }
 
       const provisionalRunId = createStableId("run");
+      const artifactId = capsule.artifactId ?? null;
       try {
         const init = await buildAuthInit();
         if (!init) {
@@ -679,7 +684,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         }
 
         const response = await runsApi.start(
-          { runId: provisionalRunId, capsuleId: capsule.id, postId },
+          { runId: provisionalRunId, capsuleId: capsule.id, postId, artifactId },
           init
         );
 

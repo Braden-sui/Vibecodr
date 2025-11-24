@@ -16,6 +16,7 @@ import { artifactsApi, capsulesApi } from "@/lib/api";
 import { trackRuntimeEvent } from "@/lib/analytics";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import { loadRuntime } from "@/lib/runtime/registry";
+import { getRuntimeBudgets } from "./runtimeBudgets";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
@@ -111,6 +112,9 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
     const [errorMessage, setErrorMessage] = useState<string>("");
     const pauseStateRef = useRef<"paused" | "running">("running");
+    const bootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const bootStartRef = useRef<number | null>(null);
+    const hardKillTriggeredRef = useRef(false);
     const bundleUrl = useMemo(
       () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)),
       [artifactId, capsuleId]
@@ -141,6 +145,13 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       runtimeLogCountRef.current = 0;
       runtimeLogLimitHitRef.current = false;
       heartbeatTrackedRef.current = false;
+      hardKillTriggeredRef.current = false;
+      // Clear any pending boot timer
+      if (bootTimerRef.current) {
+        clearTimeout(bootTimerRef.current);
+        bootTimerRef.current = null;
+      }
+      bootStartRef.current = null;
     }, []);
     useEffect(() => {
       resetRuntimeBudgets();
@@ -313,8 +324,17 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
 
         switch (type) {
           case "ready": {
+            // Clear boot timeout on successful ready
+            if (bootTimerRef.current) {
+              clearTimeout(bootTimerRef.current);
+              bootTimerRef.current = null;
+            }
             setStatus("ready");
             const bootTime = getBootTime(payload);
+            // Log boot latency for tuning
+            const actualBootTime = bootStartRef.current
+              ? Date.now() - bootStartRef.current
+              : bootTime;
             if (bootTime != null) {
               onBoot?.({ bootTimeMs: bootTime });
             }
@@ -322,6 +342,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             emitRuntimeEvent("runtime_ready", {
               ...telemetryBase,
               bootTime: bootTime ?? null,
+              actualBootTime: actualBootTime ?? null,
             });
             break;
           }
@@ -385,6 +406,39 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
               message: violationMessage,
               code,
             });
+            break;
+          }
+
+          // SOTP Decision: Handle capability check results from sandboxed iframe
+          case "capabilityCheck": {
+            if (isRecord(payload)) {
+              const available = Array.isArray(payload.available) ? payload.available : [];
+              const unavailable = Array.isArray(payload.unavailable) ? payload.unavailable : [];
+              const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+
+              // Log capability check results for debugging/monitoring
+              emitRuntimeEvent("runtime_capability_check", {
+                ...telemetryBase,
+                available,
+                unavailable,
+                warnings,
+              });
+
+              // Security warning: if parentOriginAccess is available, sandbox may be misconfigured
+              if (available.includes("parentOriginAccess")) {
+                console.error("E-VIBECODR-0527 SECURITY WARNING: sandbox misconfiguration detected", {
+                  capsuleId,
+                  artifactId: telemetryArtifactId,
+                  warnings,
+                  message: "Capsule has access to parent origin - sandbox may not be properly configured",
+                });
+                emitRuntimeEvent("runtime_security_warning", {
+                  ...telemetryBase,
+                  type: "sandbox_misconfiguration",
+                  message: "Parent origin accessible from sandboxed iframe",
+                });
+              }
+            }
             break;
           }
         }
@@ -469,11 +523,71 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       };
     }, [artifactId, capsuleId, emitRuntimeEvent, onError]);
 
+    // SOTP Decision: Hard kill at 6s for WebContainer, 5s for client-static
+    const startBootTimer = useCallback(
+      (isWebContainer: boolean) => {
+        // Clear any existing timer
+        if (bootTimerRef.current) {
+          clearTimeout(bootTimerRef.current);
+        }
+
+        bootStartRef.current = Date.now();
+        const budgets = getRuntimeBudgets();
+        const hardKillMs = isWebContainer
+          ? budgets.webContainerBootHardKillMs
+          : budgets.clientStaticBootMs;
+
+        bootTimerRef.current = setTimeout(() => {
+          if (hardKillTriggeredRef.current) return;
+          hardKillTriggeredRef.current = true;
+
+          const bootDuration = bootStartRef.current
+            ? Date.now() - bootStartRef.current
+            : hardKillMs;
+
+          console.error("E-VIBECODR-0526 runtime boot timeout exceeded, triggering hard kill", {
+            capsuleId,
+            artifactId: telemetryArtifactId,
+            bootDuration,
+            hardKillMs,
+            isWebContainer,
+          });
+
+          emitRuntimeEvent("runtime_boot_timeout", {
+            capsuleId,
+            artifactId: telemetryArtifactId,
+            bootDuration,
+            hardKillMs,
+            isWebContainer,
+          });
+
+          // Hard kill: navigate iframe to blank
+          const iframe = iframeRef.current;
+          if (iframe) {
+            iframe.src = "about:blank";
+          }
+
+          setStatus("error");
+          setErrorMessage(
+            `Runtime failed to start within ${Math.round(hardKillMs / 1000)}s. Please try again.`
+          );
+          onError?.(`Boot timeout: runtime did not respond within ${Math.round(hardKillMs / 1000)}s`);
+        }, hardKillMs);
+      },
+      [capsuleId, telemetryArtifactId, emitRuntimeEvent, onError]
+    );
+
     useEffect(() => {
       if (!runtimeManifest) {
         setRuntimeFrame(null);
         return;
       }
+
+      // Start boot timer based on runtime type
+      // NOTE: Currently only client-static runtimes (react-jsx, html) are supported
+      // WebContainer support would use webContainerBootHardKillMs when implemented
+      const isWebContainer = false; // Reserved for future WebContainer runtime
+      startBootTimer(isWebContainer);
 
       try {
         const element = loadRuntime(runtimeManifest.type, {
@@ -512,6 +626,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       emitRuntimeEvent,
       capsuleId,
       artifactId,
+      startBootTimer,
     ]);
 
     useEffect(() => {

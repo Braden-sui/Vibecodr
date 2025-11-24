@@ -743,7 +743,9 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                     ref={iframeRef}
                     src={bundleUrl}
                     className="h-full w-full border-0"
-                    sandbox="allow-scripts allow-same-origin"
+                    sandbox="allow-scripts"
+                    // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit
+                    // Capsules use postMessage for parent communication, not same-origin APIs
                     data-runtime-network-mode={process.env.NEXT_PUBLIC_RUNTIME_BUNDLE_NETWORK_MODE || "offline"}
                     style={{
                       colorScheme: "normal",

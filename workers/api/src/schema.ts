@@ -37,6 +37,9 @@ export const capsules = sqliteTable("capsules", {
     .references(() => users.id),
   manifestJson: text("manifest_json").notNull(),
   hash: text("hash").notNull(), // Content hash for integrity
+  quarantined: integer("quarantined").default(0),
+  quarantineReason: text("quarantine_reason"),
+  quarantinedAt: integer("quarantined_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 

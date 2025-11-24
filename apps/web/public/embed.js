@@ -13,7 +13,8 @@
   'use strict';
 
   const EMBED_BASE_URL = 'https://vibecodr.space/e';
-  const EMBED_IFRAME_SANDBOX = 'allow-scripts allow-same-origin';
+  // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit (sandbox escape risk)
+  const EMBED_IFRAME_SANDBOX = 'allow-scripts';
   const EMBED_IFRAME_ALLOW = "accelerometer 'none'; autoplay 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
 
   /**

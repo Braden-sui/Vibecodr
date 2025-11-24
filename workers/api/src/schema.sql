@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS capsules (
   owner_id TEXT NOT NULL REFERENCES users(id),
   manifest_json TEXT NOT NULL,
   hash TEXT NOT NULL,
+  quarantined INTEGER DEFAULT 0,
+  quarantine_reason TEXT,
+  quarantined_at INTEGER,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
 
@@ -272,6 +275,7 @@ CREATE TABLE IF NOT EXISTS handle_history (
 -- Indexes for hot paths (idempotent)
 -- ============================================
 
+CREATE INDEX IF NOT EXISTS idx_capsules_quarantined ON capsules (quarantined, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
 CREATE INDEX IF NOT EXISTS idx_posts_quarantined ON posts (quarantined, created_at DESC);

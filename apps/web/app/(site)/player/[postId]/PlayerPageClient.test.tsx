@@ -18,6 +18,8 @@ const mockRunsComplete = vi.fn().mockResolvedValue({ ok: true });
 const mockAppendLogs = vi.fn().mockResolvedValue({ ok: true });
 const mockMapPost = vi.fn();
 const mockToast = vi.fn();
+const mockUsePageMeta = vi.fn();
+const mockTrackClientError = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   postsApi: {
@@ -33,7 +35,7 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/lib/analytics", () => ({
   trackEvent: vi.fn(),
-  trackClientError: vi.fn(),
+  trackClientError: (...args: unknown[]) => mockTrackClientError(...args),
   trackRuntimeEvent: vi.fn(),
 }));
 
@@ -47,6 +49,10 @@ vi.mock("@/lib/perf", () => ({
 
 vi.mock("@/lib/toast", () => ({
   toast: (...args: unknown[]) => mockToast(...args),
+}));
+
+vi.mock("@/lib/seo", () => ({
+  usePageMeta: (...args: unknown[]) => mockUsePageMeta(...args),
 }));
 
 vi.mock("@clerk/clerk-react", () => ({
@@ -85,16 +91,31 @@ vi.mock("@vibecodr/shared", () => ({
   ApiPostResponseSchema: {
     parse: (value: unknown) => value,
   },
+  Plan: {
+    FREE: "free",
+    CREATOR: "creator",
+    PRO: "pro",
+    TEAM: "team",
+  },
+  normalizePlan: (value: unknown) =>
+    typeof value === "string" ? value.trim().toLowerCase() : "free",
 }));
 
 describe("PlayerPageClient", () => {
   beforeEach(() => {
     playerShellPropsRef.current = null;
-    mockRunsStart.mockClear();
+    mockRunsStart.mockReset();
+    mockRunsStart.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ runId: "run-123" }),
+    });
     mockRunsComplete.mockClear();
     mockAppendLogs.mockClear();
     mockMapPost.mockClear();
     mockToast.mockClear();
+    mockUsePageMeta.mockClear();
+    mockTrackClientError.mockClear();
     resetRuntimeSlotsForTest();
     mockPostsGet.mockReset();
     mockPostsGet.mockResolvedValue({
@@ -199,6 +220,8 @@ describe("PlayerPageClient", () => {
     );
 
     await waitFor(() => expect(mockPostsGet).toHaveBeenCalled());
+    await waitFor(() => expect(mockMapPost).toHaveBeenCalled());
+    await waitFor(() => expect(document.querySelector("h1")?.textContent).toBe("Demo"));
     await waitFor(() => expect(playerShellPropsRef.current).not.toBeNull());
 
     await act(async () => {
@@ -206,7 +229,14 @@ describe("PlayerPageClient", () => {
     });
 
     await waitFor(() => expect(mockRunsStart).toHaveBeenCalled());
-    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    const startResult = mockRunsStart.mock.results.at(-1)?.value;
+    const resolvedStart = startResult instanceof Promise ? await startResult : startResult;
+    expect(resolvedStart).toEqual(expect.objectContaining({ status: 429 }));
+    await waitFor(() => expect(mockTrackClientError).toHaveBeenCalled());
+    const errorArgs = mockTrackClientError.mock.calls[mockTrackClientError.mock.calls.length - 1] ?? [];
+    const errorContext = errorArgs[1] as { status?: number } | undefined;
+    expect(errorContext).toEqual(expect.objectContaining({ status: 429 }));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled(), { timeout: 3000 });
     const payload = mockToast.mock.calls[mockToast.mock.calls.length - 1]?.[0];
     expect(payload).toEqual(
       expect.objectContaining({
@@ -215,5 +245,22 @@ describe("PlayerPageClient", () => {
     );
     expect(String(payload?.description ?? "")).toMatch(/free plan/i);
     expect(mockRunsComplete).not.toHaveBeenCalled();
+  });
+
+  it("builds canonical and oEmbed URLs for player metadata", async () => {
+    render(
+      <MemoryRouter initialEntries={["/player/post-123"]}>
+        <PlayerPageClient postId="post-123" />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(mockMapPost).toHaveBeenCalled());
+    const meta = mockUsePageMeta.mock.calls.at(-1)?.[0] as
+      | { canonicalUrl?: string; oEmbedUrl?: string; url?: string }
+      | undefined;
+
+    expect(meta?.canonicalUrl).toMatch(/\/player\/post-123$/);
+    expect(meta?.url).toBe(meta?.canonicalUrl);
+    expect(meta?.oEmbedUrl).toContain(encodeURIComponent(meta?.canonicalUrl ?? ""));
   });
 });

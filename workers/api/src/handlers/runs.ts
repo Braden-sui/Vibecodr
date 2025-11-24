@@ -150,6 +150,7 @@ function writeRunAnalytics(
     postId?: string | null;
     durationMs?: number | null;
     error?: string | null;
+    artifactId?: string | null;
   }
 ) {
   try {
@@ -163,9 +164,10 @@ function writeRunAnalytics(
         payload.capsuleId ?? "",
         payload.postId ?? "",
         payload.error ?? "",
+        payload.artifactId ?? "",
       ],
       doubles: [payload.durationMs ?? 0],
-      indexes: [payload.runId ?? payload.capsuleId ?? ""],
+      indexes: [payload.runId ?? payload.artifactId ?? payload.capsuleId ?? ""],
     });
   } catch (err) {
     console.error("E-VIBECODR-0609 run analytics write failed", {
@@ -217,9 +219,16 @@ const startRunHandler: AuthedHandler = async (req, env, ctx, _params, user) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const body = payload as { capsuleId?: string; postId?: string | null; runId?: string | null };
+  const body = payload as {
+    capsuleId?: string;
+    postId?: string | null;
+    runId?: string | null;
+    artifactId?: string | null;
+  };
   const capsuleId = body.capsuleId?.trim();
   const postId = body.postId?.trim() || null;
+  const artifactIdRaw = typeof body.artifactId === "string" ? body.artifactId.trim() : "";
+  const artifactId = artifactIdRaw || null;
   const requestedRunId = body.runId?.trim() || null;
 
   if (!capsuleId) {
@@ -282,6 +291,7 @@ const startRunHandler: AuthedHandler = async (req, env, ctx, _params, user) => {
     runId,
     capsuleId,
     postId,
+    artifactId,
   });
 
   return json({
@@ -318,10 +328,13 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
       durationMs?: number | null;
       status?: "completed" | "failed";
       errorMessage?: string | null;
+      artifactId?: string | null;
     };
 
     const capsuleId = body.capsuleId?.trim();
     const postId = body.postId?.trim() || null;
+    const artifactIdRaw = typeof body.artifactId === "string" ? body.artifactId.trim() : "";
+    const artifactId = artifactIdRaw || null;
     const status = body.status === "failed" ? "failed" : "completed";
     const errorMessage = status === "failed" ? (body.errorMessage || null) : null;
 
@@ -377,6 +390,7 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
           postId,
           durationMs: cappedDuration,
           error: "runtime_budget_exceeded",
+          artifactId,
         });
         return json(
           {
@@ -433,6 +447,7 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
       postId,
       durationMs: cappedDuration,
       error: finalError,
+      artifactId,
     });
 
     if (budgetExceeded) {
@@ -545,6 +560,7 @@ const appendRunLogsHandler: AuthedHandler = async (req, env, _ctx, params, user)
   const payload = body as {
     capsuleId?: string;
     postId?: string | null;
+    artifactId?: string | null;
     logs?: unknown;
   };
 
@@ -561,13 +577,15 @@ const appendRunLogsHandler: AuthedHandler = async (req, env, _ctx, params, user)
   if (logs.length === 0) {
     return json({ error: "logs array required" }, 400);
   }
+  const artifactIdRaw = typeof payload.artifactId === "string" ? payload.artifactId.trim() : "";
+  const artifactId = artifactIdRaw || null;
 
   const dataset = env.vibecodr_analytics_engine;
   if (dataset && typeof dataset.writeDataPoint === "function") {
     for (const entry of logs) {
       try {
         dataset.writeDataPoint({
-          indexes: [runId],
+          indexes: [runId || artifactId || payload.capsuleId || ""],
           blobs: [
             "player_console_log",
             entry.level,
@@ -575,6 +593,7 @@ const appendRunLogsHandler: AuthedHandler = async (req, env, _ctx, params, user)
             entry.message,
             payload.capsuleId || "",
             payload.postId || "",
+            artifactId || "",
           ],
           doubles: [entry.timestamp, entry.sampleRate],
         });

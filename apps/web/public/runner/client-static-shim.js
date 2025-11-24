@@ -292,5 +292,70 @@
     }
   }, 5000);
 
+  // SOTP Decision: Feature check capability detection on startup
+  function runCapabilityCheck() {
+    var available = [];
+    var unavailable = [];
+    var warnings = [];
+
+    // Check localStorage
+    try {
+      var testKey = "__vibecodr_cap_test__";
+      localStorage.setItem(testKey, "1");
+      localStorage.removeItem(testKey);
+      available.push("localStorage");
+    } catch (e) {
+      unavailable.push("localStorage");
+    }
+
+    // Check sessionStorage
+    try {
+      var testKey = "__vibecodr_cap_test__";
+      sessionStorage.setItem(testKey, "1");
+      sessionStorage.removeItem(testKey);
+      available.push("sessionStorage");
+    } catch (e) {
+      unavailable.push("sessionStorage");
+    }
+
+    // Check cookies
+    try {
+      document.cookie = "__vibecodr_cap_test__=1";
+      if (document.cookie.includes("__vibecodr_cap_test__")) {
+        available.push("cookies");
+        document.cookie = "__vibecodr_cap_test__=; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      } else {
+        unavailable.push("cookies");
+      }
+    } catch (e) {
+      unavailable.push("cookies");
+    }
+
+    // Check parent origin access (should fail in sandbox)
+    try {
+      var parentOrigin = window.parent.location.origin;
+      available.push("parentOriginAccess");
+      warnings.push("Parent origin accessible - potential sandbox misconfiguration");
+    } catch (e) {
+      unavailable.push("parentOriginAccess");
+      // Expected - this is secure
+    }
+
+    // Report to parent
+    sendMessage("capabilityCheck", {
+      available: available,
+      unavailable: unavailable,
+      warnings: warnings,
+    });
+
+    // Log locally for debugging
+    if (warnings.length > 0) {
+      console.warn("[Vibecodr] Capability warnings:", warnings);
+    }
+  }
+
+  // Run capability check on load
+  runCapabilityCheck();
+
   console.info("[Vibecodr] Runner shim loaded");
 })();

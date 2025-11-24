@@ -592,6 +592,7 @@ export const runsApi = {
       capsuleId: string;
       postId?: string | null;
       runId?: string;
+      artifactId?: string | null;
     },
     init?: RequestInit,
   ) {
@@ -614,6 +615,7 @@ export const runsApi = {
       durationMs?: number;
       status?: "completed" | "failed";
       errorMessage?: string | null;
+      artifactId?: string | null;
     },
     init?: RequestInit,
   ) {
@@ -633,6 +635,7 @@ export const runsApi = {
     payload: {
       capsuleId: string;
       postId: string;
+      artifactId?: string | null;
       logs: Array<{
         level: string;
         message: string;

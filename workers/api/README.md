@@ -56,3 +56,4 @@ This Worker powers the Vibecodr SPA. All routes are registered in `src/routes.ts
 - Durable Objects: `BuildCoordinator` (build queue/status) and `ArtifactCompiler` (runtime artifact builds + analytics).
 - Analytics Engine: emits import/publish/run/runtime/proxy/live events; see `src/handlers/*` and `durable/ArtifactCompiler.ts` for blob/double/index schemas.
 - Auth: JWT verification via Clerk (`CLERK_JWT_ISSUER` + optional `CLERK_JWT_AUDIENCE`). Write endpoints use `requireAuth`/`requireUser`; moderation/admin routes gate on `isModeratorOrAdmin`/`requireAdmin`.
+- Naming: `workers/api/docs/capsule-artifact-glossary.md` documents capsule vs bundle vs artifact identifiers and which digests are authoritative.

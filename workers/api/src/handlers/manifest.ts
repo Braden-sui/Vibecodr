@@ -1,18 +1,21 @@
 import { ERROR_CAPSULE_ACCESS_BLOCKED } from "@vibecodr/shared";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
-import { verifyAuth, isModeratorOrAdmin } from "../auth";
 import type { Env, Handler } from "../types";
 import { requireCapsuleManifest } from "../capsule-manifest";
 import { getCapsuleKey } from "../storage/r2";
 import { buildBundleCsp, normalizeBundleNetworkMode } from "../security/bundleCsp";
 import { guessContentType } from "../runtime/mime";
 import { json } from "../lib/responses";
+import { resolveCapsuleAccess, type CapsuleAccessResult } from "../capsule-access";
 
 type CapsuleRow = {
   id: string;
   owner_id: string;
   manifest_json: string;
   hash: string;
+  quarantined?: number | null;
+  quarantine_reason?: string | null;
+  quarantined_at?: number | null;
 };
 
 type ArtifactAccessRow = {
@@ -43,22 +46,15 @@ async function authorizeCapsuleRequest(
       capsule: CapsuleRow;
       viewerIsOwner: boolean;
       viewerIsMod: boolean;
+      moderation: CapsuleAccessResult["moderation"];
     }
 > {
-  const capsule = (await env.DB.prepare(
-    "SELECT id, owner_id, manifest_json, hash FROM capsules WHERE id = ? LIMIT 1"
-  )
-    .bind(capsuleId)
-    .first()) as CapsuleRow | null;
-
-  if (!capsule) {
-    return json({ error: "Capsule not found" }, 404);
+  const access = await resolveCapsuleAccess(req, env, capsuleId);
+  if (access instanceof Response) {
+    return access;
   }
 
-  const authedUser = await verifyAuth(req, env);
-  const viewerId = authedUser?.userId ?? null;
-  const viewerIsOwner = viewerId === capsule.owner_id;
-  const viewerIsMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+  const { capsule, moderation, viewerId, viewerIsOwner, viewerIsMod } = access;
 
   const artifact = (await env.DB.prepare(
     "SELECT id, status, policy_status, visibility FROM artifacts WHERE capsule_id = ? ORDER BY created_at DESC LIMIT 1"
@@ -111,7 +107,7 @@ async function authorizeCapsuleRequest(
     }
   }
 
-  return { capsule, viewerIsOwner, viewerIsMod };
+  return { capsule, viewerIsOwner, viewerIsMod, moderation };
 }
 
 /**
@@ -178,7 +174,7 @@ export const getManifest: Handler = async (req, env, _ctx, params) => {
 
     if (object) {
       const manifest = await object.json<Manifest>();
-      return json({ manifest });
+      return json({ manifest, moderation: access.moderation });
     }
 
     // Fallback to manifest stored in D1
@@ -186,7 +182,7 @@ export const getManifest: Handler = async (req, env, _ctx, params) => {
       source: "manifestFallback",
       capsuleId,
     });
-    return json({ manifest });
+    return json({ manifest, moderation: access.moderation });
   } catch (error) {
     return json(
       {

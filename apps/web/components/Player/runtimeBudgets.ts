@@ -1,17 +1,103 @@
-// Runtime budget guardrails for the Player surfaces.
-// INVARIANT: The number of active slots must never exceed maxConcurrentRunners.
+/**
+ * Runtime Budget Guardrails for Player Surfaces
+ *
+ * INVARIANT: The number of active slots must never exceed maxConcurrentRunners.
+ *
+ * ## Budget Semantics
+ *
+ * Each budget field has one of three enforcement behaviors:
+ * - **CAP**: Rejects/blocks action before it starts
+ * - **WARN**: Logs warning + telemetry, action continues
+ * - **KILL**: Terminates running action after threshold
+ *
+ * | Field                        | Enforcement | Behavior                                    |
+ * |------------------------------|-------------|---------------------------------------------|
+ * | maxConcurrentRunners         | CAP         | Blocks new runtime if limit reached         |
+ * | clientStaticBootMs           | KILL        | Hard kill iframe if boot exceeds threshold  |
+ * | webContainerBootTargetMs     | WARN        | Log warning if boot exceeds p95 target      |
+ * | webContainerBootHardKillMs   | KILL        | Hard kill iframe if boot exceeds threshold  |
+ * | runSessionMs                 | KILL (TODO) | Should terminate session after threshold    |
+ *
+ * ## Deprecated/Redundant Fields
+ *
+ * - `webContainerBootMs`: DEPRECATED - use webContainerBootTargetMs for warn, webContainerBootHardKillMs for kill
+ */
+
+export type BudgetEnforcement = "cap" | "warn" | "kill";
 
 type RuntimeBudgetsConfig = {
+  /**
+   * Maximum concurrent runtime iframes allowed.
+   * @enforcement CAP - reserveRuntimeSlot() returns allowed=false if exceeded
+   * @default 2
+   */
   maxConcurrentRunners: number;
+
+  /**
+   * Hard kill timeout for client-static (react-jsx, html) runtimes.
+   * @enforcement KILL - iframe navigated to about:blank, error shown to user
+   * @default 5000
+   */
   clientStaticBootMs: number;
+
+  /**
+   * @deprecated Use webContainerBootTargetMs (warn) or webContainerBootHardKillMs (kill)
+   * Kept for backward compatibility with env var VIBECODR_RUNTIME_WEB_CONTAINER_BOOT_MS
+   */
   webContainerBootMs: number;
+
+  /**
+   * Soft warning threshold for WebContainer boot (p95 target).
+   * @enforcement WARN - console.warn + telemetry event, no user-visible action
+   * @default 5000
+   */
+  webContainerBootTargetMs: number;
+
+  /**
+   * Hard kill timeout for WebContainer boot.
+   * @enforcement KILL - iframe navigated to about:blank, error shown to user
+   * @default 6000
+   */
+  webContainerBootHardKillMs: number;
+
+  /**
+   * Maximum session duration for a running capsule.
+   * @enforcement KILL (TODO - not yet implemented)
+   * @default 60000
+   */
   runSessionMs: number;
 };
 
+/**
+ * Default budget values.
+ *
+ * SOTP Decision: Target 4-5s p95 for WebContainer, hard kill at 6s.
+ *
+ * These can be overridden via environment variables:
+ * - VIBECODR_RUNTIME_MAX_CONCURRENT
+ * - VIBECODR_RUNTIME_BOOT_MS (clientStaticBootMs)
+ * - VIBECODR_RUNTIME_WEB_CONTAINER_BOOT_MS (deprecated, use TARGET or HARD_KILL)
+ * - VIBECODR_RUNTIME_WEB_CONTAINER_BOOT_TARGET_MS
+ * - VIBECODR_RUNTIME_WEB_CONTAINER_HARD_KILL_MS
+ * - VIBECODR_RUNTIME_SESSION_MS
+ */
 const DEFAULT_BUDGETS: RuntimeBudgetsConfig = {
+  // CAP: Blocks new runtimes if exceeded
   maxConcurrentRunners: 2,
+
+  // KILL: Hard kill for client-static runtimes
   clientStaticBootMs: 5_000,
-  webContainerBootMs: 8_000,
+
+  // DEPRECATED: Use webContainerBootTargetMs or webContainerBootHardKillMs
+  webContainerBootMs: 5_000,
+
+  // WARN: Log warning if exceeded (p95 target)
+  webContainerBootTargetMs: 5_000,
+
+  // KILL: Hard kill for WebContainer runtimes
+  webContainerBootHardKillMs: 6_000,
+
+  // KILL (TODO): Should terminate session after threshold
   runSessionMs: 60_000,
 };
 
@@ -46,12 +132,18 @@ let runtimeBudgetsConfig: RuntimeBudgetsConfig = (() => {
   const bootMs = readEnvNumber("VIBECODR_RUNTIME_BOOT_MS") ?? DEFAULT_BUDGETS.clientStaticBootMs;
   const webContainerBootMs =
     readEnvNumber("VIBECODR_RUNTIME_WEB_CONTAINER_BOOT_MS") ?? DEFAULT_BUDGETS.webContainerBootMs;
+  const webContainerBootTargetMs =
+    readEnvNumber("VIBECODR_RUNTIME_WEB_CONTAINER_BOOT_TARGET_MS") ?? DEFAULT_BUDGETS.webContainerBootTargetMs;
+  const webContainerBootHardKillMs =
+    readEnvNumber("VIBECODR_RUNTIME_WEB_CONTAINER_HARD_KILL_MS") ?? DEFAULT_BUDGETS.webContainerBootHardKillMs;
   const runMs = readEnvNumber("VIBECODR_RUNTIME_SESSION_MS") ?? DEFAULT_BUDGETS.runSessionMs;
 
   return {
     maxConcurrentRunners: Math.min(Math.max(Math.trunc(maxConcurrent), 1), 10),
     clientStaticBootMs: Math.min(Math.max(Math.trunc(bootMs), 100), 120_000),
     webContainerBootMs: Math.min(Math.max(Math.trunc(webContainerBootMs), 100), 120_000),
+    webContainerBootTargetMs: Math.min(Math.max(Math.trunc(webContainerBootTargetMs), 100), 120_000),
+    webContainerBootHardKillMs: Math.min(Math.max(Math.trunc(webContainerBootHardKillMs), 100), 120_000),
     runSessionMs: Math.min(Math.max(Math.trunc(runMs), 1_000), 300_000),
   };
 })();

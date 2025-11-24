@@ -305,7 +305,8 @@ const renderCapsuleEmbed: BlockRenderer = ({ block }) => {
       <iframe
         src={embedUrl}
         title="Profile capsule"
-        sandbox="allow-scripts allow-same-origin"
+        sandbox="allow-scripts"
+        // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit
         className="w-full"
         style={{ height: `${Math.max(240, Math.min(height, 1200))}px`, border: "0" }}
       />
