@@ -1,46 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { FileText, GitFork, MessageCircle } from "lucide-react";
+import { ArrowRight, FileText, GitFork, MessageCircle, Sparkles } from "lucide-react";
 import { Comments } from "@/components/Comments";
 
 export interface PlayerDrawerProps {
   postId?: string;
   notes?: string;
   remixInfo?: {
-    parentId?: string;
-    changes: number;
+    parentId?: string | null;
+    parentTitle?: string | null;
+    parentHandle?: string | null;
+    parentPostId?: string | null;
+    remixCount?: number;
+    treeUrl?: string;
   };
+  recipesContent?: ReactNode;
   comments?: Array<{
     id: string;
     user: string;
     text: string;
     timestamp: number;
   }>;
-  initialTab?: "notes" | "remix" | "chat";
-  onTabChange?: (tab: "notes" | "remix" | "chat") => void;
+  initialTab?: "notes" | "remix" | "chat" | "recipes";
+  onTabChange?: (tab: "notes" | "remix" | "chat" | "recipes") => void;
+  onRemix?: () => void;
+  remixInfoLoading?: boolean;
+  remixInfoError?: string | null;
 }
 
 export function PlayerDrawer({
   postId,
   notes,
   remixInfo,
+  recipesContent,
   comments = [],
   initialTab,
   onTabChange,
+  onRemix,
+  remixInfoLoading,
+  remixInfoError,
 }: PlayerDrawerProps) {
-  const [tab, setTab] = useState<"notes" | "remix" | "chat">(initialTab ?? "notes");
+  const hasRecipes = Boolean(recipesContent);
+  const [tab, setTab] = useState<"notes" | "remix" | "chat" | "recipes">(
+    initialTab && (initialTab !== "recipes" || hasRecipes) ? initialTab : "notes"
+  );
 
   useEffect(() => {
+    if (initialTab === "recipes" && !hasRecipes) {
+      setTab("notes");
+      return;
+    }
     setTab(initialTab ?? "notes");
-  }, [initialTab]);
+  }, [initialTab, hasRecipes]);
 
   const handleTabChange = (value: string) => {
-    const next = value === "remix" || value === "chat" ? (value as "remix" | "chat") : "notes";
+    const next =
+      value === "remix" || value === "chat" || value === "recipes"
+        ? (value as "remix" | "chat" | "recipes")
+        : "notes";
+    if (next === "recipes" && !hasRecipes) {
+      setTab("notes");
+      return;
+    }
     setTab(next);
     onTabChange?.(next);
   };
@@ -58,6 +84,12 @@ export function PlayerDrawer({
             <GitFork className="h-4 w-4" />
             Remix
           </TabsTrigger>
+          {hasRecipes && (
+            <TabsTrigger value="recipes" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Recipes
+            </TabsTrigger>
+          )}
           <TabsTrigger value="chat" className="gap-2">
             <MessageCircle className="h-4 w-4" />
             Chat
@@ -88,38 +120,79 @@ export function PlayerDrawer({
             <div>
               <h3 className="text-sm font-semibold">Remix this vibe</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Fork this vibe in the composer and make your own changes
+                Fork this vibe in the composer and make your own changes.
               </p>
             </div>
 
-            {remixInfo?.parentId && (
-              <Card className="p-3">
-                <p className="text-xs text-muted-foreground">
-                  This is a remix with {remixInfo.changes} changes from the original
-                </p>
-                <Button variant="link" size="sm" className="mt-2 h-auto p-0 text-xs">
-                  View original vibe
-                </Button>
-              </Card>
+            <Card className="p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {remixInfo?.parentId ? "Remixed from" : "Origin"}
+                  </p>
+                  {remixInfo?.parentId ? (
+                    <p className="text-sm font-semibold leading-tight">
+                      {remixInfo.parentTitle ?? "Original vibe"}{" "}
+                      {remixInfo.parentHandle ? `by @${remixInfo.parentHandle}` : null}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      This is the first published version of this vibe.
+                    </p>
+                  )}
+                </div>
+                {remixInfo?.parentPostId && (
+                  <Link
+                    to={`/player/${remixInfo.parentPostId}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                  >
+                    View parent
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
+              </div>
+            </Card>
+
+            <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <GitFork className="h-4 w-4 text-primary" />
+                {remixInfoLoading ? (
+                  <span className="text-xs font-normal text-muted-foreground">Loading lineage...</span>
+                ) : (
+                  <span>
+                    {remixInfo?.remixCount ?? 0} remix{(remixInfo?.remixCount ?? 0) === 1 ? "" : "es"}
+                  </span>
+                )}
+              </div>
+              {remixInfo?.treeUrl && (
+                <Link
+                  to={remixInfo.treeUrl}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                >
+                  View family tree
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              )}
+            </div>
+
+            {remixInfoError && (
+              <p className="text-xs text-muted-foreground">
+                Lineage unavailable: {remixInfoError}
+              </p>
             )}
 
-            <Separator />
-
-            <Button className="w-full gap-2">
+            <Button className="w-full gap-2" onClick={onRemix} disabled={!onRemix}>
               <GitFork className="h-4 w-4" />
-              Fork with composer
+              Remix in composer
             </Button>
-
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-muted-foreground">Quick changes:</h4>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <p>• Adjust parameters in real-time</p>
-                <p>• View diff before forking</p>
-                <p>• Publish as your own variant</p>
-              </div>
-            </div>
           </div>
         </TabsContent>
+
+        {hasRecipes && (
+          <TabsContent value="recipes" className="flex-1 overflow-auto p-4">
+            {recipesContent}
+          </TabsContent>
+        )}
 
         {/* Chat Tab */}
         <TabsContent value="chat" className="flex-1 overflow-auto p-4">

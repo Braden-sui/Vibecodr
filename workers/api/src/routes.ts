@@ -13,6 +13,8 @@ import {
   getUserQuota,
   listUserCapsules,
 } from "./handlers/capsules";
+import { createCapsuleRecipe, deleteCapsuleRecipe, listCapsuleRecipes, updateCapsuleRecipe } from "./handlers/recipes";
+import { getRemixTree } from "./handlers/remixes";
 import {
   likePost,
   unlikePost,
@@ -90,6 +92,11 @@ export const routes: Route[] = [
   { method: "PATCH", pattern: /^\/capsules\/([^\/]+)\/manifest$/, handler: updateCapsuleManifest },
   { method: "POST", pattern: /^\/capsules\/([^\/]+)\/compile-draft$/, handler: compileDraftArtifact },
   { method: "POST", pattern: /^\/capsules\/([^\/]+)\/publish$/, handler: publishCapsuleDraft },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/recipes$/, handler: listCapsuleRecipes },
+  { method: "POST", pattern: /^\/capsules\/([^\/]+)\/recipes$/, handler: createCapsuleRecipe },
+  { method: "PATCH", pattern: /^\/capsules\/([^\/]+)\/recipes\/([^\/]+)$/, handler: updateCapsuleRecipe },
+  { method: "DELETE", pattern: /^\/capsules\/([^\/]+)\/recipes\/([^\/]+)$/, handler: deleteCapsuleRecipe },
+  { method: "GET", pattern: /^\/capsules\/([^\/]+)\/remixes$/, handler: getRemixTree },
 
   // User & Quota
   { method: "GET", pattern: /^\/user\/quota$/, handler: getUserQuota },

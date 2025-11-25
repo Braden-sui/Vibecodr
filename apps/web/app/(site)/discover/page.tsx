@@ -51,7 +51,7 @@ export default function DiscoverPage() {
 
   usePageMeta({
     title: "Discover Vibecoders",
-    description: "Follow tags to find runnable apps and reports from the Vibecodr community.",
+    description: "Follow tags to find runnable apps, links, images, and longform vibes from the Vibecodr community.",
     url: origin ? `${origin}/discover` : undefined,
     siteName: "Vibecodr",
     canonicalUrl: origin ? `${origin}/discover` : undefined,

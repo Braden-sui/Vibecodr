@@ -7,7 +7,7 @@ import { checkBundleSize, getUserPlan, getUserRunQuotaState } from "../storage/q
 import { PublishCapsuleError, createRuntimeArtifactForCapsule, resolveRuntimeArtifactType } from "./capsules";
 import { buildRuntimeManifest } from "../runtime/runtimeManifest";
 import { bundleInlineJs } from "./inlineBundle";
-import { createPostSchema } from "../schema";
+import { createPostSchema, normalizePostType } from "../schema";
 import { json } from "../lib/responses";
 
 type CapsuleRow = { id: string; owner_id: string; manifest_json: string; hash: string };
@@ -378,6 +378,8 @@ export const publishCapsuleDraft: Handler = requireAuth(async (req, env, _ctx, p
       visibility: "public",
     };
     const parsed = createPostSchema.parse(payload);
+    const postType = normalizePostType(parsed.type);
+    const capsuleIdForInsert = postType === "app" ? parsed.capsuleId ?? null : null;
 
     await env.DB.prepare(
       `INSERT INTO posts (id, author_id, type, capsule_id, title, description, tags, visibility, report_md, cover_key)
@@ -386,8 +388,8 @@ export const publishCapsuleDraft: Handler = requireAuth(async (req, env, _ctx, p
       .bind(
         postId,
         parsed.authorId,
-        parsed.type,
-        parsed.capsuleId ?? null,
+        postType,
+        capsuleIdForInsert,
         parsed.title,
         parsed.description ?? null,
         parsed.tags && parsed.tags.length > 0 ? JSON.stringify(parsed.tags) : null,

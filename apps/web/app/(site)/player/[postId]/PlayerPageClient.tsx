@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { type PlayerIframeHandle } from "@/components/Player/PlayerIframe";
 import { PlayerDrawer } from "@/components/Player/PlayerDrawer";
@@ -16,15 +16,32 @@ import {
 } from "@/components/Player/runtimeBudgets";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Sliders } from "lucide-react";
-import { postsApi, runsApi, moderationApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
+import { ArrowLeft, GitFork, Sliders } from "lucide-react";
+import {
+  postsApi,
+  runsApi,
+  moderationApi,
+  recipesApi,
+  remixesApi,
+  type FeedPost,
+  mapApiFeedPostToFeedPost,
+  type RemixTreeResponse,
+} from "@/lib/api";
 import { trackClientError, trackEvent, trackRuntimeEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { budgeted } from "@/lib/perf";
-import { ApiPostResponseSchema, Plan, normalizePlan } from "@vibecodr/shared";
+import {
+  ApiPostResponseSchema,
+  ApiRecipeCreateResponseSchema,
+  ApiRecipeListResponseSchema,
+  ApiRemixTreeResponseSchema,
+  Plan,
+  normalizePlan,
+} from "@vibecodr/shared";
 import { usePageMeta } from "@/lib/seo";
+import { PlayerRecipesTab, type PlayerRecipeView } from "@/components/Player/PlayerRecipesTab";
 
 type PlayerPageClientProps = {
   postId: string;
@@ -81,7 +98,15 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [stats, setStats] = useState({ fps: 0, memory: 0, bootTime: 0 });
   const [capsuleParams, setCapsuleParams] = useState<Record<string, unknown>>({});
   const [areParamsOpen, setAreParamsOpen] = useState(false);
+  const [savedRecipes, setSavedRecipes] = useState<PlayerRecipeView[]>([]);
+  const [recipesError, setRecipesError] = useState<string | null>(null);
+  const [isRecipesLoading, setIsRecipesLoading] = useState(false);
+  const [isSavingRecipe, setIsSavingRecipe] = useState(false);
+  const [busyRecipeId, setBusyRecipeId] = useState<string | null>(null);
   const [post, setPost] = useState<FeedPost | null>(null);
+  const [remixTree, setRemixTree] = useState<RemixTreeResponse | null>(null);
+  const [remixTreeError, setRemixTreeError] = useState<string | null>(null);
+  const [isRemixTreeLoading, setIsRemixTreeLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [consoleEntries, setConsoleEntries] = useState<PlayerConsoleEntry[]>([]);
@@ -108,6 +133,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const handoffPrefillAppliedRef = useRef(false);
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
@@ -118,11 +144,13 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const actorId = user?.id ?? null;
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const tabParam = searchParams.get("tab");
-  const initialTab: "notes" | "remix" | "chat" =
+  const initialTab: "notes" | "remix" | "chat" | "recipes" =
     tabParam === "chat" || tabParam === "comments"
       ? "chat"
       : tabParam === "remix"
       ? "remix"
+      : tabParam === "recipes"
+      ? "recipes"
       : "notes";
   const capsuleParamDefs = post?.capsule?.params;
   const manifestParams = useMemo<ManifestParam[]>(() => {
@@ -131,6 +159,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     }
     return capsuleParamDefs.filter(isManifestParam);
   }, [capsuleParamDefs]);
+  const capsuleId = post?.capsule?.id ?? null;
   const statFormatter = useMemo(
     () =>
       new Intl.NumberFormat("en-US", {
@@ -170,9 +199,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   };
 
   const handleDrawerTabChange = useCallback(
-    (next: "notes" | "remix" | "chat") => {
+    (next: "notes" | "remix" | "chat" | "recipes") => {
       const current = searchParams.get("tab") ?? "notes";
-      const canonical = next === "chat" ? "chat" : next === "remix" ? "remix" : "notes";
+      const canonical =
+        next === "chat" ? "chat" : next === "remix" ? "remix" : next === "recipes" ? "recipes" : "notes";
       if (current === canonical) {
         return;
       }
@@ -1024,6 +1054,60 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   }, [postId]);
 
   useEffect(() => {
+    const capsuleId = post?.capsule?.id ?? null;
+    if (!capsuleId) {
+      setRemixTree(null);
+      setRemixTreeError(null);
+      return;
+    }
+    let cancelled = false;
+    setIsRemixTreeLoading(true);
+    setRemixTreeError(null);
+
+    (async () => {
+      try {
+        const response = await remixesApi.tree(capsuleId);
+        const payload = await response
+          .json()
+          .catch(() => ({ error: "Failed to parse remix response" }));
+        if (!response.ok) {
+          const message =
+            payload && typeof (payload as any).error === "string"
+              ? (payload as any).error
+              : "Failed to load remix lineage";
+          throw new Error(message);
+        }
+        const parsed = ApiRemixTreeResponseSchema.parse(payload);
+        if (!cancelled) {
+          setRemixTree(parsed);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRemixTreeError(err instanceof Error ? err.message : "Failed to load remix lineage");
+          setRemixTree(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRemixTreeLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [post?.capsule?.id]);
+
+  useEffect(() => {
+    if (!remixTreeError) return;
+    console.warn("E-VIBECODR-REMIX-TREE player lineage fetch failed", {
+      postId,
+      capsuleId: post?.capsule?.id ?? null,
+      error: remixTreeError,
+    });
+  }, [post?.capsule?.id, postId, remixTreeError]);
+
+  useEffect(() => {
     if (!isSignedIn) {
       setAuthzState("unauthenticated");
     } else if (!isModeratorOrAdmin) {
@@ -1251,9 +1335,16 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           postId,
           message,
         });
-      });
+        });
     }
   };
+
+  const handleRemix = useCallback(() => {
+    if (!capsuleId) {
+      return;
+    }
+    navigate(`/post/new?remixFrom=${encodeURIComponent(capsuleId)}`);
+  }, [capsuleId, navigate]);
 
   const handleParamChange = (name: string, value: unknown) => {
     setCapsuleParams((prev) => {
@@ -1266,6 +1357,392 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       };
     });
   };
+
+  const refreshRecipes = useCallback(async () => {
+    if (!post?.capsule?.id || manifestParams.length === 0) {
+      setSavedRecipes([]);
+      setRecipesError(null);
+      setIsRecipesLoading(false);
+      return;
+    }
+    setIsRecipesLoading(true);
+    setRecipesError(null);
+    try {
+      const response = await recipesApi.list(post.capsule.id, { limit: 50 });
+      const raw = await response.json();
+      if (!response.ok) {
+        const message =
+          (raw as { error?: string })?.error ?? `Failed to load recipes (status ${response.status})`;
+        throw new Error(message);
+      }
+      const parsed = ApiRecipeListResponseSchema.parse(raw);
+      const normalized = parsed.recipes.map<PlayerRecipeView>((recipe) => ({
+        id: recipe.id,
+        name: recipe.name,
+        params: sanitizeRecipeParamsForManifest(manifestParams, recipe.params ?? {}),
+        author: {
+          id: recipe.author.id,
+          handle: recipe.author.handle ?? null,
+          name: recipe.author.name ?? null,
+          avatarUrl: recipe.author.avatarUrl ?? null,
+        },
+        createdAt: normalizeRecipeTimestamp(recipe.createdAt),
+      }));
+      normalized.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      setSavedRecipes(normalized);
+    } catch (err) {
+      setRecipesError(err instanceof Error ? err.message : "Failed to load recipes");
+    } finally {
+      setIsRecipesLoading(false);
+    }
+  }, [manifestParams, post?.capsule?.id]);
+
+  useEffect(() => {
+    void refreshRecipes();
+  }, [refreshRecipes]);
+
+  const defaultRecipe = useMemo<PlayerRecipeView | null>(() => {
+    if (!post?.capsule || manifestParams.length === 0) {
+      return null;
+    }
+    const defaults: Record<string, RecipeValue> = {};
+    for (const param of manifestParams) {
+      const normalized = normalizeRecipeParamValue(param, param.default);
+      defaults[param.name] = normalized !== undefined ? normalized : (param.default as RecipeValue);
+    }
+    return {
+      id: "default",
+      name: "Default (author config)",
+      params: defaults,
+      author: {
+        id: post.author.id,
+        handle: post.author.handle,
+        name: post.author.name ?? null,
+        avatarUrl: post.author.avatarUrl ?? null,
+      },
+      createdAt: null,
+      isDefault: true,
+    };
+  }, [manifestParams, post]);
+
+  const recipeList = useMemo<PlayerRecipeView[]>(() => {
+    if (defaultRecipe) {
+      return [defaultRecipe, ...savedRecipes];
+    }
+    return savedRecipes;
+  }, [defaultRecipe, savedRecipes]);
+
+  const handleApplyRecipe = useCallback(
+    (recipe: PlayerRecipeView) => {
+      if (!recipe || manifestParams.length === 0) {
+        return;
+      }
+      const nextParams = buildParamsFromRecipe(manifestParams, recipe.params);
+      setCapsuleParams(nextParams);
+      toast({
+        title: "Recipe applied",
+        description: `Loaded "${recipe.name}"`,
+      });
+    },
+    [manifestParams],
+  );
+
+  const handleSaveRecipe = useCallback(
+    async (name: string) => {
+      if (!post?.capsule?.id || manifestParams.length === 0) {
+        toast({
+          title: "Cannot save recipe",
+          description: "This capsule does not expose any parameters.",
+          variant: "error",
+        });
+        return;
+      }
+      if (!isSignedIn) {
+        toast({
+          title: "Sign in required",
+          description: "Sign in to publish a recipe.",
+          variant: "error",
+        });
+        return;
+      }
+      const payloadParams = sanitizeRecipeParamsForManifest(manifestParams, capsuleParams);
+      if (Object.keys(payloadParams).length === 0) {
+        toast({
+          title: "Nothing to save",
+          description: "Adjust at least one parameter before saving a recipe.",
+          variant: "error",
+        });
+        return;
+      }
+      setIsSavingRecipe(true);
+      try {
+        const init = await buildAuthInit();
+        if (!init) {
+          toast({
+            title: "Sign in required",
+            description: "Sign in to publish a recipe.",
+            variant: "error",
+          });
+          return;
+        }
+        const response = await recipesApi.create(
+          post.capsule.id,
+          { name, params: payloadParams },
+          {
+            ...init,
+            headers: {
+              "Content-Type": "application/json",
+              ...(init.headers || {}),
+            },
+          },
+        );
+        const raw = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message =
+            (raw as { error?: string })?.error ?? `Failed to save recipe (status ${response.status})`;
+          toast({
+            title: "Could not save recipe",
+            description: message,
+            variant: "error",
+          });
+          return;
+        }
+        const parsed = ApiRecipeCreateResponseSchema.safeParse(raw);
+        if (parsed.success) {
+          const recipe = parsed.data.recipe;
+          const sanitized: PlayerRecipeView = {
+            id: recipe.id,
+            name: recipe.name,
+            params: sanitizeRecipeParamsForManifest(manifestParams, recipe.params ?? {}),
+            author: {
+              id: recipe.author.id,
+              handle: recipe.author.handle ?? null,
+              name: recipe.author.name ?? null,
+              avatarUrl: recipe.author.avatarUrl ?? null,
+            },
+            createdAt: normalizeRecipeTimestamp(recipe.createdAt) ?? Math.floor(Date.now() / 1000),
+          };
+          setSavedRecipes((prev) => {
+            const next = [sanitized, ...prev.filter((item) => item.id !== sanitized.id)];
+            next.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+            return next;
+          });
+          setRecipesError(null);
+        } else {
+          await refreshRecipes();
+        }
+        toast({
+          title: "Recipe saved",
+          description: "Shared to the capsule sidebar.",
+        });
+      } catch (err) {
+        toast({
+          title: "Could not save recipe",
+          description: err instanceof Error ? err.message : "Unknown error",
+          variant: "error",
+        });
+      } finally {
+        setIsSavingRecipe(false);
+      }
+    },
+    [
+      capsuleParams,
+      buildAuthInit,
+      isSignedIn,
+      manifestParams,
+      post?.capsule?.id,
+      refreshRecipes,
+    ],
+  );
+
+  const handleUpdateRecipe = useCallback(
+    async (recipe: PlayerRecipeView) => {
+      if (!post?.capsule?.id || manifestParams.length === 0) {
+        toast({
+          title: "Cannot update recipe",
+          description: "This capsule does not expose any parameters.",
+          variant: "error",
+        });
+        return;
+      }
+      const payloadParams = sanitizeRecipeParamsForManifest(manifestParams, capsuleParams);
+      if (Object.keys(payloadParams).length === 0) {
+        toast({
+          title: "Nothing to save",
+          description: "Adjust at least one parameter before updating.",
+          variant: "error",
+        });
+        return;
+      }
+      setBusyRecipeId(recipe.id);
+      try {
+        const init = await buildAuthInit();
+        if (!init) {
+          toast({
+            title: "Sign in required",
+            description: "Sign in to update this recipe.",
+            variant: "error",
+          });
+          return;
+        }
+        const response = await recipesApi.update(
+          post.capsule.id,
+          recipe.id,
+          { name: recipe.name, params: payloadParams },
+          {
+            ...init,
+            headers: {
+              "Content-Type": "application/json",
+              ...(init.headers || {}),
+            },
+          },
+        );
+        const raw = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message =
+            (raw as { error?: string })?.error ?? `Failed to update recipe (status ${response.status})`;
+          toast({
+            title: "Could not update recipe",
+            description: message,
+            variant: "error",
+          });
+          return;
+        }
+        const parsed = ApiRecipeCreateResponseSchema.safeParse(raw);
+        if (parsed.success) {
+          const updated = parsed.data.recipe;
+          const sanitized: PlayerRecipeView = {
+            id: updated.id,
+            name: updated.name,
+            params: sanitizeRecipeParamsForManifest(manifestParams, updated.params ?? {}),
+            author: {
+              id: updated.author.id,
+              handle: updated.author.handle ?? null,
+              name: updated.author.name ?? null,
+              avatarUrl: updated.author.avatarUrl ?? null,
+            },
+            createdAt: normalizeRecipeTimestamp(updated.createdAt) ?? recipe.createdAt ?? null,
+          };
+          setSavedRecipes((prev) => prev.map((r) => (r.id === sanitized.id ? sanitized : r)));
+          toast({
+            title: "Recipe updated",
+            description: `"${recipe.name}" now matches current parameters.`,
+          });
+        } else {
+          await refreshRecipes();
+        }
+      } catch (err) {
+        toast({
+          title: "Could not update recipe",
+          description: err instanceof Error ? err.message : "Unknown error",
+          variant: "error",
+        });
+      } finally {
+        setBusyRecipeId(null);
+      }
+    },
+    [buildAuthInit, capsuleParams, manifestParams, post?.capsule?.id, refreshRecipes],
+  );
+
+  const handleDeleteRecipe = useCallback(
+    async (recipe: PlayerRecipeView) => {
+      if (!post?.capsule?.id) return;
+      setBusyRecipeId(recipe.id);
+      try {
+        const init = await buildAuthInit();
+        if (!init) {
+          toast({
+            title: "Sign in required",
+            description: "Sign in to delete this recipe.",
+            variant: "error",
+          });
+          return;
+        }
+        const response = await recipesApi.delete(post.capsule.id, recipe.id, init);
+        if (!response.ok) {
+          const raw = await response.json().catch(() => null);
+          const message =
+            (raw as { error?: string })?.error ?? `Failed to delete recipe (status ${response.status})`;
+          toast({
+            title: "Could not delete recipe",
+            description: message,
+            variant: "error",
+          });
+          return;
+        }
+        setSavedRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
+        toast({
+          title: "Recipe deleted",
+          description: `"${recipe.name}" was removed.`,
+          variant: "success",
+        });
+      } catch (err) {
+        toast({
+          title: "Could not delete recipe",
+          description: err instanceof Error ? err.message : "Unknown error",
+          variant: "error",
+        });
+      } finally {
+        setBusyRecipeId(null);
+      }
+    },
+    [buildAuthInit, post?.capsule?.id],
+  );
+
+  const recipesTabContent = useMemo(() => {
+    if (!post?.capsule || manifestParams.length === 0) {
+      return null;
+    }
+    return (
+      <PlayerRecipesTab
+        recipes={recipeList}
+        isLoading={isRecipesLoading}
+        isSaving={isSavingRecipe}
+        canSave={isSignedIn}
+        busyRecipeId={busyRecipeId}
+        error={recipesError}
+        onSave={handleSaveRecipe}
+        onApply={handleApplyRecipe}
+        onUpdate={handleUpdateRecipe}
+        onDelete={handleDeleteRecipe}
+        onRefresh={refreshRecipes}
+      />
+    );
+  }, [
+    post?.capsule,
+    manifestParams,
+    recipeList,
+    isRecipesLoading,
+    isSavingRecipe,
+    isSignedIn,
+    busyRecipeId,
+    recipesError,
+    handleSaveRecipe,
+    handleApplyRecipe,
+    handleUpdateRecipe,
+    handleDeleteRecipe,
+    refreshRecipes,
+  ]);
+
+  const remixNode =
+    remixTree && capsuleId
+      ? remixTree.nodes.find((node) => node.capsuleId === capsuleId)
+      : null;
+  const remixParentNode =
+    remixTree && remixTree.directParentId
+      ? remixTree.nodes.find((node) => node.capsuleId === remixTree.directParentId)
+      : null;
+  const remixDrawerInfo =
+    capsuleId || remixTree
+          ? {
+              parentId: remixTree?.directParentId ?? null,
+              parentTitle: remixParentNode?.title ?? null,
+              parentHandle: remixParentNode?.authorHandle ?? null,
+              parentPostId: remixParentNode?.postId ?? null,
+              remixCount: remixNode?.remixCount ?? post?.stats.remixes ?? 0,
+              treeUrl: capsuleId ? `/vibe/${encodeURIComponent(capsuleId)}/remixes` : undefined,
+            }
+          : undefined;
 
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
@@ -1291,8 +1768,18 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           <div className="flex items-center gap-2">
             {post && (
               <Badge variant="secondary">
-                {post.type === "app" ? post.capsule?.runner || "client-static" : "report"}
+                {post.type === "app"
+                  ? post.capsule?.runner || "client-static"
+                  : `${post.type.charAt(0).toUpperCase()}${post.type.slice(1)}`}
               </Badge>
+            )}
+            {capsuleId && (
+              <Button asChild variant="outline" size="sm" className="gap-1">
+                <Link to={`/vibe/${encodeURIComponent(capsuleId)}/remixes`}>
+                  <GitFork className="h-4 w-4" />
+                  Family tree
+                </Link>
+              </Button>
             )}
           </div>
         </div>
@@ -1353,9 +1840,13 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           <PlayerDrawer
             postId={postId}
             notes={post?.description}
-            remixInfo={{ changes: 0 }}
+            remixInfo={remixDrawerInfo}
+            remixInfoLoading={isRemixTreeLoading}
+            remixInfoError={remixTreeError}
+            recipesContent={recipesTabContent}
             initialTab={initialTab}
             onTabChange={handleDrawerTabChange}
+            onRemix={capsuleId ? handleRemix : undefined}
           />
         </div>
       </div>
@@ -1428,7 +1919,96 @@ const PLAYER_STATS_FIELDS: Array<{
   { key: "remixes", label: "Remixes", helper: "Published forks" },
 ];
 
+type RecipeValue = string | number | boolean;
+
 const PARAM_TYPES: ManifestParam["type"][] = ["slider", "toggle", "select", "text", "color", "number"];
+
+function clampRecipeNumber(value: number, min?: number, max?: number): number {
+  let next = value;
+  if (typeof min === "number") {
+    next = Math.max(min, next);
+  }
+  if (typeof max === "number") {
+    next = Math.min(max, next);
+  }
+  return next;
+}
+
+function normalizeRecipeParamValue(param: ManifestParam, raw: unknown): RecipeValue | undefined {
+  switch (param.type) {
+    case "slider":
+    case "number":
+      if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+      return clampRecipeNumber(raw, param.min, param.max);
+    case "toggle":
+      return typeof raw === "boolean" ? raw : undefined;
+    case "select":
+      if (typeof raw !== "string") return undefined;
+      return param.options && param.options.includes(raw) ? raw : undefined;
+    case "text":
+      if (typeof raw !== "string") return undefined;
+      return raw.slice(0, Math.min(Math.max(param.maxLength ?? 400, 1), 1000));
+    case "color":
+      if (typeof raw !== "string") return undefined;
+      return raw.slice(0, 64);
+    default:
+      if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+        return raw;
+      }
+      return undefined;
+  }
+}
+
+function sanitizeRecipeParamsForManifest(
+  manifestParams: ManifestParam[],
+  params: Record<string, unknown> | null | undefined
+): Record<string, RecipeValue> {
+  if (!params || typeof params !== "object") {
+    return {};
+  }
+
+  const manifestByName = new Map<string, ManifestParam>();
+  for (const param of manifestParams) {
+    manifestByName.set(param.name, param);
+  }
+
+  const sanitized: Record<string, RecipeValue> = {};
+  for (const [name, raw] of Object.entries(params)) {
+    const def = manifestByName.get(name);
+    if (!def) continue;
+    const normalized = normalizeRecipeParamValue(def, raw);
+    if (normalized !== undefined) {
+      sanitized[name] = normalized;
+    }
+  }
+  return sanitized;
+}
+
+function buildParamsFromRecipe(
+  manifestParams: ManifestParam[],
+  params: Record<string, RecipeValue>
+): Record<string, RecipeValue> {
+  const next: Record<string, RecipeValue> = {};
+  for (const param of manifestParams) {
+    if (Object.prototype.hasOwnProperty.call(params, param.name)) {
+      next[param.name] = params[param.name];
+    } else {
+      next[param.name] = param.default as RecipeValue;
+    }
+  }
+  return next;
+}
+
+function normalizeRecipeTimestamp(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+}
 
 function isManifestParam(param: unknown): param is ManifestParam {
   if (!param || typeof param !== "object") {

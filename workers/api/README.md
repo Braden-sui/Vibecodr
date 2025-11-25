@@ -14,6 +14,7 @@ This Worker powers the Vibecodr SPA. All routes are registered in `src/routes.ts
   - `GET /capsules/:id`, `/verify`, `/manifest`, `/bundle` – capsule metadata, integrity check, runtime manifest, iframe entry bundle.
   - Draft editing: `GET /capsules/:id/files-summary`, `GET|PUT /capsules/:id/files/:path`, `PATCH /capsules/:id/manifest`.
   - Draft compilation/publish: `POST /capsules/:id/compile-draft`, `POST /capsules/:id/publish` (publishes a compiled draft artifact).
+  - Parameter recipes: `GET /capsules/:id/recipes` lists saved parameter sets (visible when the capsule is viewable; quarantined capsules still require owner/mod). `POST /capsules/:id/recipes` saves `{ name, params }` for the capsule manifest, clamps values to param bounds/options, requires auth, and enforces a per-capsule limit of 100 recipes. Returns sanitized params and author metadata.
 
 - **Profiles, follows, quota**
   - `POST /users/sync` – Clerk identity upsert (handle/name/avatar/bio/plan).

@@ -17,12 +17,12 @@ This package hosts the front-end SPA built with Vite and React Router:
 - `/` – feed tabs (latest/following/foryou), search (`?q=`) + tag filters (`?tags=`), inline run actions that obey runtime budgets.
 - `/discover` – tag-focused discover lane backed by `/posts/discover`.
 - `/post/new` (alias `/composer`) – unified composer (GitHub/ZIP import + inline code) using `VibesComposer`.
-- `/post/:id` – report posts render inline; app posts redirect to `/player/:id`.
+- `/post/:id` – non-app vibes render inline; app vibes redirect to `/player/:id`.
 - `/player/:postId` – sandboxed runner with param controls, console/log streaming, remix/share/report actions, runtime slot reservation.
 - `/studio/*` – experimental Studio shell (Import/Params/Files/Publish) available via direct URL or `?capsuleId=` hydrate.
 - `/u/:handle` (`/profile/:handle` redirects) – profile header + blocks/layout + post list.
 - `/settings`, `/settings/profile` – plan usage (static) + profile editing.
-- `/pricing`, `/live`, `/report/new` – marketing/static and placeholders.
+- `/pricing`, `/live`, `/report/new` – marketing/static and placeholders (report/new reserved for longform editor).
 - Moderation/admin – `/moderation/flagged`, `/moderation/audit`, `/admin/moderation` (queue), `/admin/analytics` (runtime analytics dashboard).
 - Auth – `/sign-in`, `/sign-up`.
 

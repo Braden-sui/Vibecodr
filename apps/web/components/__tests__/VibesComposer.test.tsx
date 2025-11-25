@@ -67,6 +67,11 @@ async function readFormDataEntry(value: FormDataEntryValue | null): Promise<stri
   }
 }
 
+const selectAppCodeMode = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole("button", { name: "App" }));
+  await user.click(screen.getByRole("button", { name: "Code" }));
+};
+
 describe("VibesComposer inline code mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -117,14 +122,13 @@ describe("VibesComposer inline code mode", () => {
       const user = userEvent.setup();
       render(<VibesComposer />);
 
-      const codeChip = screen.getByRole("button", { name: "Code" });
-      await user.click(codeChip);
+      await selectAppCodeMode(user);
 
-      const titleInput = screen.getByPlaceholderText("Title for your vibe");
+      const titleInput = screen.getByPlaceholderText("Title for your app");
       fireEvent.focus(titleInput);
       fireEvent.change(titleInput, { target: { value: "Inline app with advanced settings" } });
 
-      const descriptionInput = screen.getByPlaceholderText("Add more details (optional)");
+      const descriptionInput = screen.getByPlaceholderText("Describe your app vibe (optional)");
       fireEvent.change(descriptionInput, { target: { value: "Demo description" } });
 
       const codeTextarea = await screen.findByPlaceholderText(
@@ -196,10 +200,9 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     render(<VibesComposer />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "Inline app reset test" } });
 
@@ -225,10 +228,9 @@ describe("VibesComposer inline code mode", () => {
       expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
     });
 
-    const codeChip2 = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip2);
+    await selectAppCodeMode(user);
 
-    const reopenTitle = screen.getByPlaceholderText("Title for your vibe");
+    const reopenTitle = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(reopenTitle);
     await screen.findByText("Inline App Code");
 
@@ -240,12 +242,12 @@ describe("VibesComposer inline code mode", () => {
   });
 
   it("shows inline code editor when Code mode is selected", async () => {
+    const user = userEvent.setup();
     render(<VibesComposer />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await userEvent.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
 
     await waitFor(() => {
@@ -254,19 +256,17 @@ describe("VibesComposer inline code mode", () => {
   });
 
   it("validates that code is required before submit", async () => {
+    const user = userEvent.setup();
     render(<VibesComposer />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await userEvent.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "My inline app" } });
 
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
-    await userEvent.click(shareButton);
-
-    expect(await screen.findByText("Please add some code for your app")).toBeInTheDocument();
+    expect(shareButton).toBeDisabled();
     expect(capsulesPublishMock).not.toHaveBeenCalled();
     expect(postsApiCreateMock).not.toHaveBeenCalled();
   });
@@ -288,10 +288,9 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     render(<VibesComposer onPostCreated={onPostCreated} />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "Inline app" } });
 
@@ -339,10 +338,9 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     render(<VibesComposer />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "Inline app" } });
 
@@ -375,10 +373,9 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     render(<VibesComposer />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "Inline app" } });
 
@@ -419,17 +416,15 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     const { container } = render(<VibesComposer />);
 
+    await user.click(screen.getByRole("button", { name: "App" }));
     const githubChip = screen.getByRole("button", { name: "GitHub" });
     await user.click(githubChip);
 
-    const [mainInput] = screen.getAllByPlaceholderText("https://github.com/user/repo");
-    fireEvent.focus(mainInput);
-    fireEvent.change(mainInput, { target: { value: "https://github.com/user/repo" } });
+    const titleField = screen.getByPlaceholderText("https://github.com/user/repo");
+    fireEvent.focus(titleField);
 
-    const [, importInput] = screen.getAllByPlaceholderText("https://github.com/user/repo");
-    fireEvent.change(importInput, { target: { value: "" } });
-    fireEvent.focus(importInput);
-    fireEvent.change(importInput, { target: { value: "https://github.com/user/repo" } });
+    const repoInput = screen.getByPlaceholderText("https://github.com/user/repo");
+    fireEvent.change(repoInput, { target: { value: "https://github.com/user/repo" } });
 
     const importButton = screen.getByRole("button", { name: "Import Repository" });
     await user.click(importButton);
@@ -438,6 +433,9 @@ describe("VibesComposer inline code mode", () => {
       expect(capsulesImportGithubMock).toHaveBeenCalledTimes(1);
       expect(screen.getByText("Repository imported successfully")).toBeInTheDocument();
     });
+
+    const titleInput = screen.getByPlaceholderText("Title for your app");
+    fireEvent.change(titleInput, { target: { value: "Imported App" } });
 
     const fileInput = container.querySelector('input[type="file"][accept="image/*"]') as HTMLInputElement;
     const file = new File(["dummy"], "cover.png", { type: "image/png" });
@@ -475,10 +473,9 @@ describe("VibesComposer inline code mode", () => {
     const user = userEvent.setup();
     render(<VibesComposer />);
 
-    const codeChip = screen.getByRole("button", { name: "Code" });
-    await user.click(codeChip);
+    await selectAppCodeMode(user);
 
-    const titleInput = screen.getByPlaceholderText("Title for your vibe");
+    const titleInput = screen.getByPlaceholderText("Title for your app");
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "Tagged inline app" } });
 

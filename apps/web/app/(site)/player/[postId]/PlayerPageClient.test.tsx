@@ -20,6 +20,30 @@ const mockMapPost = vi.fn();
 const mockToast = vi.fn();
 const mockUsePageMeta = vi.fn();
 const mockTrackClientError = vi.fn();
+const mockRemixTree = vi.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({
+    rootCapsuleId: "capsule-1",
+    requestedCapsuleId: "capsule-1",
+    directParentId: null,
+    nodes: [],
+  }),
+});
+const mockRecipesList = vi.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({ recipes: [], limit: 50, offset: 0 }),
+});
+const mockRecipesCreate = vi.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({
+    recipe: {
+      id: "recipe-1",
+      name: "Test",
+      params: {},
+      author: { id: "user-recipes", handle: "tester" },
+    },
+  }),
+});
 
 vi.mock("@/lib/api", () => ({
   postsApi: {
@@ -29,6 +53,13 @@ vi.mock("@/lib/api", () => ({
     start: (...args: unknown[]) => mockRunsStart(...args),
     complete: (...args: unknown[]) => mockRunsComplete(...args),
     appendLogs: (...args: unknown[]) => mockAppendLogs(...args),
+  },
+  remixesApi: {
+    tree: (...args: unknown[]) => mockRemixTree(...args),
+  },
+  recipesApi: {
+    list: (...args: unknown[]) => mockRecipesList(...args),
+    create: (...args: unknown[]) => mockRecipesCreate(...args),
   },
   mapApiFeedPostToFeedPost: (...args: unknown[]) => mockMapPost(...args),
 }));
@@ -68,6 +99,10 @@ vi.mock("@/components/Player/PlayerDrawer", () => ({
 
 vi.mock("@/components/Player/ParamControls", () => ({
   ParamControls: () => React.createElement("div", { "data-testid": "param-controls" }),
+}));
+
+vi.mock("@/components/Player/PlayerRecipesTab", () => ({
+  PlayerRecipesTab: () => React.createElement("div", { "data-testid": "recipes-tab" }),
 }));
 
 vi.mock("@/components/PlayerShell", () => ({
@@ -116,6 +151,23 @@ describe("PlayerPageClient", () => {
     mockToast.mockClear();
     mockUsePageMeta.mockClear();
     mockTrackClientError.mockClear();
+    mockRecipesList.mockReset();
+    mockRecipesList.mockResolvedValue({
+      ok: true,
+      json: async () => ({ recipes: [], limit: 50, offset: 0 }),
+    });
+    mockRecipesCreate.mockReset();
+    mockRecipesCreate.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        recipe: {
+          id: "recipe-1",
+          name: "Test",
+          params: {},
+          author: { id: "user-recipes", handle: "tester" },
+        },
+      }),
+    });
     resetRuntimeSlotsForTest();
     mockPostsGet.mockReset();
     mockPostsGet.mockResolvedValue({

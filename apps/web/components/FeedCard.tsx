@@ -22,6 +22,10 @@ import {
   Wifi,
   Database,
   Sparkles,
+  ArrowRight,
+  Image as ImageIcon,
+  Link2,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
@@ -102,7 +106,11 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
   const actorId = user?.id ?? null;
   const isApp = post.type === "app";
+  const isImage = post.type === "image";
+  const isLink = post.type === "link";
+  const isLongform = post.type === "longform";
   const detailHref = isApp ? `/player/${post.id}` : `/post/${post.id}`;
+  const descriptionClamp = isLongform ? "line-clamp-3" : "line-clamp-2";
   const [_isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [previewError, setPreviewError] = useState(false);
@@ -245,6 +253,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   );
 
   const capsuleId = post.capsule?.id;
+  const encodedCapsuleId = capsuleId ? encodeURIComponent(capsuleId) : null;
   const artifactId = post.capsule?.artifactId ?? null;
   const isWebContainer = post.capsule?.runner === "webcontainer";
   // Note: WebContainer runner should support equivalent pause/resume semantics when inline runs are enabled.
@@ -257,6 +266,46 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     [artifactId, capsuleId]
   );
   const runnerOriginWarnedRef = useRef(false);
+  const typeBadge = useMemo(() => {
+    switch (post.type) {
+      case "app":
+        return { icon: <Cpu className="h-3 w-3" />, label: post.capsule?.runner || "App" };
+      case "image":
+        return { icon: <ImageIcon className="h-3 w-3" />, label: "Image" };
+      case "link":
+        return { icon: <Link2 className="h-3 w-3" />, label: "Link" };
+      case "longform":
+        return { icon: <FileText className="h-3 w-3" />, label: "Longform" };
+      case "thought":
+      default:
+        return { icon: <Sparkles className="h-3 w-3" />, label: "Thought" };
+    }
+  }, [post.capsule?.runner, post.type]);
+  const coverLabel = useMemo(() => {
+    if (!post.coverKey) return null;
+    const segments = post.coverKey.split("/");
+    return segments[segments.length - 1] || post.coverKey;
+  }, [post.coverKey]);
+  const primaryLink = useMemo(() => {
+    if (!post.description) return null;
+    const match = post.description.match(/https?:\/\/\S+/i);
+    return match ? match[0] : null;
+  }, [post.description]);
+  const primaryLinkHost = useMemo(() => {
+    if (!primaryLink) return null;
+    try {
+      return new URL(primaryLink).host;
+    } catch {
+      return primaryLink;
+    }
+  }, [primaryLink]);
+  const displayDescription = useMemo(() => {
+    if (isLink && primaryLink && post.description) {
+      const cleaned = post.description.replace(primaryLink, "").trim();
+      return cleaned.length > 0 ? cleaned : null;
+    }
+    return post.description;
+  }, [isLink, post.description, primaryLink]);
 
   const warnMissingRunnerOrigins = useCallback(
     (context: "send" | "receive") => {
@@ -823,8 +872,10 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                 {post.title}
               </h3>
             </Link>
-            {post.description && (
-              <p className="line-clamp-2 text-sm text-muted-foreground">{post.description}</p>
+            {displayDescription && (
+              <p className={cn("text-sm text-muted-foreground", descriptionClamp)}>
+                {displayDescription}
+              </p>
             )}
           </div>
           {isModeratorOrAdmin && (
@@ -896,8 +947,8 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
         {/* Badges */}
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="gap-1">
-            {isApp ? <Cpu className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
-            {isApp ? post.capsule?.runner || "client-static" : "Status"}
+            {typeBadge.icon}
+            {typeBadge.label}
           </Badge>
 
           {isApp && post.capsule?.params && post.capsule.params.length > 0 && (
@@ -927,7 +978,37 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
               Remix
             </Badge>
           )}
+
+          {isLink && primaryLinkHost && (
+            <Badge variant="outline" className="gap-1">
+              <Link2 className="h-3 w-3" />
+              {primaryLinkHost}
+            </Badge>
+          )}
         </div>
+
+        {isImage && (
+          <div className="mt-3 overflow-hidden rounded-lg border bg-muted/60">
+            <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium">
+              <ImageIcon className="h-4 w-4" />
+              <span>{coverLabel ? `Image: ${coverLabel}` : "Image attached"}</span>
+            </div>
+          </div>
+        )}
+
+        {isLink && primaryLink && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg border bg-muted/60 px-3 py-2 text-sm">
+            <Link2 className="h-4 w-4 text-primary" />
+            <a
+              href={primaryLink}
+              target="_blank"
+              rel="noreferrer"
+              className="truncate font-semibold text-primary hover:underline"
+            >
+              {primaryLinkHost ?? primaryLink}
+            </a>
+          </div>
+        )}
 
         {/* Tags */}
         {post.tags && post.tags.length > 0 && (
@@ -942,6 +1023,25 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                 #{tag}
               </button>
             ))}
+          </div>
+        )}
+
+        {isApp && capsuleId && (
+          <div className="mt-3 flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <GitFork className="h-4 w-4 text-primary" />
+              <span>
+                {post.stats.remixes} remix{post.stats.remixes === 1 ? "" : "es"}
+              </span>
+            </div>
+            <Link
+              to={`/vibe/${encodedCapsuleId ?? capsuleId}/remixes`}
+              onClick={() => persistPreviewHandoff("remix-tree")}
+              className="flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+            >
+              View family tree
+              <ArrowRight className="h-3 w-3" />
+            </Link>
           </div>
         )}
       </CardContent>

@@ -16,6 +16,8 @@ import {
   Github,
   Upload,
   Code,
+  FileText,
+  Link2,
   X,
   AlertCircle,
   CheckCircle2,
@@ -36,7 +38,8 @@ import {
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { featuredTags, normalizeTag } from "@/lib/tags";
 
-type ComposerMode = "status" | "image" | "github" | "zip" | "code";
+type VibeType = FeedPost["type"];
+type AppComposerMode = "github" | "zip" | "code";
 
 type ImportStatus = "idle" | "importing" | "ready" | "error";
 
@@ -54,10 +57,12 @@ const MAX_TAGS = 3;
 export function VibesComposer({ onPostCreated, className }: VibesComposerProps) {
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
-  const [mode, setMode] = useState<ComposerMode>("status");
+  const [vibeType, setVibeType] = useState<VibeType>("thought");
+  const [appMode, setAppMode] = useState<AppComposerMode>("github");
   const [isExpanded, setIsExpanded] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -109,7 +114,12 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   const isImporting = importStatus === "importing";
   const hasImportedCapsule = !!capsuleId;
-  const isAppPost = hasImportedCapsule || mode === "code";
+  const isAppVibe = vibeType === "app";
+  const isImageVibe = vibeType === "image";
+  const isLinkVibe = vibeType === "link";
+  const isLongformVibe = vibeType === "longform";
+  const isThoughtVibe = vibeType === "thought";
+  const requiresCapsuleImport = isAppVibe && appMode !== "code";
   const isTagLimitReached = selectedTags.length >= MAX_TAGS;
   const prefersReducedMotion = useReducedMotion();
 
@@ -119,22 +129,34 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     // Auto-detect GitHub URL
     const githubPattern = /https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+/i;
-    if (githubPattern.test(value) && mode === "status") {
-      setMode("github");
+    if (githubPattern.test(value) && !isAppVibe) {
+      setVibeType("app");
+      setAppMode("github");
       setGithubUrl(value);
-      trackEvent("composer_mode_detected", { mode: "github" });
+      trackEvent("composer_mode_detected", { type: "app", appMode: "github" });
     }
   };
 
-  const handleModeChange = (newMode: ComposerMode) => {
-    setMode(newMode);
+  const handleVibeTypeChange = (nextType: VibeType) => {
+    setVibeType(nextType);
     setError(null);
     setImportError(null);
-    if (newMode === "status") {
+    if (nextType !== "app") {
+      setImportStatus("idle");
       setSelectedTags([]);
       setTagInput("");
     }
-    trackEvent("composer_mode_changed", { mode: newMode });
+    if (nextType !== "link") {
+      setLinkUrl("");
+    }
+    trackEvent("composer_mode_changed", { type: nextType });
+  };
+
+  const handleAppModeChange = (nextMode: AppComposerMode) => {
+    setAppMode(nextMode);
+    setError(null);
+    setImportError(null);
+    trackEvent("composer_app_mode_changed", { appMode: nextMode });
   };
 
   const addTag = (raw: string) => {
@@ -180,7 +202,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       return;
     }
 
-    if (!capsuleId) {
+    if (!capsuleId && !isImageVibe) {
       setError("Import an app first (via GitHub or ZIP) before adding a cover image.");
       return;
     }
@@ -248,6 +270,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     const trimmedUrl = githubUrl.trim();
     if (!trimmedUrl || isImporting) return;
 
+    setVibeType("app");
+    setAppMode("github");
     setImportError(null);
     setZipSummary(null);
     setZipManifestWarnings([]);
@@ -296,6 +320,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const handleZipImport = async () => {
     if (!zipFile || isImporting) return;
 
+    setVibeType("app");
+    setAppMode("zip");
     setImportError(null);
     setImportStatus("importing");
     setZipManifestWarnings([]);
@@ -383,16 +409,45 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     const trimmedTitle = title.trim();
     const trimmedDescription = description.trim();
+    const trimmedLink = linkUrl.trim();
+    let effectiveTitle = trimmedTitle;
 
-    if (!trimmedTitle) {
-      setError(
-        mode === "status" ? "Please write a status update" : "Please add a title for your vibe"
-      );
+    if (isLinkVibe) {
+      if (!trimmedLink) {
+        setError("Please add a link to share");
+        return;
+      }
+      let parsedLink: URL | null = null;
+      try {
+        parsedLink = new URL(trimmedLink);
+      } catch (err) {
+        console.error("E-VIBECODR-0201 invalid link vibe url", {
+          raw: trimmedLink,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        setError("Please enter a valid link URL");
+        return;
+      }
+      if (!effectiveTitle) {
+        effectiveTitle = parsedLink.hostname || trimmedLink;
+      }
+    } else if (!effectiveTitle) {
+      setError("Please add a title for your vibe");
       return;
     }
 
-    if (mode === "code" && !code.trim()) {
+    if (isAppVibe && appMode === "code" && !code.trim()) {
       setError("Please add some code for your app");
+      return;
+    }
+
+    if (isAppVibe && requiresCapsuleImport && !hasImportedCapsule) {
+      setError("Import your app before sharing it to the feed.");
+      return;
+    }
+
+    if (isImageVibe && !coverKey) {
+      setError("Add an image before sharing this vibe.");
       return;
     }
 
@@ -400,9 +455,9 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     setIsSubmitting(true);
 
     try {
-      let effectiveCapsuleId = capsuleId;
+      let effectiveCapsuleId = isAppVibe ? capsuleId : null;
 
-      if (mode === "code") {
+      if (isAppVibe && appMode === "code") {
         const userSource = code.trim();
         // Derive capabilities from Advanced controls (network disabled until premium tiers)
         const capabilities = allowStorage ? ({ storage: true } as { storage?: boolean }) : undefined;
@@ -486,7 +541,7 @@ mount.render(React.createElement(UserApp));
           const message = publishData.error || "Failed to publish app. Please check your code and try again.";
           console.error("Inline code publish failed:", message);
           setError(message);
-          trackEvent("composer_code_publish_failed", { mode: "code", runner: "webcontainer" });
+          trackEvent("composer_code_publish_failed", { appMode: "code", runner: "webcontainer" });
           return;
         }
 
@@ -496,20 +551,27 @@ mount.render(React.createElement(UserApp));
         setImportStatus("ready");
       }
 
-      // Determine post type based on capsule
-      const type: "app" | "report" = effectiveCapsuleId ? "app" : "report";
-      const tagsForPost = type === "app" ? selectedTags : [];
+      const type: VibeType = isAppVibe ? "app" : vibeType;
+      const descriptionPayload =
+        isLinkVibe
+          ? [trimmedDescription, trimmedLink].filter(Boolean).join("\n\n") || undefined
+          : trimmedDescription || undefined;
+      const tagsForPost = isAppVibe ? selectedTags : [];
+      const coverPayload = isImageVibe || isAppVibe ? coverKey ?? undefined : undefined;
 
       // Create the post
       const init = await buildAuthInit();
-      const response = await postsApi.create({
-        title: trimmedTitle,
-        description: trimmedDescription || undefined,
-        type,
-        capsuleId: effectiveCapsuleId ?? undefined,
-        coverKey: type === "app" ? coverKey ?? undefined : undefined,
-        tags: tagsForPost.length > 0 ? tagsForPost : undefined,
-      }, init);
+      const response = await postsApi.create(
+        {
+          title: effectiveTitle,
+          description: descriptionPayload,
+          type,
+          capsuleId: effectiveCapsuleId ?? undefined,
+          coverKey: coverPayload,
+          tags: tagsForPost.length > 0 ? tagsForPost : undefined,
+        },
+        init
+      );
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -519,7 +581,7 @@ mount.render(React.createElement(UserApp));
       if (!response.ok) {
         console.error("Failed to create post:", await response.text());
         setError("Failed to share your vibe. Please try again.");
-        trackEvent("composer_submit_failed", { mode, type });
+        trackEvent("composer_submit_failed", { type, appMode });
         return;
       }
 
@@ -536,24 +598,25 @@ mount.render(React.createElement(UserApp));
         const optimisticPost: FeedPost = {
           id: postId,
           type,
-          title: trimmedTitle,
-          description: trimmedDescription || undefined,
+          title: effectiveTitle,
+          description: descriptionPayload,
           author: {
             id: user.id,
             handle: user.username || user.id,
             name: user.fullName || null,
             avatarUrl: user.imageUrl || null,
           },
-          capsule: effectiveCapsuleId
-            ? {
+          capsule:
+            isAppVibe && effectiveCapsuleId
+              ? {
               id: effectiveCapsuleId,
               runner: "client-static",
               capabilities: undefined,
               params: undefined,
               artifactId: null,
             }
-            : null,
-          coverKey: type === "app" ? coverKey ?? null : null,
+              : null,
+          coverKey: coverPayload ?? null,
           tags: tagsForPost,
           stats: {
             runs: 0,
@@ -570,20 +633,28 @@ mount.render(React.createElement(UserApp));
       // Show success and reset
       toast({
         title: "Vibe shared!",
-        description: capsuleId ? "Your app vibe is now live" : "Your vibe is now in the feed",
+        description:
+          type === "app"
+            ? "Your app vibe is now live"
+            : type === "image"
+              ? "Your image vibe is now in the feed"
+              : type === "link"
+                ? "Your link is now live in the feed"
+                : "Your vibe is now in the feed",
         variant: "success",
       });
 
       trackEvent("composer_submit_success", {
-        mode,
         type,
-        hasCapsule: !!capsuleId,
-        hasDescription: !!trimmedDescription,
+        appMode,
+        hasCapsule: !!effectiveCapsuleId,
+        hasDescription: !!descriptionPayload,
       });
 
       // Reset form
       setTitle("");
       setDescription("");
+      setLinkUrl("");
       setSelectedTags([]);
       setTagInput("");
       setCode("");
@@ -601,11 +672,12 @@ mount.render(React.createElement(UserApp));
       setGithubUrl("");
       setImportStatus("idle");
       setIsExpanded(false);
-      setMode("status");
+      setVibeType("thought");
+      setAppMode("github");
     } catch (err) {
       console.error("Failed to share vibe:", err);
       setError("Failed to share your vibe. Please try again.");
-      trackEvent("composer_submit_error", { mode });
+      trackEvent("composer_submit_error", { type: vibeType, appMode });
     } finally {
       setIsSubmitting(false);
     }
@@ -650,6 +722,7 @@ mount.render(React.createElement(UserApp));
     setIsExpanded(false);
     setTitle("");
     setDescription("");
+    setLinkUrl("");
     setSelectedTags([]);
     setTagInput("");
     setCode("");
@@ -672,6 +745,8 @@ mount.render(React.createElement(UserApp));
     setZipPublishWarnings([]);
     setImagePreview(null);
     setCoverKey(null);
+    setVibeType("thought");
+    setAppMode("github");
     if (zipInputRef.current) {
       zipInputRef.current.value = "";
     }
@@ -699,6 +774,43 @@ mount.render(React.createElement(UserApp));
     );
   }
 
+  const isGithubMode = isAppVibe && appMode === "github";
+  const isZipMode = isAppVibe && appMode === "zip";
+  const isCodeMode = isAppVibe && appMode === "code";
+  const titlePlaceholder =
+    isGithubMode && !isExpanded
+      ? "https://github.com/user/repo"
+      : isAppVibe
+        ? "Title for your app"
+        : isImageVibe
+          ? "Title for your image vibe"
+          : isLinkVibe
+            ? "Title for your link"
+            : isLongformVibe
+              ? "Title for your longform vibe"
+              : "What's your vibe?";
+  const descriptionPlaceholder =
+    isLinkVibe
+      ? "Add context for your link (optional)"
+      : isImageVibe
+        ? "Add a caption (optional)"
+        : isLongformVibe
+          ? "Share your longform vibe"
+          : isAppVibe
+            ? "Describe your app vibe (optional)"
+            : "Add more details (optional)";
+  const submitDisabled =
+    isSubmitting ||
+    isImporting ||
+    isUploadingCover ||
+    (isLinkVibe && !linkUrl.trim()) ||
+    (!title.trim() && !isLinkVibe) ||
+    (isCodeMode && !code.trim()) ||
+    (isGithubMode && !hasImportedCapsule && !!githubUrl.trim()) ||
+    (isZipMode && !!zipFile && !hasImportedCapsule) ||
+    (isAppVibe && requiresCapsuleImport && !hasImportedCapsule) ||
+    (isImageVibe && !coverKey);
+
   return (
     <motion.section
       layout
@@ -716,43 +828,88 @@ mount.render(React.createElement(UserApp));
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Mode Selector */}
-            {!isExpanded && (
-              <div className="flex flex-wrap gap-2">
+            {/* Vibe Type Selector */}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={vibeType === "thought" ? "default" : "outline"}
+                size="sm"
+                className="gap-1"
+                onClick={() => handleVibeTypeChange("thought")}
+              >
+                <Sparkles className="h-3 w-3" />
+                Thought
+              </Button>
+              <Button
+                type="button"
+                variant={vibeType === "image" ? "default" : "outline"}
+                size="sm"
+                className="gap-1"
+                onClick={() => handleVibeTypeChange("image")}
+              >
+                <ImageIcon className="h-3 w-3" />
+                Image
+              </Button>
+              <Button
+                type="button"
+                variant={vibeType === "link" ? "default" : "outline"}
+                size="sm"
+                className="gap-1"
+                onClick={() => handleVibeTypeChange("link")}
+              >
+                <Link2 className="h-3 w-3" />
+                Link
+              </Button>
+              <Button
+                type="button"
+                variant={vibeType === "app" ? "default" : "outline"}
+                size="sm"
+                className="gap-1"
+                onClick={() => handleVibeTypeChange("app")}
+              >
+                <Code className="h-3 w-3" />
+                App
+              </Button>
+              <Button
+                type="button"
+                variant={vibeType === "longform" ? "default" : "outline"}
+                size="sm"
+                className="gap-1"
+                onClick={() => handleVibeTypeChange("longform")}
+              >
+                <FileText className="h-3 w-3" />
+                Longform
+              </Button>
+            </div>
+
+            {isAppVibe && (
+              <div className="mt-2 flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  variant={mode === "status" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handleModeChange("status")}
-                >
-                  Status
-                </Button>
-                <Button
-                  type="button"
-                  variant={mode === "github" ? "default" : "outline"}
+                  variant={appMode === "github" ? "default" : "outline"}
                   size="sm"
                   className="gap-1"
-                  onClick={() => handleModeChange("github")}
+                  onClick={() => handleAppModeChange("github")}
                 >
                   <Github className="h-3 w-3" />
                   GitHub
                 </Button>
                 <Button
                   type="button"
-                  variant={mode === "zip" ? "default" : "outline"}
+                  variant={appMode === "zip" ? "default" : "outline"}
                   size="sm"
                   className="gap-1"
-                  onClick={() => handleModeChange("zip")}
+                  onClick={() => handleAppModeChange("zip")}
                 >
                   <Upload className="h-3 w-3" />
                   ZIP
                 </Button>
                 <Button
                   type="button"
-                  variant={mode === "code" ? "default" : "outline"}
+                  variant={appMode === "code" ? "default" : "outline"}
                   size="sm"
                   className="gap-1"
-                  onClick={() => handleModeChange("code")}
+                  onClick={() => handleAppModeChange("code")}
                 >
                   <Code className="h-3 w-3" />
                   Code
@@ -763,16 +920,10 @@ mount.render(React.createElement(UserApp));
             {/* Main Input */}
             <div className="space-y-2">
               <Input
-                placeholder={
-                  mode === "github"
-                    ? "https://github.com/user/repo"
-                    : mode === "status"
-                      ? "What's your vibe?"
-                      : "Title for your vibe"
-                }
-                value={mode === "github" && !isExpanded ? githubUrl : title}
+                placeholder={titlePlaceholder}
+                value={isGithubMode && !isExpanded ? githubUrl : title}
                 onChange={(e) => {
-                  if (mode === "github" && !isExpanded) {
+                  if (isGithubMode && !isExpanded) {
                     setGithubUrl(e.target.value);
                   } else {
                     handleTextChange(e.target.value);
@@ -784,17 +935,33 @@ mount.render(React.createElement(UserApp));
 
               {isExpanded && (
                 <>
-                  {mode !== "status" && (
+                  {isLinkVibe && (
+                    <div className="space-y-1">
+                      <Label htmlFor="vibe-link-url" className="text-xs font-medium">
+                        Link URL
+                      </Label>
+                      <Input
+                        id="vibe-link-url"
+                        type="url"
+                        placeholder="https://example.com/your-link"
+                        value={linkUrl}
+                        onChange={(e) => setLinkUrl(e.target.value)}
+                        disabled={isSubmitting || isImporting}
+                      />
+                    </div>
+                  )}
+
+                  {!isThoughtVibe && (
                     <Textarea
-                      placeholder="Add more details (optional)"
+                      placeholder={descriptionPlaceholder}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      rows={3}
+                      rows={isLongformVibe ? 6 : 3}
                       disabled={isSubmitting || isImporting}
                     />
                   )}
 
-                  {isAppPost && (
+                  {isAppVibe && (
                     <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <Tag className="h-4 w-4" />
@@ -868,7 +1035,7 @@ mount.render(React.createElement(UserApp));
                   )}
 
                   {/* Inline Code Section */}
-                  {mode === "code" && (
+                  {isCodeMode && (
                     <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <Code className="h-4 w-4" />
@@ -995,7 +1162,7 @@ mount.render(React.createElement(UserApp));
                     </div>
                   )}
                   {/* GitHub Import Section */}
-                  {mode === "github" && (
+                  {isGithubMode && (
                     <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <Github className="h-4 w-4" />
@@ -1041,7 +1208,7 @@ mount.render(React.createElement(UserApp));
                   )}
 
                   {/* ZIP Upload Section */}
-                  {mode === "zip" && (
+                  {isZipMode && (
                     <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <Upload className="h-4 w-4" />
@@ -1097,7 +1264,7 @@ mount.render(React.createElement(UserApp));
                           </div>
                         </div>
                       )}
-                      {importError && mode === "zip" && (
+                      {importError && isZipMode && (
                         <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
                           <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                           <span>{importError}</span>
@@ -1145,8 +1312,8 @@ mount.render(React.createElement(UserApp));
                     </div>
                   )}
 
-                  {/* Image Upload Section (cover for app vibes) */}
-                  {hasImportedCapsule && (
+                  {/* Image Upload Section (cover for app or standalone image vibes) */}
+                  {(isImageVibe || (isAppVibe && hasImportedCapsule)) && (
                     <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <ImageIcon className="h-4 w-4" />
@@ -1220,14 +1387,7 @@ mount.render(React.createElement(UserApp));
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={
-                    isSubmitting ||
-                    isImporting ||
-                    isUploadingCover ||
-                    !title.trim() ||
-                    (mode === "github" && !hasImportedCapsule && !!githubUrl.trim()) ||
-                    (mode === "zip" && !!zipFile && !hasImportedCapsule)
-                  }
+                  disabled={submitDisabled}
                   className="gap-2"
                 >
                   {isSubmitting ? (

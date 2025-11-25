@@ -15,6 +15,7 @@ import ModerationAuditPage from "@/app/(site)/moderation/audit/page";
 import ModerationQueue from "@/app/(site)/admin/moderation/page";
 import AdminAnalyticsPage from "@/app/(site)/admin/analytics/page";
 import StudioIndex from "@/app/(site)/studio/page";
+import RemixTreePage from "@/app/(site)/vibe/[capsuleId]/remixes/page";
 import { SignIn as ClerkSignIn, SignUp as ClerkSignUp } from "@clerk/clerk-react";
 import { Comments } from "@/components/Comments";
 import { mapApiFeedPostToFeedPost, type FeedPost, profileApi, postsApi } from "@/lib/api";
@@ -78,7 +79,12 @@ export function PostDetailRoute() {
     description: post?.description ?? undefined,
     url: canonicalUrl,
     image: ogImageUrl,
-    type: post?.type === "app" ? "video.other" : "article",
+    type:
+      post?.type === "app"
+        ? "video.other"
+        : post?.type === "image"
+          ? "image"
+          : "article",
     oEmbedUrl,
     canonicalUrl,
   });
@@ -326,6 +332,7 @@ export function AppRoutes() {
         <Route path="/post/new" element={<ShareVibePage />} />
         <Route path="/composer" element={<ShareVibePage />} />
         <Route path="/post/:id" element={<PostDetailRoute />} />
+        <Route path="/vibe/:capsuleId/remixes" element={<RemixTreePage />} />
 
         {/* Marketing / static */}
         <Route path="/discover" element={<DiscoverPage />} />

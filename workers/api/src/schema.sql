@@ -138,6 +138,15 @@ CREATE TABLE IF NOT EXISTS runs (
   error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS capsule_recipes (
+  id TEXT PRIMARY KEY,
+  capsule_id TEXT NOT NULL REFERENCES capsules(id),
+  author_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  params_json TEXT NOT NULL,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+);
+
 CREATE TABLE IF NOT EXISTS runtime_events (
   id TEXT PRIMARY KEY,
   event_name TEXT NOT NULL,
@@ -275,6 +284,12 @@ CREATE TABLE IF NOT EXISTS handle_history (
 -- Indexes for hot paths (idempotent)
 -- ============================================
 
+-- Backfill capsule quarantine columns for existing deployments (run once).
+-- D1 does not support IF NOT EXISTS for columns; these statements are intended for first application only.
+ALTER TABLE capsules ADD COLUMN quarantined INTEGER DEFAULT 0;
+ALTER TABLE capsules ADD COLUMN quarantine_reason TEXT;
+ALTER TABLE capsules ADD COLUMN quarantined_at INTEGER;
+
 CREATE INDEX IF NOT EXISTS idx_capsules_quarantined ON capsules (quarantined, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
@@ -294,6 +309,8 @@ CREATE INDEX IF NOT EXISTS idx_comments_visible_post_created ON comments (post_i
 
 CREATE INDEX IF NOT EXISTS idx_runs_capsule_id ON runs (capsule_id);
 CREATE INDEX IF NOT EXISTS idx_remixes_parent_capsule_id ON remixes (parent_capsule_id);
+CREATE INDEX IF NOT EXISTS idx_capsule_recipes_capsule ON capsule_recipes (capsule_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_capsule_recipes_author ON capsule_recipes (author_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_capsule ON artifacts (capsule_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_artifacts_owner_created ON artifacts (owner_id, created_at DESC);

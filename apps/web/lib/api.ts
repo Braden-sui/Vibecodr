@@ -1,5 +1,5 @@
-import { Plan } from "@vibecodr/shared";
-import type { ApiFeedPost } from "@vibecodr/shared";
+import { ApiRemixTreeResponseSchema, Plan, postTypes } from "@vibecodr/shared";
+import type { ApiFeedPost, ApiRemixTreeResponse, PostType } from "@vibecodr/shared";
 import type { Manifest } from "@vibecodr/shared/manifest";
 import type { UpdateProfilePayload } from "@/lib/profile/schema";
 import { getWorkerApiBase } from "@/lib/worker-api";
@@ -169,6 +169,16 @@ export const commentsApi = {
   },
 } as const;
 
+function normalizePostTypeClient(raw: unknown): PostType {
+  const candidate = typeof raw === "string" ? raw : "";
+  const normalized = candidate === "report" ? "thought" : candidate;
+  if (postTypes.includes(normalized as PostType)) {
+    return normalized as PostType;
+  }
+  console.warn("E-VIBECODR-0411 coerced unknown post type from API", { rawType: raw });
+  return "thought";
+}
+
 // Shared feed post type used by HomePageClient, FeedCard, and Player page.
 type FeedCapsule = {
   id: string;
@@ -180,7 +190,7 @@ type FeedCapsule = {
 
 export type FeedPost = {
   id: string;
-  type: "app" | "report";
+  type: PostType;
   title: string;
   description?: string;
   author: {
@@ -211,6 +221,8 @@ export type FeedPost = {
   createdAt: string;
 };
 
+export type RemixTreeResponse = ApiRemixTreeResponse;
+
 // Map Worker ApiFeedPost payload into the client-side FeedPost shape.
 export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
   const capsulePayload = apiPost.capsule as Record<string, unknown> & { id?: string } | null;
@@ -239,6 +251,7 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
     }
   }
 
+  const type = normalizePostTypeClient(apiPost.type);
   const createdAtValue = apiPost.createdAt;
   let createdAt: string;
   if (typeof createdAtValue === "number") {
@@ -267,7 +280,7 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
 
   return {
     id: String(apiPost.id),
-    type: apiPost.type === "app" ? "app" : "report",
+    type,
     title: apiPost.title,
     description: apiPost.description ?? undefined,
     author: {
@@ -303,14 +316,15 @@ export const postsApi = {
     input: {
       title: string;
       description?: string;
-      type?: "app" | "report";
+      type?: PostType | "report";
       capsuleId?: string | null;
       tags?: string[];
       coverKey?: string | null;
     },
     init?: RequestInit,
   ) => {
-    const { title, description, type = "report", capsuleId, tags, coverKey } = input;
+    const { title, description, type, capsuleId, tags, coverKey } = input;
+    const normalizedType = normalizePostTypeClient(type ?? "thought");
     return fetch(workerUrl("/posts"), {
       method: "POST",
       headers: {
@@ -320,7 +334,7 @@ export const postsApi = {
       body: JSON.stringify({
         title,
         description,
-        type,
+        type: normalizedType,
         capsuleId: capsuleId ?? undefined,
         tags,
         coverKey: coverKey ?? undefined,
@@ -384,6 +398,17 @@ export const postsApi = {
       method: "DELETE",
       ...init,
     });
+  },
+} as const;
+
+export const remixesApi = {
+  async tree(capsuleId: string, init?: RequestInit): Promise<Response> {
+    const encoded = encodeURIComponent(capsuleId);
+    return fetch(workerUrl(`/capsules/${encoded}/remixes`), init);
+  },
+  async parseTree(response: Response): Promise<ApiRemixTreeResponse> {
+    const payload = await response.json();
+    return ApiRemixTreeResponseSchema.parse(payload);
   },
 } as const;
 
@@ -555,6 +580,58 @@ export const capsulesApi = {
   publishDraft(capsuleId: string, init?: RequestInit) {
     return fetch(workerUrl(`/capsules/${capsuleId}/publish`), {
       method: "POST",
+      ...(init || {}),
+    });
+  },
+} as const;
+
+export const recipesApi = {
+  list(capsuleId: string, options?: { limit?: number; offset?: number }, init?: RequestInit) {
+    const params = new URLSearchParams();
+    if (options?.limit != null) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.offset != null) {
+      params.set("offset", String(options.offset));
+    }
+    const query = params.toString();
+    const suffix = query ? `/capsules/${encodeURIComponent(capsuleId)}/recipes?${query}` : `/capsules/${encodeURIComponent(capsuleId)}/recipes`;
+    return fetch(workerUrl(suffix), init);
+  },
+  create(
+    capsuleId: string,
+    payload: { name: string; params: Record<string, unknown> },
+    init?: RequestInit,
+  ) {
+    return fetch(workerUrl(`/capsules/${encodeURIComponent(capsuleId)}/recipes`), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify(payload),
+      ...init,
+    });
+  },
+  update(
+    capsuleId: string,
+    recipeId: string,
+    payload: { name?: string; params?: Record<string, unknown> },
+    init?: RequestInit,
+  ) {
+    return fetch(workerUrl(`/capsules/${encodeURIComponent(capsuleId)}/recipes/${encodeURIComponent(recipeId)}`), {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify(payload),
+      ...init,
+    });
+  },
+  delete(capsuleId: string, recipeId: string, init?: RequestInit) {
+    return fetch(workerUrl(`/capsules/${encodeURIComponent(capsuleId)}/recipes/${encodeURIComponent(recipeId)}`), {
+      method: "DELETE",
       ...(init || {}),
     });
   },

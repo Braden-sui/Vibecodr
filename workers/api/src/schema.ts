@@ -1,6 +1,8 @@
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { PostTypeSchema, postTypes } from "@vibecodr/shared";
+import type { PostType } from "@vibecodr/shared";
 
 // Users table
 export const users = sqliteTable("users", {
@@ -101,13 +103,13 @@ export const artifactManifests = sqliteTable("artifact_manifests", {
   ),
 });
 
-// Posts table - feed items (can be app or report)
+// Posts table - unified vibes with typed subcategories
 export const posts = sqliteTable("posts", {
   id: text("id").primaryKey(),
   authorId: text("author_id")
     .notNull()
     .references(() => users.id),
-  type: text("type", { enum: ["app", "report"] }).notNull(),
+  type: text("type", { enum: postTypes }).notNull(),
   capsuleId: text("capsule_id").references(() => capsules.id),
   reportMd: text("report_md"), // Markdown content for reports
   coverKey: text("cover_key"), // R2 key for cover image
@@ -137,6 +139,22 @@ export const runs = sqliteTable("runs", {
   durationMs: integer("duration_ms"),
   status: text("status", { enum: ["started", "completed", "failed", "killed"] }),
   errorMessage: text("error_message"),
+});
+
+// Capsule parameter recipes saved by users
+export const capsuleRecipes = sqliteTable("capsule_recipes", {
+  id: text("id").primaryKey(),
+  capsuleId: text("capsule_id")
+    .notNull()
+    .references(() => capsules.id),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id),
+  name: text("name").notNull(),
+  paramsJson: text("params_json").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(
+    sql`(strftime('%s','now'))`,
+  ),
 });
 
 // Runtime telemetry events (admin analytics + debugging)
@@ -303,17 +321,35 @@ export const updateUserSchema = createUserSchema.partial().required({ id: true }
  */
 
 // Post schemas
-export const createPostSchema = z.object({
-  authorId: z.string(),
-  type: z.enum(["app", "report"]),
-  capsuleId: z.string().optional(),
-  reportMd: z.string().optional(),
-  title: z.string().min(1).max(200),
-  description: z.string().max(1000).optional(),
-  tags: z.array(z.string()).optional(),
-  visibility: z.enum(["public", "unlisted", "private"]).default("public"),
-  coverKey: z.string().max(500).optional(),
-});
+const createPostTypeInput = z.union([PostTypeSchema, z.literal("report")]);
+export type CreatePostTypeInput = z.infer<typeof createPostTypeInput>;
+
+export function normalizePostType(input: CreatePostTypeInput): PostType {
+  return (input === "report" ? "thought" : input) as PostType;
+}
+
+export const createPostSchema = z
+  .object({
+    authorId: z.string(),
+    type: createPostTypeInput,
+    capsuleId: z.string().optional(),
+    reportMd: z.string().optional(),
+    title: z.string().min(1).max(200),
+    description: z.string().max(1000).optional(),
+    tags: z.array(z.string()).optional(),
+    visibility: z.enum(["public", "unlisted", "private"]).default("public"),
+    coverKey: z.string().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const normalizedType = value.type === "report" ? "thought" : value.type;
+    if (normalizedType === "app" && !value.capsuleId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Capsule is required for app vibes",
+        path: ["capsuleId"],
+      });
+    }
+  });
 
 // Comment schema
 const commentPayloadSchema = z.object({

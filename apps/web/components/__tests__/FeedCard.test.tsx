@@ -253,6 +253,14 @@ describe("FeedCard", () => {
     expect(screen.getByText("#demo")).toBeInTheDocument();
   });
 
+  it("shows remix count and family tree link", () => {
+    renderWithRouter(<FeedCard post={mockPost} />);
+
+    expect(screen.getByText(/2 remixes/i)).toBeInTheDocument();
+    const treeLink = screen.getByRole("link", { name: /View family tree/i });
+    expect(treeLink).toHaveAttribute("href", "/vibe/capsule1/remixes");
+  });
+
   it("calls onTagClick when a tag is selected", () => {
     const onTagClick = vi.fn();
     renderWithRouter(<FeedCard post={mockPost} onTagClick={onTagClick} />);
@@ -347,9 +355,9 @@ describe("FeedCard", () => {
     expect(remixButton).toBeInTheDocument();
   });
 
-  it("should not show remix button for report type", () => {
-    const reportPost = { ...mockPost, type: "report" as const, capsule: undefined };
-    renderWithRouter(<FeedCard post={reportPost} />);
+  it("should not show remix button for thought vibes", () => {
+    const thoughtPost = { ...mockPost, type: "thought" as const, capsule: undefined };
+    renderWithRouter(<FeedCard post={thoughtPost} />);
 
     expect(screen.queryByRole("button", { name: "Remix" })).not.toBeInTheDocument();
   });

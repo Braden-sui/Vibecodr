@@ -1,6 +1,10 @@
 import { z } from "zod";
 export * from "./quotas";
 
+export const postTypes = ["thought", "image", "link", "app", "longform"] as const;
+export const PostTypeSchema = z.enum(postTypes);
+export type PostType = z.infer<typeof PostTypeSchema>;
+
 export const ApiAuthorProfileSchema = z.object({
   displayName: z.string().nullable().optional(),
   avatarUrl: z.string().nullable().optional(),
@@ -41,7 +45,7 @@ export const ApiCapsuleSummarySchema = z
 
 export const ApiFeedPostSchema = z.object({
   id: z.string(),
-  type: z.string(),
+  type: PostTypeSchema,
   title: z.string(),
   description: z.string().nullable().optional(),
   tags: z.array(z.string()),
@@ -63,6 +67,32 @@ export const ApiFeedResponseSchema = z.object({
 
 export const ApiPostResponseSchema = z.object({
   post: ApiFeedPostSchema,
+});
+
+export const ApiRecipeAuthorSchema = z.object({
+  id: z.string(),
+  handle: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
+});
+
+export const ApiRecipeSchema = z.object({
+  id: z.string(),
+  capsuleId: z.string().optional(),
+  name: z.string(),
+  params: z.record(z.union([z.string(), z.number(), z.boolean()])).default({}),
+  author: ApiRecipeAuthorSchema,
+  createdAt: z.union([z.number(), z.string()]).nullable().optional(),
+});
+
+export const ApiRecipeListResponseSchema = z.object({
+  recipes: z.array(ApiRecipeSchema),
+  limit: z.number(),
+  offset: z.number(),
+});
+
+export const ApiRecipeCreateResponseSchema = z.object({
+  recipe: ApiRecipeSchema,
 });
 
 export const ApiUserStatsSchema = z.object({
@@ -92,9 +122,38 @@ export const ApiUserPostsResponseSchema = z.object({
   offset: z.number(),
 });
 
+export const ApiRemixNodeSchema = z.object({
+  capsuleId: z.string(),
+  postId: z.string().nullable(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  authorId: z.string().nullable(),
+  authorHandle: z.string().nullable(),
+  authorDisplayName: z.string().nullable(),
+  createdAt: z.number().nullable(),
+  parentId: z.string().nullable(),
+  children: z.array(z.string()),
+  depth: z.number().int(),
+  remixCount: z.number().int(),
+  isRequested: z.boolean().optional(),
+});
+
+export const ApiRemixTreeResponseSchema = z.object({
+  rootCapsuleId: z.string(),
+  requestedCapsuleId: z.string(),
+  directParentId: z.string().nullable(),
+  nodes: z.array(ApiRemixNodeSchema),
+  truncated: z.boolean().optional(),
+});
+
 export type ApiFeedPost = z.infer<typeof ApiFeedPostSchema>;
 export type ApiFeedResponse = z.infer<typeof ApiFeedResponseSchema>;
 export type ApiPostResponse = z.infer<typeof ApiPostResponseSchema>;
 export type ApiUserProfileResponse = z.infer<typeof ApiUserProfileResponseSchema>;
 export type ApiUserPostsResponse = z.infer<typeof ApiUserPostsResponseSchema>;
 export type ApiAuthorProfile = z.infer<typeof ApiAuthorProfileSchema>;
+export type ApiRecipe = z.infer<typeof ApiRecipeSchema>;
+export type ApiRecipeListResponse = z.infer<typeof ApiRecipeListResponseSchema>;
+export type ApiRecipeCreateResponse = z.infer<typeof ApiRecipeCreateResponseSchema>;
+export type ApiRemixNode = z.infer<typeof ApiRemixNodeSchema>;
+export type ApiRemixTreeResponse = z.infer<typeof ApiRemixTreeResponseSchema>;

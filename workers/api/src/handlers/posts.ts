@@ -6,16 +6,30 @@ import { getLatestArtifactsWithCache } from "../feed-artifacts";
 import { hasPostVisibilityColumn } from "../lib/postsVisibility";
 import { validateFeedPagination } from "../lib/pagination";
 import { json } from "../lib/responses";
-import { createPostSchema } from "../schema";
+import { createPostSchema, normalizePostType } from "../schema";
 import { getCapsuleKey } from "../storage/r2";
 import type { Env, Handler } from "../types";
 import { incrementUserCounters } from "./counters";
 import { Plan, normalizePlan } from "@vibecodr/shared";
+import { postTypes, type PostType } from "@vibecodr/shared";
 
 function runtimeArtifactsEnabled(env: Env): boolean {
   const flag = env.RUNTIME_ARTIFACTS_ENABLED;
   if (typeof flag !== "string") return true;
   return flag.trim().toLowerCase() !== "false";
+}
+
+function sanitizePostType(raw: unknown, context: { postId?: string } = {}): PostType {
+  const candidate = typeof raw === "string" ? raw : "";
+  const normalized = candidate === "report" ? "thought" : candidate;
+  if (postTypes.includes(normalized as PostType)) {
+    return normalized as PostType;
+  }
+  console.warn("E-VIBECODR-0410 normalized unknown post type", {
+    rawType: raw,
+    postId: context.postId,
+  });
+  return "thought";
 }
 
 export async function getPosts(req: Request, env: Env): Promise<Response> {
@@ -265,6 +279,7 @@ export async function getPosts(req: Request, env: Env): Promise<Response> {
     }
 
     const posts: ApiFeedPost[] = safeRows.map((row: any) => {
+      const postType = sanitizePostType(row.type, { postId: row.id });
       const runsCount = row.capsule_id ? runsByCapsule.get(row.capsule_id) ?? 0 : 0;
       const remixCount = row.capsule_id ? remixesByCapsule.get(row.capsule_id) ?? 0 : 0;
       const commentCount = commentsByPost.get(row.id) ?? 0;
@@ -302,7 +317,7 @@ export async function getPosts(req: Request, env: Env): Promise<Response> {
 
       const post: ApiFeedPost & { viewer?: { liked: boolean; followingAuthor: boolean }; score?: number } = {
         id: row.id,
-        type: row.type,
+        type: postType,
         title: row.title,
         description: row.description,
         tags: row.tags ? JSON.parse(row.tags) : [],
@@ -493,10 +508,11 @@ export async function getPostById(
     const authorAvatar = row.profile_avatar ?? row.author_avatar ?? null;
     const authorBio = row.profile_bio ?? row.author_bio ?? null;
     const authorPlan = normalizePlan(row.author_plan, Plan.FREE);
+    const postType = sanitizePostType(row.type, { postId: row.id });
 
     const post: ApiFeedPost & { viewer?: { liked: boolean; followingAuthor: boolean } } = {
       id: row.id,
-      type: row.type,
+      type: postType,
       title: row.title,
       description: row.description,
       tags: row.tags ? JSON.parse(row.tags) : [],
@@ -576,9 +592,11 @@ const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) 
   }
 
   const parsed = parsedResult.data;
+  const type = normalizePostType(parsed.type);
   const id = crypto.randomUUID();
   const tagsJson = parsed.tags && parsed.tags.length > 0 ? JSON.stringify(parsed.tags) : null;
   const visibility = parsed.visibility ?? "public";
+  const capsuleId = type === "app" ? parsed.capsuleId ?? null : null;
 
   try {
     await env.DB.prepare(
@@ -588,8 +606,8 @@ const createPost: Handler = requireUser(async (req, env, _ctx, _params, userId) 
       .bind(
         id,
         parsed.authorId,
-        parsed.type,
-        parsed.capsuleId ?? null,
+        type,
+        capsuleId,
         parsed.title,
         parsed.description ?? null,
         tagsJson,

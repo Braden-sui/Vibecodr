@@ -8,6 +8,7 @@ Major surfaces and their responsibilities. UI routes live in `apps/web`, Worker 
 - `/post/new` (alias `/composer`) – VibesComposer that imports from GitHub/ZIP or inline code, then creates a post plus optional capsule.
 - `/post/:id` – Report posts render inline; app posts redirect to `/player/:id` for full runtime controls.
 - `/player/:postId` – Full-screen player with sandboxed iframe, param controls, console/log streaming, report/share/remix hooks, and runtime budget enforcement.
+- `/vibe/:capsuleId/remixes` – Remix family tree view for a capsule (origin, parents, and descendants).
 - `/studio/*` – Experimental Studio shell (Import/Params/Files/Publish tabs). Not linked in nav; reachable via direct URL or `?capsuleId=` hydrate for existing drafts.
 - `/u/:handle` (`/profile/:handle` redirects) – Profile header + blocks/themes + post list; profile data stored under `profiles`/`profile_*` tables keyed by `user_id`.
 - `/settings`, `/settings/profile` – Account + profile editing surfaces (plan usage UI is static; Worker exposes `/user/quota`).

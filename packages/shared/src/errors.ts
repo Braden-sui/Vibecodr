@@ -777,6 +777,56 @@ const definitions: Record<string, ErrorDefinition> = {
     logMessage: "Studio params save failed",
   },
 
+  // 073x: capsule parameter recipes
+  "E-VIBECODR-0730": {
+    code: "E-VIBECODR-0730",
+    category: "capsule",
+    httpStatus: 400,
+    severity: "error",
+    userMessage: "Recipe is invalid. Please check the name and parameter values.",
+    logMessage: "Capsule recipe payload validation failed",
+  },
+  "E-VIBECODR-0731": {
+    code: "E-VIBECODR-0731",
+    category: "capsule",
+    httpStatus: 400,
+    severity: "error",
+    userMessage: "No valid parameters were provided for this recipe.",
+    logMessage: "Capsule recipe contained no valid params",
+  },
+  "E-VIBECODR-0732": {
+    code: "E-VIBECODR-0732",
+    category: "capsule",
+    httpStatus: 429,
+    severity: "error",
+    userMessage: "Recipe limit reached for this capsule. Please remove one before adding another.",
+    logMessage: "Capsule recipe limit exceeded",
+  },
+  "E-VIBECODR-0733": {
+    code: "E-VIBECODR-0733",
+    category: "capsule",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Could not save recipe right now. Please retry.",
+    logMessage: "Capsule recipe persistence failed",
+  },
+  "E-VIBECODR-0734": {
+    code: "E-VIBECODR-0734",
+    category: "capsule",
+    httpStatus: 403,
+    severity: "error",
+    userMessage: "You cannot modify this recipe.",
+    logMessage: "Capsule recipe modification forbidden",
+  },
+  "E-VIBECODR-0735": {
+    code: "E-VIBECODR-0735",
+    category: "capsule",
+    httpStatus: 404,
+    severity: "error",
+    userMessage: "Recipe not found.",
+    logMessage: "Capsule recipe not found",
+  },
+
   // 08xx: analytics/import
   "E-VIBECODR-0801": {
     code: "E-VIBECODR-0801",

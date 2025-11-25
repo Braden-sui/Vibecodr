@@ -163,7 +163,7 @@ describe("routes navigation", () => {
       json: async () => ({
         post: {
           id: "nav-meta",
-          type: "report",
+          type: "thought",
           title: "Meta test",
           description: "Meta description",
           author: { handle: "tester" },
@@ -174,7 +174,7 @@ describe("routes navigation", () => {
     });
     mockMapPost.mockReturnValue({
       id: "nav-meta",
-      type: "report",
+      type: "thought",
       title: "Meta test",
       description: "Meta description",
       author: { handle: "tester" },
