@@ -3,10 +3,12 @@ import { ClerkProvider } from "@clerk/clerk-react";
 import { motion } from "motion/react";
 import { AnalyticsProvider } from "@/providers/posthog-provider";
 import { EnsureUserSynced } from "@/components/EnsureUserSynced";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppRoutes } from "./routes";
 import { VibecodrWordmark } from "@/components/VibecodrWordmark";
 import { ModerationNavLinks } from "@/components/ModerationNavLinks";
 import { AdminAnalyticsNavLink } from "@/components/AdminAnalyticsNavLink";
+import { AdminPlanNavLink } from "@/components/AdminPlanNavLink";
 import { NotificationBell } from "@/components/Notifications";
 import { TopbarSearch } from "@/components/TopbarSearch";
 import { SignedIn, SignedOut, SignInButton, SignUpButton } from "@clerk/clerk-react";
@@ -60,6 +62,7 @@ function PrimaryNav() {
         <div className="flex items-center gap-3 text-sm">
           <ModerationNavLinks />
           <AdminAnalyticsNavLink />
+          <AdminPlanNavLink />
         </div>
 
         <div className="ml-auto flex items-center gap-3">
@@ -99,16 +102,18 @@ function PrimaryNav() {
 
 export function App() {
   return (
-    <ClerkProvider publishableKey={clerkPublishableKey}>
-      <AnalyticsProvider>
-        <EnsureUserSynced />
-        <BrowserRouter>
-          <PrimaryNav />
-          <main className="container mx-auto py-10">
-            <AppRoutes />
-          </main>
-        </BrowserRouter>
-      </AnalyticsProvider>
-    </ClerkProvider>
+    <ErrorBoundary>
+      <ClerkProvider publishableKey={clerkPublishableKey}>
+        <AnalyticsProvider>
+          <EnsureUserSynced />
+          <BrowserRouter>
+            <PrimaryNav />
+            <main className="container mx-auto py-10">
+              <AppRoutes />
+            </main>
+          </BrowserRouter>
+        </AnalyticsProvider>
+      </ClerkProvider>
+    </ErrorBoundary>
   );
 }

@@ -14,6 +14,7 @@ import FlaggedPostsPage from "@/app/(site)/moderation/flagged/page";
 import ModerationAuditPage from "@/app/(site)/moderation/audit/page";
 import ModerationQueue from "@/app/(site)/admin/moderation/page";
 import AdminAnalyticsPage from "@/app/(site)/admin/analytics/page";
+import AdminPlansPage from "@/app/(site)/admin/plans/page";
 import StudioIndex from "@/app/(site)/studio/page";
 import RemixTreePage from "@/app/(site)/vibe/[capsuleId]/remixes/page";
 import { SignIn as ClerkSignIn, SignUp as ClerkSignUp } from "@clerk/clerk-react";
@@ -358,6 +359,7 @@ export function AppRoutes() {
         <Route path="/moderation/audit" element={<ModerationAuditPage />} />
         <Route path="/admin/moderation" element={<ModerationQueue />} />
         <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+        <Route path="/admin/plans" element={<AdminPlansPage />} />
       </Route>
 
       {/* Full Screen / Auth Routes (Outside Layout) */}

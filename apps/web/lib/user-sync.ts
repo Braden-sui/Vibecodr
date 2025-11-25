@@ -22,8 +22,15 @@ export type EnsureUserSyncedInput = {
 
 async function postSyncRequest(input: EnsureUserSyncedInput): Promise<void> {
   const { user, token } = input;
-  const plan = user.plan == null ? null : normalizePlan(user.plan, Plan.FREE);
-  const normalizedUser = { ...user, plan };
+  // Only include plan if it's explicitly set - schema rejects null
+  const normalizedUser = {
+    id: user.id,
+    handle: user.handle,
+    name: user.name,
+    avatarUrl: user.avatarUrl,
+    bio: user.bio,
+    ...(user.plan != null ? { plan: normalizePlan(user.plan, Plan.FREE) } : {}),
+  };
   const response = await fetch(`${getWorkerApiBase()}/users/sync`, {
     method: "POST",
     headers: {

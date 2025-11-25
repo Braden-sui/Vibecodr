@@ -61,6 +61,7 @@ import {
   publishCapsuleDraft,
 } from "./handlers/studio";
 import { doStatus } from "./handlers/status";
+import { updateUserPlan } from "./handlers/admin";
 import { createPost, getDiscoverPosts, getPostById, getPosts, uploadCover } from "./handlers/posts";
 
 export type Route = { method: string; pattern: RegExp; handler: Handler };
@@ -106,6 +107,10 @@ export const routes: Route[] = [
   { method: "GET", pattern: /^\/users\/([^\/]+)$/, handler: getUserProfile },
   { method: "GET", pattern: /^\/users\/([^\/]+)\/posts$/, handler: getUserPosts },
   { method: "GET", pattern: /^\/users\/([^\/]+)\/check-following$/, handler: checkFollowing },
+
+  // Admin
+  { method: "POST", pattern: /^\/admin\/users\/plan$/, handler: updateUserPlan },
+  { method: "PATCH", pattern: /^\/admin\/users\/plan$/, handler: updateUserPlan },
 
   // Extended profile feature
   { method: "GET", pattern: /^\/profile\/([^\/]+)$/, handler: getProfileWithLayout },

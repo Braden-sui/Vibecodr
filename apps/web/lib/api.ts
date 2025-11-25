@@ -663,6 +663,21 @@ export const liveApi = {
   },
 } as const;
 
+export const adminApi = {
+  updateUserPlan(input: { userId?: string; handle?: string; plan: Plan }, init?: RequestInit) {
+    const { userId, handle, plan } = input;
+    return fetch(workerUrl("/admin/users/plan"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      body: JSON.stringify({ userId, handle, plan }),
+      ...init,
+    });
+  },
+} as const;
+
 export const runsApi = {
   start(
     input: {
