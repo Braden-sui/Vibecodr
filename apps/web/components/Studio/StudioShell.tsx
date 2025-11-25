@@ -55,7 +55,7 @@ export function StudioShell({ children, currentTab, draft, onTabChange, showAdva
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
       {/* Header with Status */}
-      <div className="border-b bg-card p-4">
+      <div className="vc-glass-muted border-b p-4">
         <div className="flex items-center justify-between">
           <div>
               <div className="flex items-center gap-3">
@@ -110,7 +110,7 @@ export function StudioShell({ children, currentTab, draft, onTabChange, showAdva
 
       {/* Tab Navigation */}
       <Tabs value={currentTab} onValueChange={onTabChange} className="flex flex-1 flex-col">
-        <div className="border-b bg-muted/50">
+        <div className="vc-glass-muted border-b">
           <TabsList className="h-14 w-full justify-start rounded-none border-0 bg-transparent p-0">
             <TabsTrigger
               value="import"

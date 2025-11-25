@@ -73,7 +73,7 @@ export function PlayerDrawer({
 
   const staticComments = !postId ? comments : [];
   return (
-    <div className="flex h-full flex-col border-l bg-card">
+    <div className="flex h-full flex-col border-l vc-glass-muted">
       <Tabs value={tab} onValueChange={handleTabChange} className="flex h-full flex-col">
         <TabsList className="w-full justify-start rounded-none border-b">
           <TabsTrigger value="notes" className="gap-2">

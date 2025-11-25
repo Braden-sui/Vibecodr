@@ -179,7 +179,7 @@ export default function DiscoverPage() {
       transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
     >
       <motion.section
-        className="rounded-3xl border bg-card/90 p-6 shadow-vc-soft"
+        className="vc-glass p-6"
         initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
         whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
         viewport={{ once: true, amount: 0.3 }}

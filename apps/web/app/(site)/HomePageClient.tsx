@@ -250,7 +250,7 @@ export default function FeedPage() {
     >
       <VibesComposer
         onPostCreated={handlePostCreated}
-        className="mb-6 !bg-white/70 !backdrop-blur-none dark:!bg-slate-900/60"
+        className="mb-6 vc-glass"
       />
     </motion.div>
   );
@@ -366,7 +366,7 @@ export default function FeedPage() {
       transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
     >
       <motion.section
-        className="rounded-3xl border bg-card/90 p-8 shadow-vc-soft"
+        className="vc-glass p-8"
         initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
         whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
         viewport={{ once: true, amount: 0.35 }}
@@ -391,7 +391,7 @@ export default function FeedPage() {
 
       {heroPost && (
         <motion.section
-          className="rounded-2xl border bg-card/80 p-6 shadow-sm"
+          className="vc-glass p-6"
           initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
           whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.3 }}
@@ -435,7 +435,7 @@ export default function FeedPage() {
 
       {isHeroLoading && !heroPost && (
         <motion.section
-          className="rounded-2xl border bg-card/80 p-6 shadow-sm"
+          className="vc-glass p-6"
           initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
           whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.3 }}
@@ -451,7 +451,7 @@ export default function FeedPage() {
       )}
 
       <motion.section
-        className="space-y-4 rounded-2xl border bg-white/70 p-6 shadow-vc-soft dark:bg-slate-900/60"
+        className="vc-glass space-y-4 p-6"
         initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
         whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
         viewport={{ once: true, amount: 0.3 }}
@@ -558,7 +558,7 @@ export default function FeedPage() {
         </TabsContent>
 
         <TabsContent value="foryou">
-          <div className="mb-6 rounded-xl border bg-gradient-to-r from-amber-50 via-white to-amber-50 p-6 dark:from-amber-900/20 dark:via-slate-900 dark:to-amber-800/10">
+          <div className="vc-glass mb-6 p-6">
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-amber-100 p-3 dark:bg-amber-900/50">
                 <Sparkles className="h-6 w-6 text-amber-600 dark:text-amber-200" />

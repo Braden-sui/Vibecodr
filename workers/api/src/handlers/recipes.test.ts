@@ -25,6 +25,13 @@ type UserRow = {
   avatar_url?: string | null;
 };
 
+// Response types for type-safe assertions
+type RecipeAuthor = { handle: string | null; name: string | null; avatarUrl: string | null };
+type RecipeView = { id: string; name: string; params: Record<string, unknown>; author: RecipeAuthor };
+type ListRecipesResponse = { recipes: RecipeView[] };
+type SingleRecipeResponse = { recipe: RecipeView };
+type ErrorResponse = { error: string; code: string };
+
 const resolveCapsuleAccessMock = vi.fn();
 
 vi.mock("../capsule-access", () => ({
@@ -222,7 +229,7 @@ describe("capsule recipes handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()) as ListRecipesResponse;
     expect(Array.isArray(body.recipes)).toBe(true);
     expect(body.recipes[0].name).toBe("Chaos");
     expect(body.recipes[0].params).toEqual({ speed: 2 });
@@ -249,7 +256,7 @@ describe("capsule recipes handlers", () => {
     );
 
     expect(response.status).toBe(201);
-    const body = await response.json();
+    const body = (await response.json()) as SingleRecipeResponse;
     expect(body.recipe.name).toBe("Slow Motion");
     expect(body.recipe.params).toEqual({ speed: 0.3, monochrome: true });
     expect(body.recipe.author.handle).toBe("creator");
@@ -288,7 +295,7 @@ describe("capsule recipes handlers", () => {
     );
 
     expect(response.status).toBe(429);
-    const body = await response.json();
+    const body = (await response.json()) as ErrorResponse;
     expect(body.code).toBe("E-VIBECODR-0732");
   });
 
@@ -310,7 +317,7 @@ describe("capsule recipes handlers", () => {
     );
 
     expect(response.status).toBe(400);
-    const body = await response.json();
+    const body = (await response.json()) as ErrorResponse;
     expect(body.code).toBe("E-VIBECODR-0731");
   });
 
@@ -341,7 +348,7 @@ describe("capsule recipes handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()) as SingleRecipeResponse;
     expect(body.recipe.name).toBe("Updated");
     expect(body.recipe.params).toEqual({ speed: 1.5, monochrome: true });
     expect(env.__state.recipes.get("recipe-1")?.name).toBe("Updated");
@@ -406,7 +413,7 @@ describe("capsule recipes handlers", () => {
     );
 
     expect(response.status).toBe(403);
-    const body = await response.json();
+    const body = (await response.json()) as ErrorResponse;
     expect(body.code).toBe("E-VIBECODR-0734");
   });
 });

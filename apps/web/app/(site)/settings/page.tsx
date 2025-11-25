@@ -317,7 +317,7 @@ export default function SettingsPage() {
         <div className="space-y-6">
           <QuotaUsage />
           
-          <Card className="bg-gradient-to-br from-primary/5 to-secondary/10 border-primary/10">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <LayoutTemplate className="h-5 w-5 text-primary" />
