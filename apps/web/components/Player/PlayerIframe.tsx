@@ -239,7 +239,10 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
               };
 
         for (const origin of postOrigins) {
-          target.postMessage(message, origin);
+          // WHY: Sandboxed iframes without allow-same-origin have a null origin.
+          // postMessage() requires "*" to target null-origin windows; the string
+          // "null" is not valid and throws SyntaxError.
+          target.postMessage(message, origin === "null" ? "*" : origin);
         }
 
         return true;

@@ -245,10 +245,20 @@ export const getRemixTree: Handler = async (req, env, _ctx, params) => {
       truncated: ancestryTruncated || traversalTruncated,
     });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error(`${ERROR_REMIX_TREE_FAILED} remix tree fetch failed`, {
       capsuleId: targetCapsuleId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
+      stack: errorStack,
     });
-    return json({ error: "Failed to load remix lineage", code: ERROR_REMIX_TREE_FAILED }, 500);
+    return json(
+      {
+        error: "Failed to load remix lineage",
+        code: ERROR_REMIX_TREE_FAILED,
+        details: errorMessage,
+      },
+      500
+    );
   }
 };
