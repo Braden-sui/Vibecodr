@@ -62,6 +62,7 @@ export interface FeedCardProps {
 let activePreviewCount = 0;
 const MAX_ACTIVE_PREVIEWS = 2;
 const PREVIEW_KILL_MS = 6_000;
+const PREVIEW_KILL_WARN_MS = 3_000;
 const PREVIEW_GUARD_URL = "/runtime-assets/v0.1.0/guard.js";
 
 // Global cap for manifest preloads to avoid stampedes
@@ -141,7 +142,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const descriptionClamp = isLongform ? "line-clamp-3" : "line-clamp-2";
   const [_isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
-  const [previewError, setPreviewError] = useState(false);
+  const [previewErrorMessage, setPreviewErrorMessage] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -154,8 +155,12 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const pauseStateRef = useRef<"paused" | "running">("running");
   const lastIntersectionRatioRef = useRef(1);
   const [isModerating, setIsModerating] = useState(false);
-  const previewKillTimerRef = useRef<number | null>(null);
+  const previewTimeoutRef = useRef<number | null>(null);
+  const previewCountdownIntervalRef = useRef<number | null>(null);
+  const previewBootDeadlineRef = useRef<number | null>(null);
+  const previewTimeoutWarnedRef = useRef(false);
   const previewRetryRef = useRef(false);
+  const [bootCountdownMs, setBootCountdownMs] = useState<number | null>(null);
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const previewLogsRef = useRef<PreviewLogEntry[]>([]);
   const prefersReducedMotion = useReducedMotion();
@@ -182,36 +187,75 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     []
   );
 
-  useEffect(() => {
-    if (isRunning) {
-      if (previewKillTimerRef.current) {
-        clearTimeout(previewKillTimerRef.current);
-      }
-      previewKillTimerRef.current = window.setTimeout(() => {
-        setPreviewError(true);
-        setIsRunning(false);
-        pushPreviewLog({
-          level: "error",
-          message: `Preview killed after ${PREVIEW_KILL_MS}ms`,
-        });
-        if (!previewRetryRef.current) {
-          previewRetryRef.current = true;
-          window.setTimeout(() => {
-            previewRetryRef.current = false;
-          }, 500);
-        }
-      }, PREVIEW_KILL_MS);
-    } else if (previewKillTimerRef.current) {
-      clearTimeout(previewKillTimerRef.current);
-      previewKillTimerRef.current = null;
+  const resetPreviewTimers = useCallback(() => {
+    if (previewTimeoutRef.current !== null) {
+      window.clearTimeout(previewTimeoutRef.current);
+      previewTimeoutRef.current = null;
     }
-    return () => {
-      if (previewKillTimerRef.current) {
-        clearTimeout(previewKillTimerRef.current);
-        previewKillTimerRef.current = null;
+    if (previewCountdownIntervalRef.current !== null) {
+      window.clearInterval(previewCountdownIntervalRef.current);
+      previewCountdownIntervalRef.current = null;
+    }
+    previewBootDeadlineRef.current = null;
+    previewTimeoutWarnedRef.current = false;
+    setBootCountdownMs(null);
+  }, []);
+
+  useEffect(() => {
+    if (!isRunning || previewLoaded) {
+      resetPreviewTimers();
+      return;
+    }
+
+    const deadline = Date.now() + PREVIEW_KILL_MS;
+    previewBootDeadlineRef.current = deadline;
+    previewTimeoutWarnedRef.current = false;
+    setBootCountdownMs(PREVIEW_KILL_MS);
+
+    const handleBootTimeout = () => {
+      setPreviewErrorMessage(
+        "Preview stopped because it took too long to start. Open the player for a full run."
+      );
+      setIsRunning(false);
+      pushPreviewLog({
+        level: "error",
+        message: `Preview launch timed out after ${PREVIEW_KILL_MS}ms`,
+      });
+      if (clickRunIncrementRef.current) {
+        activePreviewCount = Math.max(0, activePreviewCount - 1);
+        clickRunIncrementRef.current = false;
+      }
+      if (!previewRetryRef.current) {
+        previewRetryRef.current = true;
+        window.setTimeout(() => {
+          previewRetryRef.current = false;
+        }, 500);
+      }
+      resetPreviewTimers();
+    };
+
+    previewTimeoutRef.current = window.setTimeout(handleBootTimeout, PREVIEW_KILL_MS);
+
+    const updateCountdown = () => {
+      if (!previewBootDeadlineRef.current) return;
+      const remaining = previewBootDeadlineRef.current - Date.now();
+      setBootCountdownMs(Math.max(0, remaining));
+      if (remaining <= PREVIEW_KILL_WARN_MS && remaining > 0 && !previewTimeoutWarnedRef.current) {
+        previewTimeoutWarnedRef.current = true;
+        toast({
+          title: "Preview stopping in 3s...",
+          description:
+            "Starting the preview is taking longer than expected. Open the player for a full run without limits.",
+          variant: "warning",
+        });
       }
     };
-  }, [isRunning, pushPreviewLog]);
+
+    updateCountdown();
+    previewCountdownIntervalRef.current = window.setInterval(updateCountdown, 200);
+
+    return resetPreviewTimers;
+  }, [isRunning, previewLoaded, pushPreviewLog, resetPreviewTimers]);
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -642,11 +686,19 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     // Check concurrency cap
     if (activePreviewCount >= MAX_ACTIVE_PREVIEWS && !isRunning) {
       // Redirect to full player if too many active previews
+      toast({
+        title: "Preview limit reached",
+        description: "Only two inline previews can run at once. Opening the player instead.",
+        variant: "warning",
+      });
       window.location.href = `/player/${post.id}`;
       return;
     }
 
     prebootStartRef.current = Date.now();
+    setPreviewErrorMessage(null);
+    setPreviewLoaded(false);
+    resetPreviewTimers();
     setIsRunning(true);
     if (!previewLoaded) {
       activePreviewCount++;
@@ -857,6 +909,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                     srcDoc={previewSrcDoc}
                     src={bundleUrl}
                     className="h-full w-full border-0"
+                    title={`Preview for ${post.title}`}
                     sandbox="allow-scripts"
                     // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit
                     // Capsules use postMessage for parent communication, not same-origin APIs
@@ -880,7 +933,15 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                       }
                     }}
                     onError={() => {
-                      setPreviewError(true);
+                      setPreviewErrorMessage(
+                        "Preview failed to load here. Open the player to run without a time limit."
+                      );
+                      setIsRunning(false);
+                      pushPreviewLog({
+                        level: "error",
+                        message: "Preview iframe failed to load",
+                      });
+                      resetPreviewTimers();
                       if (clickRunIncrementRef.current) {
                         activePreviewCount = Math.max(0, activePreviewCount - 1);
                         clickRunIncrementRef.current = false;
