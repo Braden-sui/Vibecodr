@@ -50,6 +50,22 @@ export interface VibesComposerProps {
 
 const MAX_TAGS = 3;
 
+const formatErrorMessage = (value: unknown): string => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message;
+  if (typeof value === "object") {
+    const maybe = (value as any).message;
+    if (typeof maybe === "string") return maybe;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
+
 /**
  * VibesComposer - Unified composer for all vibe creation modes
  * Handles text/status posts, image attachments, GitHub imports, ZIP uploads, and inline code
@@ -1368,7 +1384,7 @@ mount.render(React.createElement(UserApp));
             {error && (
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                <span>{error}</span>
+                <span>{formatErrorMessage(error)}</span>
               </div>
             )}
 
