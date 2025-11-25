@@ -273,12 +273,7 @@ function buildSecurityHeaders({
   headers.push(
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-    { key: "X-Content-Type-Options", value: "nosniff" },
-    {
-      key: "Permissions-Policy",
-      value:
-        "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), microphone=(), midi=(), payment=(), usb=()",
-    }
+    { key: "X-Content-Type-Options", value: "nosniff" }
   );
 
   return headers;

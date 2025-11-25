@@ -23,7 +23,7 @@ describe("[[path]] runtime header integration", () => {
     expect(shouldSpy).toHaveBeenCalledWith(request, nextResponse);
     expect(applySpy).toHaveBeenCalledWith(nextResponse, request);
     expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors");
-    expect(response.headers.get("Permissions-Policy")).toContain("autoplay=()");
+    expect(response.headers.get("Permissions-Policy")).toBeNull();
   });
 
   it("returns the untouched response for non-runtime assets", async () => {

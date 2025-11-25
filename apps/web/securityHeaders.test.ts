@@ -10,12 +10,11 @@ describe("securityHeaders", () => {
     expect(cspHeader?.value).toContain("worker-src 'self' blob:");
   });
 
-  it("omits unsupported directives from Permissions-Policy", () => {
+  it("does not emit a Permissions-Policy header by default", () => {
     const headers = securityHeaders.buildSecurityHeaders();
     const permissionsPolicy = headers.find((header) => header.key === "Permissions-Policy");
 
-    expect(permissionsPolicy).toBeDefined();
-    expect(permissionsPolicy?.value).not.toContain("document-domain");
+    expect(permissionsPolicy).toBeUndefined();
   });
 
   it("allows the worker API origin in connect-src", () => {
