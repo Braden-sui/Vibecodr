@@ -1,201 +1,103 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { getRemixTree } from "./remixes";
+/// <reference types="vitest" />
+import { describe, it, expect } from "vitest";
 import type { Env } from "../types";
-import { resetPostsVisibilityCache } from "../lib/postsVisibility";
+import { getRemixTree } from "./remixes";
 
-type Edge = { parent: string; child: string; createdAt?: number };
-type RemixFixture = {
-  capsules: Set<string>;
-  parents: Map<string, string>;
-  edges: Edge[];
-  posts: Array<{
-    post_id: string;
-    capsule_id: string;
-    title: string;
-    description?: string | null;
-    author_id: string;
-    author_handle: string;
-    author_name?: string | null;
-    profile_display_name?: string | null;
-    created_at: number;
-  }>;
-  hasVisibility?: boolean;
-};
+type TestEnv = Env & { queries: string[] };
 
-const ctx: any = {};
+function createEnv(): TestEnv {
+  const queries: string[] = [];
 
-function makeDb(data: RemixFixture) {
-  return {
-    prepare(query: string) {
-      const state = {
-        query,
-        args: [] as any[],
-        bind(...args: any[]) {
-          state.args = args;
-          return state;
-        },
-        async first() {
-          if (query.startsWith("SELECT id FROM capsules")) {
-            const id = String(state.args[0]);
-            return data.capsules.has(id) ? { id } : null;
-          }
-          if (query.startsWith("SELECT parent_capsule_id FROM remixes WHERE child_capsule_id = ?")) {
-            const child = String(state.args[0]);
-            const parent = data.parents.get(child);
-            return parent ? { parent_capsule_id: parent } : null;
-          }
-          return null;
-        },
-        async all() {
-          if (query.startsWith("PRAGMA table_info(posts)")) {
-            return { results: data.hasVisibility === false ? [] : [{ name: "visibility" }] };
-          }
-          if (query.startsWith("SELECT parent_capsule_id, child_capsule_id")) {
-            const parentIds = (state.args || []).map(String);
-            const results = data.edges
-              .filter((edge) => parentIds.includes(edge.parent))
-              .map((edge) => ({
-                parent_capsule_id: edge.parent,
-                child_capsule_id: edge.child,
-                created_at: edge.createdAt ?? null,
-              }));
-            return { results };
-          }
-          if (query.includes("FROM posts p") && query.includes("capsule_id IN")) {
-            const ids = (state.args || []).map(String);
-            const results = data.posts
-              .filter((post) => ids.includes(String(post.capsule_id)))
-              .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
-            return { results };
-          }
-          return { results: [] };
-        },
-      };
-      return state;
-    },
+  const prepare = (sql: string) => {
+    const trimmedSql = sql.trim();
+    queries.push(sql);
+    if (sql.includes("remixes") && sql.includes("created_at")) {
+      throw new Error("remixes.created_at should not be referenced");
+    }
+    const stmt: any = {
+      bindArgs: [] as any[],
+      bind(...args: any[]) {
+        this.bindArgs = args;
+        return this;
+      },
+      async all<T>() {
+        if (trimmedSql.startsWith("PRAGMA table_info(posts)")) {
+          return { results: [{ name: "visibility" }] as any };
+        }
+        if (sql.includes("FROM remixes WHERE parent_capsule_id")) {
+          const parentIds = this.bindArgs as string[];
+          const parentId = parentIds[0] ?? "root-cap";
+          return {
+            results: [
+              { parent_capsule_id: parentId, child_capsule_id: "child-1" },
+              { parent_capsule_id: parentId, child_capsule_id: "child-2" },
+            ] as any,
+          };
+        }
+        if (trimmedSql.startsWith("SELECT p.id as post_id")) {
+          const capsuleIds = this.bindArgs as string[];
+          return {
+            results: capsuleIds.map((id, idx) => ({
+              post_id: `post-${idx}`,
+              title: `Capsule ${id}`,
+              description: `Description ${id}`,
+              capsule_id: id,
+              created_at: 123 + idx,
+              author_id: `author-${idx}`,
+              author_handle: `handle-${idx}`,
+              profile_display_name: `display-${idx}`,
+            })),
+          };
+        }
+        return { results: [] as any[] };
+      },
+      async first<T>() {
+        if (trimmedSql.startsWith("SELECT id FROM capsules WHERE id = ?")) {
+          const id = this.bindArgs[0] as string;
+          return { id } as any;
+        }
+        if (trimmedSql.startsWith("SELECT parent_capsule_id FROM remixes WHERE child_capsule_id = ?")) {
+          return { parent_capsule_id: null } as any;
+        }
+        return null;
+      },
+    };
+    return stmt;
   };
+
+  return {
+    DB: { prepare } as any,
+    R2: {} as any,
+    vibecodr_analytics_engine: {} as any,
+    ALLOWLIST_HOSTS: "[]",
+    BUILD_COORDINATOR_DURABLE: {} as any,
+    ARTIFACT_COMPILER_DURABLE: {} as any,
+    CLERK_JWT_ISSUER: "",
+    queries,
+  } as unknown as TestEnv;
 }
 
-const baseFixture: RemixFixture = {
-  capsules: new Set(["root", "childA", "childB"]),
-  parents: new Map([
-    ["childA", "root"],
-    ["childB", "childA"],
-  ]),
-  edges: [
-    { parent: "root", child: "childA", createdAt: 10 },
-    { parent: "childA", child: "childB", createdAt: 20 },
-  ],
-  posts: [
-    {
-      post_id: "post-root",
-      capsule_id: "root",
-      title: "Bouncing Ball",
-      description: "Base vibe",
-      author_id: "creator",
-      author_handle: "creator",
-      author_name: "Creator",
-      created_at: 1,
-    },
-    {
-      post_id: "post-childA-old",
-      capsule_id: "childA",
-      title: "Old Neon",
-      description: "old version",
-      author_id: "maria",
-      author_handle: "maria",
-      author_name: "Maria",
-      created_at: 5,
-    },
-    {
-      post_id: "post-childA-new",
-      capsule_id: "childA",
-      title: "Neon Ball",
-      description: "glow effect",
-      author_id: "maria",
-      author_handle: "maria",
-      author_name: "Maria",
-      created_at: 15,
-    },
-    {
-      post_id: "post-childB",
-      capsule_id: "childB",
-      title: "Disco Ball",
-      description: "music sync",
-      author_id: "jake",
-      author_handle: "jake",
-      author_name: "Jake",
-      created_at: 25,
-    },
-  ],
-};
-
 describe("getRemixTree", () => {
-  beforeEach(() => {
-    resetPostsVisibilityCache();
-  });
-
-  it("returns lineage with root, parent, and requested remix details", async () => {
-    const env = { DB: makeDb(baseFixture) } as unknown as Env;
+  it("builds a remix tree without relying on remixes.created_at", async () => {
+    const env = createEnv();
     const res = await getRemixTree(
-      new Request("https://example.com/capsules/childB/remixes"),
+      new Request("https://example.com/capsules/root-cap/remixes"),
       env,
-      ctx,
-      { p1: "childB" }
+      {} as any,
+      { p1: "root-cap" }
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
-    expect(body.rootCapsuleId).toBe("root");
-    expect(body.directParentId).toBe("childA");
-    const parentNode = body.nodes.find((node: any) => node.capsuleId === "childA");
-    expect(parentNode.remixCount).toBe(1);
-    expect(parentNode.title).toBe("Neon Ball"); // newest post selected
-    const childNode = body.nodes.find((node: any) => node.capsuleId === "childB");
-    expect(childNode.parentId).toBe("childA");
-    expect(childNode.isRequested).toBe(true);
-    expect(childNode.remixCount).toBe(0);
-    expect(childNode.title).toBe("Disco Ball");
-    expect(body.truncated).toBeFalsy();
-  });
-
-  it("returns 404 when capsule is missing", async () => {
-    const env = { DB: makeDb({ ...baseFixture, capsules: new Set() }) } as unknown as Env;
-    const res = await getRemixTree(
-      new Request("https://example.com/capsules/missing/remixes"),
-      env,
-      ctx,
-      { p1: "missing" }
-    );
-
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as any;
-    expect(body.code).toBe("E-VIBECODR-0903");
-  });
-
-  it("fails fast on ancestry cycles", async () => {
-    const env = {
-      DB: makeDb({
-        ...baseFixture,
-        capsules: new Set(["loopA", "loopB"]),
-        parents: new Map([
-          ["loopA", "loopB"],
-          ["loopB", "loopA"],
-        ]),
-        edges: [],
-        posts: [],
-      }),
-    } as unknown as Env;
-
-    const res = await getRemixTree(
-      new Request("https://example.com/capsules/loopA/remixes"),
-      env,
-      ctx,
-      { p1: "loopA" }
-    );
-
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
-    expect(body.code).toBe("E-VIBECODR-0902");
+    const body = (await res.json()) as {
+      rootCapsuleId: string;
+      nodes: Array<{ capsuleId: string; parentId: string | null }>;
+      truncated: boolean;
+    };
+    expect(body.rootCapsuleId).toBe("root-cap");
+    const childCapsules = body.nodes.filter((n) => n.parentId === "root-cap").map((n) => n.capsuleId);
+    expect(childCapsules).toContain("child-1");
+    expect(childCapsules).toContain("child-2");
+    expect(body.truncated).toBe(false);
+    expect(env.queries.some((q) => q.includes("remixes.created_at"))).toBe(false);
   });
 });

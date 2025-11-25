@@ -7,6 +7,8 @@ import { json } from "../lib/responses";
 const DEFAULT_MAX_CONCURRENT_ACTIVE = 2;
 const DEFAULT_RUNTIME_SESSION_MAX_MS = 60_000;
 const ERROR_RUN_LOG_ANALYTICS_FAILED = "E-VIBECODR-2136";
+const ERROR_RUN_SCHEMA_PROBE_FAILED = "E-VIBECODR-0615";
+const ERROR_RUN_SCHEMA_MISSING_ERROR_COLUMN = "E-VIBECODR-0616";
 
 type AuthedHandler = (
   req: Request,
@@ -23,6 +25,44 @@ type RunRow = {
   user_id: string | null;
   started_at: number | null;
 };
+
+type RunTableCapabilities = {
+  hasErrorMessage: boolean;
+};
+
+let cachedRunTableCapabilities: RunTableCapabilities | null = null;
+
+function inferColumnPresence(results: unknown[], column: string): boolean {
+  return results.some((row: any) => (row?.name ?? "").toLowerCase() === column);
+}
+
+async function getRunTableCapabilities(env: Env): Promise<RunTableCapabilities> {
+  if (cachedRunTableCapabilities) {
+    return cachedRunTableCapabilities;
+  }
+
+  try {
+    const { results = [] } = await env.DB.prepare(`PRAGMA table_info(runs)`).all();
+    const hasErrorMessage = Array.isArray(results) ? inferColumnPresence(results, "error_message") : false;
+    cachedRunTableCapabilities = { hasErrorMessage };
+    if (!hasErrorMessage) {
+      console.error(`${ERROR_RUN_SCHEMA_MISSING_ERROR_COLUMN} runs.error_message column missing; errors will not be stored on runs`, {
+        hasErrorMessage,
+      });
+    }
+    return cachedRunTableCapabilities;
+  } catch (err) {
+    console.error(`${ERROR_RUN_SCHEMA_PROBE_FAILED} run schema probe failed`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    cachedRunTableCapabilities = { hasErrorMessage: false };
+    return cachedRunTableCapabilities;
+  }
+}
+
+export function resetRunSchemaCache(): void {
+  cachedRunTableCapabilities = null;
+}
 
 function parseRuntimeLimits(env: Env): { maxConcurrent: number; maxSessionMs: number } {
   const maxConcurrentRaw = Number(env.RUNTIME_MAX_CONCURRENT_ACTIVE ?? DEFAULT_MAX_CONCURRENT_ACTIVE);
@@ -123,20 +163,32 @@ function normalizeDurationMs(candidate: unknown, startedAtSec: number | null): n
   return null;
 }
 
-async function markRunFailed(env: Env, runId: string, postId: string | null, reason: string) {
+async function markRunFailed(
+  env: Env,
+  runId: string,
+  postId: string | null,
+  reason: string,
+  capabilities?: RunTableCapabilities
+) {
+  const runSchema = capabilities ?? (await getRunTableCapabilities(env));
   try {
-    await env.DB.prepare(
-      `UPDATE runs
-       SET status = 'failed',
-           error_message = ?,
-           post_id = COALESCE(post_id, ?)
-       WHERE id = ?`
-    )
-      .bind(reason, postId, runId)
-      .run();
+    const hasErrorMessage = runSchema.hasErrorMessage;
+    const sql = hasErrorMessage
+      ? `UPDATE runs
+         SET status = 'failed',
+             error_message = ?,
+             post_id = COALESCE(post_id, ?)
+         WHERE id = ?`
+      : `UPDATE runs
+         SET status = 'failed',
+             post_id = COALESCE(post_id, ?)
+         WHERE id = ?`;
+    const binds = hasErrorMessage ? [reason, postId, runId] : [postId, runId];
+    await env.DB.prepare(sql).bind(...binds).run();
   } catch (err: any) {
     console.error("E-VIBECODR-0614 markRunFailed update failed", {
       runId,
+      hasErrorMessage: capabilities?.hasErrorMessage ?? cachedRunTableCapabilities?.hasErrorMessage,
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -353,6 +405,7 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
     }
 
     const runId = (body.runId && body.runId.trim()) || crypto.randomUUID();
+    const runSchema = await getRunTableCapabilities(env);
 
     const existingRun = await findRunById(env, runId);
     if (existingRun) {
@@ -360,11 +413,11 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
         return json({ error: "Run id is already used by another user" }, 403);
       }
       if (existingRun.capsule_id !== capsuleId) {
-        await markRunFailed(env, runId, postId, "capsule_mismatch");
+        await markRunFailed(env, runId, postId, "capsule_mismatch", runSchema);
         return json({ error: "capsuleId does not match run", code: "E-VIBECODR-0612", runId }, 400);
       }
       if (existingRun.post_id && postId && existingRun.post_id !== postId) {
-        await markRunFailed(env, runId, postId, "post_mismatch");
+        await markRunFailed(env, runId, postId, "post_mismatch", runSchema);
         return json({ error: "postId does not match run", code: "E-VIBECODR-0613", runId }, 400);
       }
 
@@ -375,17 +428,22 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
       const finalStatus = budgetExceeded ? "failed" : status;
       const finalError = budgetExceeded ? "runtime_budget_exceeded" : errorMessage;
       try {
-        await env.DB.prepare(
-          `UPDATE runs
-           SET duration_ms = ?, status = ?, error_message = ?, post_id = COALESCE(post_id, ?)
-           WHERE id = ?`
-        )
-          .bind(cappedDuration, finalStatus, finalError, postId, runId)
-          .run();
+        const updateSql = runSchema.hasErrorMessage
+          ? `UPDATE runs
+             SET duration_ms = ?, status = ?, error_message = ?, post_id = COALESCE(post_id, ?)
+             WHERE id = ?`
+          : `UPDATE runs
+             SET duration_ms = ?, status = ?, post_id = COALESCE(post_id, ?)
+             WHERE id = ?`;
+        const updateBinds = runSchema.hasErrorMessage
+          ? [cappedDuration, finalStatus, finalError, postId, runId]
+          : [cappedDuration, finalStatus, postId, runId];
+        await env.DB.prepare(updateSql).bind(...updateBinds).run();
       } catch (err: any) {
         console.error("E-VIBECODR-0606 completeRun update failed", {
           runId,
           userId: user.userId,
+          hasErrorMessage: runSchema.hasErrorMessage,
           error: err instanceof Error ? err.message : String(err),
         });
         return json({ error: "Failed to log run" }, 500);
@@ -431,12 +489,15 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
     const finalError = budgetExceeded ? "runtime_budget_exceeded" : errorMessage;
 
     try {
-      await env.DB.prepare(
-        `INSERT INTO runs (id, capsule_id, post_id, user_id, started_at, duration_ms, status, error_message)
-         VALUES (?, ?, ?, ?, strftime('%s','now'), ?, ?, ?)`
-      )
-        .bind(runId, capsuleId, postId, user.userId, cappedDuration, finalStatus, finalError)
-        .run();
+      const insertSql = runSchema.hasErrorMessage
+        ? `INSERT INTO runs (id, capsule_id, post_id, user_id, started_at, duration_ms, status, error_message)
+           VALUES (?, ?, ?, ?, strftime('%s','now'), ?, ?, ?)`
+        : `INSERT INTO runs (id, capsule_id, post_id, user_id, started_at, duration_ms, status)
+           VALUES (?, ?, ?, ?, strftime('%s','now'), ?, ?)`;
+      const insertBinds = runSchema.hasErrorMessage
+        ? [runId, capsuleId, postId, user.userId, cappedDuration, finalStatus, finalError]
+        : [runId, capsuleId, postId, user.userId, cappedDuration, finalStatus];
+      await env.DB.prepare(insertSql).bind(...insertBinds).run();
     } catch (e: any) {
       if (e?.message?.includes("UNIQUE")) {
         const conflictingRun = await findRunById(env, runId);

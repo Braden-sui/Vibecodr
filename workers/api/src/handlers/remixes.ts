@@ -14,7 +14,6 @@ const MAX_CHILD_BATCH = 25;
 type RemixRow = {
   parent_capsule_id?: string | null;
   child_capsule_id?: string | null;
-  created_at?: number | null;
 };
 
 type PostRow = {
@@ -107,7 +106,7 @@ export const getRemixTree: Handler = async (req, env, _ctx, params) => {
       const batch = parentQueue.splice(0, MAX_CHILD_BATCH);
       const placeholders = batch.map(() => "?").join(",");
       const { results } = await env.DB.prepare(
-        `SELECT parent_capsule_id, child_capsule_id, created_at FROM remixes WHERE parent_capsule_id IN (${placeholders})`
+        `SELECT parent_capsule_id, child_capsule_id FROM remixes WHERE parent_capsule_id IN (${placeholders})`
       )
         .bind(...batch.map((item) => item.id))
         .all<RemixRow>();

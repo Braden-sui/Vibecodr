@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "../types";
-import { appendRunLogs, completeRun, startRun } from "./runs";
+import { appendRunLogs, completeRun, resetRunSchemaCache, startRun } from "./runs";
 import { Plan, PLAN_LIMITS } from "../storage/quotas";
 
 const mockGetUserRunQuotaState = vi.fn();
@@ -51,7 +51,7 @@ type RunRow = {
 
 type TestEnv = Env & { __state: { runs: Map<string, RunRow> } };
 
-function createEnv(runs: RunRow[] = []): TestEnv {
+function createEnv(runs: RunRow[] = [], options?: { hasErrorMessageColumn?: boolean }): TestEnv {
   const state = { runs: new Map<string, RunRow>() };
   runs.forEach((run) => state.runs.set(run.id, { ...run }));
   const prepare = vi.fn((sql: string) => {
@@ -63,6 +63,21 @@ function createEnv(runs: RunRow[] = []): TestEnv {
         return this;
       },
       async all() {
+        if (sql.startsWith("PRAGMA table_info(runs)")) {
+          const columns = [
+            "id",
+            "capsule_id",
+            "post_id",
+            "user_id",
+            "started_at",
+            "duration_ms",
+            "status",
+          ];
+          if (options?.hasErrorMessageColumn !== false) {
+            columns.push("error_message");
+          }
+          return { results: columns.map((name) => ({ name })) };
+        }
         if (sql.includes("FROM runs") && sql.includes("status = 'started'")) {
           const userId = this.bindArgs[0];
           const windowSeconds = Number(this.bindArgs[1] ?? 0);
@@ -85,12 +100,14 @@ function createEnv(runs: RunRow[] = []): TestEnv {
       },
       async run() {
         if (sql.startsWith("INSERT INTO runs")) {
+          const includesErrorMessage = sql.includes("error_message");
           if (sql.includes("duration_ms")) {
             const [id, capsuleId, postId, userId, durationMs, status, errorMessage] = this.bindArgs;
             if (state.runs.has(id)) {
               const err: any = new Error("UNIQUE constraint failed: runs.id");
               throw err;
             }
+            const errorVal = includesErrorMessage ? errorMessage ?? null : null;
             state.runs.set(id, {
               id,
               capsule_id: capsuleId,
@@ -98,8 +115,8 @@ function createEnv(runs: RunRow[] = []): TestEnv {
               user_id: userId,
               started_at: Math.floor(Date.now() / 1000),
               duration_ms: durationMs ?? null,
-              status: status ?? errorMessage ?? null,
-              error_message: errorMessage ?? null,
+              status: status ?? errorVal ?? null,
+              error_message: errorVal,
             });
           } else {
             const [id, capsuleId, postId, userId, status] = this.bindArgs;
@@ -119,22 +136,32 @@ function createEnv(runs: RunRow[] = []): TestEnv {
             });
           }
         } else if (sql.startsWith("UPDATE runs")) {
+          const includesErrorMessage = sql.includes("error_message");
           if (sql.includes("duration_ms")) {
-            const [durationMs, status, errorMessage, postId, runId] = this.bindArgs;
+            const runId = this.bindArgs.at(-1);
             const run = state.runs.get(runId);
             if (run) {
+              const [durationMs, status] = this.bindArgs;
+              const postId = this.bindArgs[this.bindArgs.length - 2];
               run.duration_ms = durationMs ?? run.duration_ms ?? null;
               run.status = status ?? run.status ?? null;
               run.post_id = run.post_id ?? (postId ?? null);
-              run.error_message = errorMessage ?? run.error_message ?? null;
+              if (includesErrorMessage) {
+                const errorMessage = this.bindArgs[2];
+                run.error_message = errorMessage ?? run.error_message ?? null;
+              }
             }
           } else {
-            const [errorMessage, postId, runId] = this.bindArgs;
+            const runId = this.bindArgs.at(-1);
+            const postId = this.bindArgs[this.bindArgs.length - 2];
             const run = state.runs.get(runId);
             if (run) {
               run.status = "failed";
-              run.error_message = errorMessage ?? run.error_message ?? null;
               run.post_id = run.post_id ?? (postId ?? null);
+              if (includesErrorMessage) {
+                const errorMessage = this.bindArgs[0];
+                run.error_message = errorMessage ?? run.error_message ?? null;
+              }
             }
           }
         }
@@ -157,6 +184,7 @@ function createEnv(runs: RunRow[] = []): TestEnv {
 }
 
 beforeEach(() => {
+  resetRunSchemaCache();
   mockGetUserRunQuotaState.mockReset();
   mockGetUserRunQuotaState.mockResolvedValue({
     plan: Plan.FREE,
@@ -341,6 +369,41 @@ describe("completeRun", () => {
     expect(res.status).toBe(200);
     const run = env.__state.runs.get("run-auth");
     expect(run?.user_id).toBe("user-auth-1");
+  });
+
+  it("completes runs when the error_message column is missing", async () => {
+    const env = createEnv([], { hasErrorMessageColumn: false });
+
+    await startRun(
+      new Request("https://example.com/api/runs/start", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-legacy", capsuleId: "cap-legacy", postId: "post-legacy" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          runId: "run-legacy",
+          capsuleId: "cap-legacy",
+          postId: "post-legacy",
+          status: "failed",
+          errorMessage: "boom",
+        }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(200);
+    const run = env.__state.runs.get("run-legacy");
+    expect(run?.status).toBe("failed");
+    expect(run?.error_message).toBeNull();
   });
 
   it("does not increment counters again when completing an existing run", async () => {
