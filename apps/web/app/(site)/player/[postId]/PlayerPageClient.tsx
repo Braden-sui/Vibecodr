@@ -1279,15 +1279,20 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   };
 
   const handleKill = () => {
+    // WHY: Try to send kill message to iframe, but always update UI state regardless of success
     const sent =
       (typeof iframeHandleRef.current?.kill === "function" && iframeHandleRef.current?.kill()) ||
       postMessageToCapsule("kill");
     finalizeRunSession("failed", "killed_by_user");
-    if (!sent) {
-      return;
-    }
+    // SAFETY: Always update UI state even if postMessage failed - the run should stop visually
     setIsRunning(false);
     setStats({ fps: 0, memory: 0, bootTime: 0 });
+    if (!sent) {
+      console.warn("E-VIBECODR-0530 kill message not sent but UI stopped", {
+        capsuleId: post?.capsule?.id,
+        postId: post?.id,
+      });
+    }
     if (post?.capsule) {
       trackEvent("player_kill_requested", {
         postId: post.id,

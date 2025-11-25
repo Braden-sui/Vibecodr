@@ -29,6 +29,7 @@ import { usePageMeta } from "@/lib/seo";
 import Layout from "@/src/components/Layout";
 import KineticHeader from "@/src/components/KineticHeader";
 import VibeCard from "@/src/components/VibeCard";
+import EtheriaSkyBackground from "@/src/components/EtheriaSkyBackground";
 
 type ProfilePageResponse = ProfileBlocksProps["profile"] &
   ProfileHeaderProps["profile"] & {
@@ -55,7 +56,12 @@ function isProfilePageResponse(value: unknown): value is ProfilePageResponse {
 function PlayerRouteWrapper() {
   const params = useParams();
   const postId = params.postId ?? "";
-  return <PlayerPageClient postId={postId} />;
+  return (
+    <div className="min-h-screen text-foreground font-sans selection:bg-accent/30">
+      <EtheriaSkyBackground />
+      <PlayerPageClient postId={postId} />
+    </div>
+  );
 }
 
 export function PostDetailRoute() {
@@ -368,16 +374,22 @@ export function AppRoutes() {
       <Route
         path="/sign-in/*"
         element={
-          <div className="flex min-h-[60vh] items-center justify-center">
-            <ClerkSignIn />
+          <div className="min-h-screen text-foreground font-sans selection:bg-accent/30">
+            <EtheriaSkyBackground />
+            <div className="flex min-h-[60vh] items-center justify-center">
+              <ClerkSignIn />
+            </div>
           </div>
         }
       />
       <Route
         path="/sign-up/*"
         element={
-          <div className="flex min-h-[60vh] items-center justify-center">
-            <ClerkSignUp />
+          <div className="min-h-screen text-foreground font-sans selection:bg-accent/30">
+            <EtheriaSkyBackground />
+            <div className="flex min-h-[60vh] items-center justify-center">
+              <ClerkSignUp />
+            </div>
           </div>
         }
       />
