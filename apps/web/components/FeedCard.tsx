@@ -170,6 +170,18 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     setIsFollowingAuthor(post.viewer?.followingAuthor ?? false);
   }, [post.id, post.stats.likes, post.viewer?.liked, post.viewer?.followingAuthor]);
 
+  const pushPreviewLog = useCallback(
+    (entry: { level: PreviewLogEntry["level"]; message: string; timestamp?: number }) => {
+      const normalized: PreviewLogEntry = {
+        level: entry.level,
+        message: entry.message.slice(0, 500),
+        timestamp: entry.timestamp ?? Date.now(),
+      };
+      previewLogsRef.current = [...previewLogsRef.current, normalized].slice(-PREVIEW_LOG_LIMIT);
+    },
+    []
+  );
+
   useEffect(() => {
     if (isRunning) {
       if (previewKillTimerRef.current) {
@@ -211,18 +223,6 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
       },
     };
   };
-
-  const pushPreviewLog = useCallback(
-    (entry: { level: PreviewLogEntry["level"]; message: string; timestamp?: number }) => {
-      const normalized: PreviewLogEntry = {
-        level: entry.level,
-        message: entry.message.slice(0, 500),
-        timestamp: entry.timestamp ?? Date.now(),
-      };
-      previewLogsRef.current = [...previewLogsRef.current, normalized].slice(-PREVIEW_LOG_LIMIT);
-    },
-    []
-  );
 
   useEffect(() => {
     if (!isSignedIn) {

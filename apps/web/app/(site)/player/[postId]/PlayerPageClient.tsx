@@ -1698,7 +1698,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         recipes={recipeList}
         isLoading={isRecipesLoading}
         isSaving={isSavingRecipe}
-        canSave={isSignedIn}
+        canSave={!!isSignedIn}
         busyRecipeId={busyRecipeId}
         error={recipesError}
         onSave={handleSaveRecipe}
