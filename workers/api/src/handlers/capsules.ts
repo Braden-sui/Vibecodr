@@ -432,8 +432,9 @@ export async function enforceSafetyForFiles(
       verdict,
     });
 
-    // SOTP Decision: Hard block for severe violations, quarantine for suspicious patterns
-    if (verdict.action === "block") {
+    const unsafe = verdict.action === "block" || (verdict.safe === false && verdict.action !== "quarantine");
+    // SOTP Decision: Hard block for unsafe verdicts, quarantine for suspicious patterns
+    if (unsafe) {
       throw new PublishCapsuleError(403, {
         error: "Unsafe code detected",
         code: "E-VIBECODR-SECURITY-BLOCK",

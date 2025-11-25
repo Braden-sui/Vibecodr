@@ -119,13 +119,23 @@ function createEnv(runs: RunRow[] = []): TestEnv {
             });
           }
         } else if (sql.startsWith("UPDATE runs")) {
-          const [durationMs, status, errorMessage, postId, runId] = this.bindArgs;
-          const run = state.runs.get(runId);
-          if (run) {
-            run.duration_ms = durationMs ?? run.duration_ms ?? null;
-            run.status = status ?? run.status ?? null;
-            run.post_id = run.post_id ?? (postId ?? null);
-            run.error_message = errorMessage ?? run.error_message ?? null;
+          if (sql.includes("duration_ms")) {
+            const [durationMs, status, errorMessage, postId, runId] = this.bindArgs;
+            const run = state.runs.get(runId);
+            if (run) {
+              run.duration_ms = durationMs ?? run.duration_ms ?? null;
+              run.status = status ?? run.status ?? null;
+              run.post_id = run.post_id ?? (postId ?? null);
+              run.error_message = errorMessage ?? run.error_message ?? null;
+            }
+          } else {
+            const [errorMessage, postId, runId] = this.bindArgs;
+            const run = state.runs.get(runId);
+            if (run) {
+              run.status = "failed";
+              run.error_message = errorMessage ?? run.error_message ?? null;
+              run.post_id = run.post_id ?? (postId ?? null);
+            }
           }
         }
         return { success: true };
@@ -265,6 +275,21 @@ describe("startRun", () => {
 });
 
 describe("completeRun", () => {
+  it("rejects invalid JSON with structured error code", async () => {
+    const env = createEnv();
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", { method: "POST", body: "{" }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("E-VIBECODR-0611");
+  });
+
   it("rejects when run quota is exceeded", async () => {
     const env = createEnv();
     mockGetUserRunQuotaState.mockResolvedValueOnce({
@@ -289,11 +314,12 @@ describe("completeRun", () => {
     );
 
     expect(res.status).toBe(429);
-    const body = (await res.json()) as { error: string; plan?: Plan; limits?: any; usage?: any };
+    const body = (await res.json()) as { error: string; plan?: Plan; limits?: any; usage?: any; code?: string };
     expect(body.error).toBe("Run quota exceeded");
     expect(body.plan).toBe(Plan.FREE);
     expect(body.limits?.maxRuns).toBe(PLAN_LIMITS[Plan.FREE].maxRuns);
     expect(body.usage?.runs).toBe(6000);
+    expect(body.code).toBe("E-VIBECODR-0607");
     expect(env.__state.runs.size).toBe(0);
     expect(mockGetUserRunQuotaState).toHaveBeenCalledWith("user-auth-1", env);
   });
@@ -346,6 +372,54 @@ describe("completeRun", () => {
     expect(incrementPostStatsMock).not.toHaveBeenCalled();
   });
 
+  it("fails when capsuleId does not match an existing run", async () => {
+    const env = createEnv([
+      { id: "run-mismatch-cap", capsule_id: "cap-1", post_id: "post-1", user_id: "user-auth-1", status: "started" },
+    ]);
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-mismatch-cap", capsuleId: "cap-2", postId: "post-2" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("E-VIBECODR-0612");
+    const run = env.__state.runs.get("run-mismatch-cap");
+    expect(run?.status).toBe("failed");
+    expect(run?.error_message).toBe("capsule_mismatch");
+    expect(run?.post_id).toBe("post-1");
+  });
+
+  it("fails when postId does not match an existing run", async () => {
+    const env = createEnv([
+      { id: "run-mismatch-post", capsule_id: "cap-1", post_id: "post-1", user_id: "user-auth-1", status: "started" },
+    ]);
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({ runId: "run-mismatch-post", capsuleId: "cap-1", postId: "post-2" }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("E-VIBECODR-0613");
+    const run = env.__state.runs.get("run-mismatch-post");
+    expect(run?.status).toBe("failed");
+    expect(run?.error_message).toBe("post_mismatch");
+    expect(run?.post_id).toBe("post-1");
+  });
+
   it("returns 403 when a run id is already owned by a different user", async () => {
     const env = createEnv([
       { id: "run-existing", capsule_id: "cap-1", post_id: "post-1", user_id: "other-user" },
@@ -389,6 +463,37 @@ describe("completeRun", () => {
     const updated = env.__state.runs.get("run-long");
     expect(updated?.status).toBe("failed");
     expect(updated?.duration_ms).toBe(5000);
+    expect(updated?.error_message).toBe("runtime_budget_exceeded");
+    const writeSpy = env.vibecodr_analytics_engine.writeDataPoint as ReturnType<typeof vi.fn>;
+    const call = writeSpy.mock.calls.at(-1)?.[0] as { blobs?: unknown[] } | undefined;
+    expect(call?.blobs?.[0]).toBe("run_complete");
+    expect(call?.blobs?.[1]).toBe("killed");
+  });
+
+  it("records artifactId in completion analytics", async () => {
+    const env = createEnv();
+
+    const res = await completeRun(
+      new Request("https://example.com/api/runs/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          runId: "run-complete-artifact",
+          capsuleId: "cap-1",
+          postId: "post-1",
+          durationMs: 1000,
+          artifactId: "art-complete-1",
+        }),
+      }),
+      env,
+      {} as any,
+      {}
+    );
+
+    expect(res.status).toBe(200);
+    const writeSpy = env.vibecodr_analytics_engine.writeDataPoint as ReturnType<typeof vi.fn>;
+    const call = writeSpy.mock.calls.at(-1)?.[0] as { blobs?: unknown[] } | undefined;
+    expect(call?.blobs?.[0]).toBe("run_complete");
+    expect(call?.blobs?.[call.blobs!.length - 1]).toBe("art-complete-1");
   });
 });
 

@@ -123,6 +123,25 @@ function normalizeDurationMs(candidate: unknown, startedAtSec: number | null): n
   return null;
 }
 
+async function markRunFailed(env: Env, runId: string, postId: string | null, reason: string) {
+  try {
+    await env.DB.prepare(
+      `UPDATE runs
+       SET status = 'failed',
+           error_message = ?,
+           post_id = COALESCE(post_id, ?)
+       WHERE id = ?`
+    )
+      .bind(reason, postId, runId)
+      .run();
+  } catch (err: any) {
+    console.error("E-VIBECODR-0614 markRunFailed update failed", {
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function incrementRunCounters(ctx: ExecutionContext | null, env: Env, userId: string, postId: string | null, runId: string) {
   await runCounterUpdate(ctx, () => incrementUserCounters(env, userId, { runsDelta: 1 }), {
     code: "E-VIBECODR-0601",
@@ -178,23 +197,7 @@ function writeRunAnalytics(
 
 async function recordRunQuotaObservation(env: Env, userId: string) {
   try {
-    const { plan, runsThisMonth, result } = await getUserRunQuotaState(userId, env);
-
-    try {
-      const analytics = env.vibecodr_analytics_engine;
-      if (analytics && typeof analytics.writeDataPoint === "function") {
-        analytics.writeDataPoint({
-          blobs: ["run_quota_observation", plan, userId],
-          doubles: [runsThisMonth, result.percentUsed ?? 0],
-        });
-      }
-    } catch (err) {
-      console.error("E-VIBECODR-0603 run quota analytics write failed", {
-        userId,
-        runsThisMonth,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await getUserRunQuotaState(userId, env);
   } catch (err) {
     console.error("E-VIBECODR-0604 run quota snapshot failed", {
       userId,
@@ -318,10 +321,17 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
     return json({ error: "Method not allowed" }, 405);
   }
 
+  let payload: unknown;
+  try {
+    payload = await req.json();
+  } catch {
+    return json({ error: "Invalid JSON body", code: "E-VIBECODR-0611" }, 400);
+  }
+
   const limits = parseRuntimeLimits(env);
 
   try {
-    const body = (await req.json()) as {
+    const body = payload as {
       capsuleId?: string;
       postId?: string | null;
       runId?: string | null;
@@ -350,10 +360,12 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
         return json({ error: "Run id is already used by another user" }, 403);
       }
       if (existingRun.capsule_id !== capsuleId) {
-        return json({ error: "capsuleId does not match run" }, 400);
+        await markRunFailed(env, runId, postId, "capsule_mismatch");
+        return json({ error: "capsuleId does not match run", code: "E-VIBECODR-0612", runId }, 400);
       }
       if (existingRun.post_id && postId && existingRun.post_id !== postId) {
-        return json({ error: "postId does not match run" }, 400);
+        await markRunFailed(env, runId, postId, "post_mismatch");
+        return json({ error: "postId does not match run", code: "E-VIBECODR-0613", runId }, 400);
       }
 
       const durationMs = normalizeDurationMs(body.durationMs, existingRun.started_at);

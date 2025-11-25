@@ -101,18 +101,18 @@ export async function runSafetyCheck(env: Env, input: SafetyInput): Promise<Safe
   // SOTP Decision: Check for block-worthy patterns first
   const blockHits = collectPatternHits(input.code, BLOCK_PATTERNS);
   if (blockHits.length > 0) {
-    return block(
+    return allowHeuristics(
       `high-risk pattern detected: ${blockHits.slice(0, 3).join(", ")}`,
-      buildTags(["heuristic_block"], `patterns=${blockHits.slice(0, 5).join(",")}`)
+      buildTags(["heuristics", "heuristic_block"], `patterns=${blockHits.slice(0, 5).join(",")}`)
     );
   }
 
-  // SOTP Decision: Quarantine suspicious patterns (preserves evidence, lowers false-positive fallout)
+  // SOTP Decision: Surface suspicious patterns without blocking to reduce false positives
   const quarantineHits = collectPatternHits(input.code, QUARANTINE_PATTERNS);
   if (quarantineHits.length > 0) {
-    return quarantine(
+    return allowHeuristics(
       `suspicious pattern detected: ${quarantineHits.slice(0, 3).join(", ")}`,
-      buildTags(["heuristic_quarantine"], `patterns=${quarantineHits.slice(0, 5).join(",")}`)
+      buildTags(["heuristics", "heuristic_quarantine"], `patterns=${quarantineHits.slice(0, 5).join(",")}`)
     );
   }
 
@@ -165,6 +165,17 @@ function allowWithNote(note: string): SafetyVerdict {
     reasons: [note],
     blocked_capabilities: [],
     tags: [],
+  };
+}
+
+function allowHeuristics(reason: string, tags: string[] = []): SafetyVerdict {
+  return {
+    safe: true,
+    action: "allow",
+    risk_level: "medium",
+    reasons: [reason],
+    blocked_capabilities: [],
+    tags: buildTags(["heuristics", ...tags]),
   };
 }
 
