@@ -464,9 +464,19 @@ const completeRunHandler: AuthedHandler = async (req, env, ctx, _params, user) =
     }
 
     return json({ ok: true, runId, idempotent: false });
-} catch (error) {
-  return json(
-    { error: "Failed to log run", details: error instanceof Error ? error.message : "Unknown error" },
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error("E-VIBECODR-0610 completeRun handler failed", {
+      error: errorMessage,
+      stack: errorStack,
+    });
+    return json(
+      {
+        error: "Failed to log run",
+        code: "E-VIBECODR-0610",
+        details: errorMessage,
+      },
       500
     );
   }

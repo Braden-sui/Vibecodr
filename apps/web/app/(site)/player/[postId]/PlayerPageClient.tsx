@@ -130,6 +130,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
   const flushLogsTimeoutRef = useRef<number | null>(null);
   const lastPerfEventRef = useRef<number>(0);
+  // WHY: Prevent infinite retry loop when rate-limited. Store timestamp when cooldown expires.
+  const rateLimitCooldownUntilRef = useRef<number>(0);
   const handoffPrefillAppliedRef = useRef(false);
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -674,6 +676,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     if (!post?.capsule?.id || !post?.id) {
       return null;
     }
+    // INVARIANT: If rate-limited, do not retry until cooldown expires (prevents infinite 429 loop)
+    if (Date.now() < rateLimitCooldownUntilRef.current) {
+      return null;
+    }
     const capsule = post.capsule!;
     const postId = post.id;
     if (currentRunRef.current) {
@@ -753,6 +759,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
             maxRuns = body.limits.maxRuns;
           }
           if (response.status === 429) {
+            // SAFETY: Set 30s cooldown to prevent infinite retry loop on rate limit
+            rateLimitCooldownUntilRef.current = Date.now() + 30_000;
             if (errorCode === "E-VIBECODR-0608") {
               toast({
                 title: "Too many active runs",
@@ -996,7 +1004,9 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
   const handleRuntimeError = useCallback(
     (message?: string) => {
-      if (!currentRunRef.current && lastRunRef.current) {
+      // SAFETY: Only restore lastRunRef if we're not in a rate-limit cooldown
+      // (prevents trying to complete a run that was never created on the backend)
+      if (!currentRunRef.current && lastRunRef.current && Date.now() >= rateLimitCooldownUntilRef.current) {
         currentRunRef.current = lastRunRef.current;
       }
       finalizeRunSession("failed", message);
