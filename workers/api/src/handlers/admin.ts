@@ -56,3 +56,52 @@ export const updateUserPlan: Handler = requireAdmin(async (req, env, _ctx, _para
     changedBy: admin.userId,
   });
 });
+
+const searchUsersSchema = z.object({
+  q: z.string().trim().min(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+export const searchUsers: Handler = requireAdmin(async (req, env) => {
+  if (req.method !== "GET") {
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  const url = new URL(req.url);
+  const parsed = searchUsersSchema.safeParse({
+    q: url.searchParams.get("q") || "",
+    limit: url.searchParams.get("limit") || "20",
+  });
+
+  if (!parsed.success) {
+    return json({ error: "Validation failed", details: parsed.error.flatten() }, 400);
+  }
+
+  const { q, limit } = parsed.data;
+  const term = `%${q.toLowerCase()}%`;
+
+  const { results } = await env.DB.prepare(
+    `
+    SELECT id, handle, name, bio, plan, email, created_at
+    FROM users
+    WHERE LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(email) LIKE ?
+    ORDER BY created_at DESC
+    LIMIT ?
+    `
+  )
+    .bind(term, term, term, limit)
+    .all();
+
+  return json({
+    ok: true,
+    users: (results || []).map((row: any) => ({
+      id: String(row.id),
+      handle: String(row.handle),
+      name: row.name ?? null,
+      bio: row.bio ?? null,
+      plan: row.plan ?? "free",
+      email: row.email ?? null,
+      createdAt: row.created_at,
+    })),
+  });
+});

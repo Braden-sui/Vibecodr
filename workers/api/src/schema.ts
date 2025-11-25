@@ -11,6 +11,7 @@ export const users = sqliteTable("users", {
   name: text("name"),
   avatarUrl: text("avatar_url"),
   bio: text("bio"),
+  email: text("email"),
   // Subscription plan
   plan: text("plan", { enum: ["free", "creator", "pro", "team"] }).default("free"),
   // Storage accounting (optimistic locking)
@@ -309,6 +310,7 @@ export const createUserSchema = z.object({
   name: z.string().nullable().optional(),
   avatarUrl: z.string().url().nullable().optional(),
   bio: z.string().max(500).nullable().optional(),
+  email: z.string().email().toLowerCase().optional(),
   plan: z.enum(["free", "creator", "pro", "team"]).optional(),
 });
 

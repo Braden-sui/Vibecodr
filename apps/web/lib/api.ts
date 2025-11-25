@@ -676,6 +676,16 @@ export const adminApi = {
       ...init,
     });
   },
+  searchUsers(query: string, init?: RequestInit) {
+    const params = new URLSearchParams();
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+    return fetch(workerUrl(`/admin/users/search?${params.toString()}`), {
+      method: "GET",
+      ...(init || {}),
+    });
+  },
 } as const;
 
 export const runsApi = {

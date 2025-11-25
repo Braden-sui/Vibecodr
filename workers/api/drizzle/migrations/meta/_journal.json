@@ -22,6 +22,20 @@
       "when": 1764027803900,
       "tag": "0002_rich_slapstick",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764035480306,
+      "tag": "0020_add_user_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1764035484008,
+      "tag": "0004_tiny_hiroim",
+      "breakpoints": true
     }
   ]
 }
