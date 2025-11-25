@@ -23,6 +23,7 @@ import {
   moderationApi,
   recipesApi,
   remixesApi,
+  workerUrl,
   type FeedPost,
   mapApiFeedPostToFeedPost,
   type RemixTreeResponse,
@@ -120,6 +121,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const runStartInFlightRef = useRef(false);
   const pendingRunStartRef = useRef<Promise<RunSession | null> | null>(null);
   const runtimeSlotRef = useRef<symbol | string | null>(null);
+  const authHeaderRef = useRef<string | null>(null);
   const bootTimerRef = useRef<number | null>(null);
   const runTimerRef = useRef<number | null>(null);
   const budgetStateRef = useRef<{ bootStartedAt: number | null; runStartedAt: number | null; budgetViolated: boolean }>({
@@ -193,6 +195,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     if (typeof getToken !== "function") return undefined;
     const token = await getToken({ template: "workers" });
     if (!token) return undefined;
+    authHeaderRef.current = `Bearer ${token}`;
     return {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -605,6 +608,45 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     },
     [buildAuthInit, clearBudgetTimers, flushLogBatch, post, releaseRuntimeSlotGuard, resetBudgetState]
   );
+
+  const sendAbandonBeacon = useCallback(() => {
+    if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return;
+    const session = currentRunRef.current;
+    const currentPost = post;
+    const capsule = currentPost?.capsule;
+    if (!session || !capsule || !currentPost?.id) return;
+
+    const durationMs = Math.max(0, Date.now() - session.startedAt);
+    const payload = JSON.stringify({
+      runId: session.id,
+      capsuleId: capsule.id,
+      postId: currentPost.id,
+      durationMs,
+      status: "failed",
+      errorMessage: "page_unload",
+      artifactId: capsule.artifactId ?? null,
+    });
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (authHeaderRef.current) {
+      headers.Authorization = authHeaderRef.current;
+    }
+
+    const blob = new Blob([payload], { type: "application/json" });
+    navigator.sendBeacon(workerUrl("/runs/complete"), blob);
+    currentRunRef.current = null;
+    finishedRunRef.current = { runId: session.id, status: "failed" };
+  }, [post]);
+
+  useEffect(() => {
+    const handler = () => sendAbandonBeacon();
+    window.addEventListener("pagehide", handler);
+    window.addEventListener("beforeunload", handler);
+    return () => {
+      window.removeEventListener("pagehide", handler);
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, [sendAbandonBeacon]);
 
   const handleBudgetViolation = useCallback(
     (
