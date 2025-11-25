@@ -1240,6 +1240,24 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Telemetry send failed. Please retry.",
     logMessage: "Telemetry send failed",
   },
+
+  // 32xx: admin inspector + diagnostics
+  "E-VIBECODR-3201": {
+    code: "E-VIBECODR-3201",
+    category: "internal",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Inspector diagnostics are temporarily unavailable.",
+    logMessage: "Inspector compile state fetch failed",
+  },
+  "E-VIBECODR-3202": {
+    code: "E-VIBECODR-3202",
+    category: "internal",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Inspector failed to load capsule or runtime manifests.",
+    logMessage: "Inspector manifest parse or load failed",
+  },
 };
 
 export type ErrorCode = keyof typeof definitions;
@@ -1265,6 +1283,8 @@ export const ERROR_RUNTIME_COOKIE_BLOCKED: ErrorCode = "E-VIBECODR-2121";
 export const ERROR_RUNTIME_NAVIGATION_BLOCKED: ErrorCode = "E-VIBECODR-2122";
 export const ERROR_RUNTIME_ANALYTICS_FAILED: ErrorCode = "E-VIBECODR-2130";
 export const ERROR_RUNTIME_ANALYTICS_SUMMARY_FAILED: ErrorCode = "E-VIBECODR-2131";
+export const ERROR_INSPECTOR_COMPILE_STATE_FAILED: ErrorCode = "E-VIBECODR-3201";
+export const ERROR_INSPECTOR_MANIFEST_LOAD_FAILED: ErrorCode = "E-VIBECODR-3202";
 
 export function getErrorDefinition(code: string): ErrorDefinition | undefined {
   return definitions[code];

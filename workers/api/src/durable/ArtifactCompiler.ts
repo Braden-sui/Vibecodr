@@ -4,6 +4,7 @@ import type { Manifest } from "@vibecodr/shared/manifest";
 import {
   ERROR_ARTIFACT_COMPILER_STATE_WRITE_FAILED,
   ERROR_ARTIFACT_COMPILER_ANALYTICS_FAILED,
+  ERROR_INSPECTOR_COMPILE_STATE_FAILED,
 } from "@vibecodr/shared";
 import { compileReactArtifact } from "../runtime/compileReactArtifact";
 import { compileHtmlArtifact } from "../runtime/compileHtmlArtifact";
@@ -111,6 +112,33 @@ export class ArtifactCompiler {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
 
+    if (req.method === "GET" && url.pathname.endsWith("/inspect")) {
+      try {
+        const [lastCompileRequest, lastCompileResult] = await Promise.all([
+          this.state.storage.get("lastCompileRequest"),
+          this.state.storage.get("lastCompileResult"),
+        ]);
+
+        return json({
+          ok: true,
+          lastCompileRequest: lastCompileRequest || null,
+          lastCompileResult: lastCompileResult || null,
+        });
+      } catch (error) {
+        console.error(`${ERROR_INSPECTOR_COMPILE_STATE_FAILED} ArtifactCompiler inspect read failed`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return json(
+          {
+            ok: false,
+            error: "compile_state_unavailable",
+            code: ERROR_INSPECTOR_COMPILE_STATE_FAILED,
+          },
+          500
+        );
+      }
+    }
+
     if (req.method === "POST" && url.pathname.endsWith("/compile")) {
       const parsed = await this.parseBody(req);
       if (!parsed.ok) {
@@ -127,6 +155,7 @@ export class ArtifactCompiler {
           bundleKey: result.bundleKey,
           runtimeType: result.runtimeType,
           bundleSize: result.bundleSizeBytes,
+          warnings: result.warnings,
         });
 
         return json(

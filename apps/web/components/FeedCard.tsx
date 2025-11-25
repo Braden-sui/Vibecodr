@@ -257,6 +257,17 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     return resetPreviewTimers;
   }, [isRunning, previewLoaded, pushPreviewLog, resetPreviewTimers]);
 
+  useEffect(() => {
+    setPreviewErrorMessage(null);
+    setPreviewLoaded(false);
+    setIsRunning(false);
+    resetPreviewTimers();
+    if (clickRunIncrementRef.current) {
+      activePreviewCount = Math.max(0, activePreviewCount - 1);
+      clickRunIncrementRef.current = false;
+    }
+  }, [post.id, resetPreviewTimers]);
+
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
     const token = await getToken({ template: "workers" });
@@ -948,6 +959,28 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                       }
                     }}
                   />
+                  {bootCountdownMs !== null && !previewLoaded && (
+                    <div
+                      className="pointer-events-none absolute bottom-3 right-3 z-30 rounded-xl border bg-background/90 px-3 py-2 shadow-sm backdrop-blur"
+                      data-testid="preview-boot-countdown"
+                    >
+                      <p className="text-xs font-semibold leading-tight">Starting preview</p>
+                      <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>{Math.max(0, Math.ceil(bootCountdownMs / 1000))}s to timeout</span>
+                        <div className="relative h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="absolute inset-y-0 left-0 bg-primary transition-[width] duration-200"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.max(0, ((PREVIEW_KILL_MS - bootCountdownMs) / PREVIEW_KILL_MS) * 100)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -963,9 +996,9 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                     <Play className="h-5 w-5" />
                     Run Preview
                   </Button>
-                  {previewError && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/5">
-                      <p className="text-sm text-destructive">Preview unavailable</p>
+                  {previewErrorMessage && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/5 px-6 text-center">
+                      <p className="text-sm font-semibold text-destructive">{previewErrorMessage}</p>
                     </div>
                   )}
                 </div>

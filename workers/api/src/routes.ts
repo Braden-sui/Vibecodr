@@ -63,6 +63,7 @@ import {
 import { doStatus } from "./handlers/status";
 import { updateUserPlan, searchUsers } from "./handlers/admin";
 import { createPost, getDiscoverPosts, getPostById, getPosts, uploadCover } from "./handlers/posts";
+import { inspectArtifact, inspectCapsule } from "./handlers/inspector";
 
 export type Route = { method: string; pattern: RegExp; handler: Handler };
 
@@ -112,6 +113,8 @@ export const routes: Route[] = [
   { method: "POST", pattern: /^\/admin\/users\/plan$/, handler: updateUserPlan },
   { method: "PATCH", pattern: /^\/admin\/users\/plan$/, handler: updateUserPlan },
   { method: "GET", pattern: /^\/admin\/users\/search$/, handler: searchUsers },
+  { method: "GET", pattern: /^\/admin\/artifacts\/([^\/]+)\/inspect$/, handler: inspectArtifact },
+  { method: "GET", pattern: /^\/admin\/capsules\/([^\/]+)\/inspect$/, handler: inspectCapsule },
 
   // Extended profile feature
   { method: "GET", pattern: /^\/profile\/([^\/]+)$/, handler: getProfileWithLayout },

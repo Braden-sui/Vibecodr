@@ -9,12 +9,19 @@ import type { ManifestParam } from "@vibecodr/shared/manifest";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
 const RUNNER_ORIGIN = new URL(capsulesApi.bundleSrc("capsule1")).origin;
+const PREVIEW_KILL_MS = 6000;
+const PREVIEW_KILL_WARN_MS = 3000;
+const toastMock = vi.fn();
 
 vi.mock("@clerk/clerk-react", () => ({
   useUser: () => mockUseUser(),
   useAuth: () => ({
     getToken: vi.fn(async () => "test-token"),
   }),
+}));
+
+vi.mock("@/lib/toast", () => ({
+  toast: (...args: any[]) => toastMock(...args),
 }));
 
 const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
@@ -66,6 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -223,6 +231,56 @@ describe("FeedCard", () => {
 
     // restore
     if (hiddenDescriptor) Object.defineProperty(document, "hidden", hiddenDescriptor);
+  });
+
+  it("shows a boot countdown, warns at 3s remaining, and surfaces a timeout message", async () => {
+    vi.useFakeTimers();
+
+    renderWithRouter(<FeedCard post={mockPost} />);
+
+    fireEvent.click(screen.getByText("Run Preview"));
+
+    const countdown = screen.getByTestId("preview-boot-countdown");
+    expect(countdown).toHaveTextContent("Starting preview");
+    expect(countdown).toHaveTextContent("6s to timeout");
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_KILL_WARN_MS + 200);
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Preview stopping in 3s...",
+      })
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_KILL_MS);
+    });
+
+    expect(
+      screen.getByText(/Preview stopped because it took too long to start/i)
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the inline preview running after it loads, without enforcing the boot timeout", async () => {
+    vi.useFakeTimers();
+
+    renderWithRouter(<FeedCard post={mockPost} />);
+    fireEvent.click(screen.getByText("Run Preview"));
+
+    const iframe = screen.getByTitle("Preview for Test App");
+    await act(async () => {
+      fireEvent.load(iframe);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_KILL_MS + 1000);
+    });
+
+    expect(screen.queryByText("Run Preview")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Preview for Test App")).toBeInTheDocument();
+    expect(screen.queryByTestId("preview-boot-countdown")).not.toBeInTheDocument();
   });
 
   it("should render author information", () => {

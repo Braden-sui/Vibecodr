@@ -686,6 +686,20 @@ export const adminApi = {
       ...(init || {}),
     });
   },
+  inspectArtifact(artifactId: string, init?: RequestInit) {
+    const encoded = encodeURIComponent(artifactId);
+    return fetch(workerUrl(`/admin/artifacts/${encoded}/inspect`), {
+      method: "GET",
+      ...(init || {}),
+    });
+  },
+  inspectCapsule(capsuleId: string, init?: RequestInit) {
+    const encoded = encodeURIComponent(capsuleId);
+    return fetch(workerUrl(`/admin/capsules/${encoded}/inspect`), {
+      method: "GET",
+      ...(init || {}),
+    });
+  },
 } as const;
 
 export const runsApi = {
