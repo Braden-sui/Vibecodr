@@ -818,7 +818,7 @@ mount.render(React.createElement(UserApp));
       animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
     >
-      <Card className={cn("mb-6 overflow-hidden rounded-2xl vc-surface bg-transparent shadow-none", className)}>
+      <Card className={cn("mb-6 overflow-hidden", className)}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />

@@ -765,7 +765,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   return (
     <VibeCard
       ref={cardRef}
-      className="group relative overflow-hidden rounded-2xl vc-surface shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg p-0"
+      className="group relative overflow-hidden rounded-2xl vc-glass shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg p-0"
       initial={prefersReducedMotion ? undefined : { opacity: 0.98, y: 8 }}
       whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}

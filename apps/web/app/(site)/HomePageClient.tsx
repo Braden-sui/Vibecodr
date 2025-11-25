@@ -512,7 +512,7 @@ export default function FeedPage() {
       </motion.section>
 
       <Tabs value={mode} onValueChange={handleModeChange}>
-        <TabsList className="grid w-full max-w-md grid-cols-3 vc-surface p-1">
+        <TabsList className="grid w-full max-w-md grid-cols-3 p-1">
           <TabsTrigger value="latest">Latest</TabsTrigger>
           <TabsTrigger value="following">Following</TabsTrigger>
           <TabsTrigger value="foryou" className="gap-2">

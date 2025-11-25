@@ -130,7 +130,7 @@ const renderBanner: BlockRenderer = ({ data }) => {
   const showPlan = plan !== null && plan !== Plan.FREE;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-[var(--vc-surface)] p-6 shadow-[var(--shadow,0_20px_60px_rgba(0,0,0,0.45))]">
+    <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-[var(--vc-surface)] backdrop-blur-xl p-6 shadow-[var(--shadow,0_20px_60px_rgba(0,0,0,0.45))]">
       <div
         className="pointer-events-none absolute inset-0 opacity-50"
         style={{
@@ -301,7 +301,7 @@ const renderCapsuleEmbed: BlockRenderer = ({ block }) => {
   if (!embedUrl) return null;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-[color:var(--vc-surface)] shadow">
+    <div className="overflow-hidden rounded-xl border border-white/20 bg-[color:var(--vc-surface)] backdrop-blur-xl shadow">
       <iframe
         src={embedUrl}
         title="Profile capsule"
