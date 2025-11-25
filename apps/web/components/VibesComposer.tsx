@@ -111,7 +111,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
   const [zipManifestWarnings, setZipManifestWarnings] = useState<ZipManifestIssue[]>([]);
-  const [zipPublishWarnings, setZipPublishWarnings] = useState<string[]>([]);
+  const [zipPublishWarnings, setZipPublishWarnings] = useState<Array<{ path?: string; message: string } | string>>([]);
 
   // Inline code state
   const [code, setCode] = useState("");
@@ -377,7 +377,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       const data = (await response.json()) as {
         success?: boolean;
         capsuleId?: string;
-        warnings?: string[];
+        warnings?: Array<{ path?: string; message: string } | string>;
         error?: string;
       };
 
@@ -1318,9 +1318,16 @@ mount.render(React.createElement(UserApp));
                           {zipPublishWarnings.length > 0 && (
                             <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
                               <p className="text-xs font-medium">Publish warnings</p>
-                              {zipPublishWarnings.map((warning, index) => (
-                                <p key={`${warning}-${index}`}>{warning}</p>
-                              ))}
+                              {zipPublishWarnings.map((warning, index) => {
+                                // API may return string or {path, message} - handle both
+                                const msg = typeof warning === "string" ? warning : warning.message;
+                                const path = typeof warning === "object" && warning.path ? warning.path : null;
+                                return (
+                                  <p key={`publish-warning-${index}`}>
+                                    {path && <span className="font-mono">{path}</span>}{path && ": "}{msg}
+                                  </p>
+                                );
+                              })}
                             </div>
                           )}
                         </div>

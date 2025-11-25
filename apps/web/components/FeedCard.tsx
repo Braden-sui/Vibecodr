@@ -61,6 +61,8 @@ export interface FeedCardProps {
 // Global concurrency cap for active previews
 let activePreviewCount = 0;
 const MAX_ACTIVE_PREVIEWS = 2;
+const PREVIEW_KILL_MS = 6_000;
+const PREVIEW_GUARD_URL = "/runtime-assets/v0.1.0/guard.js";
 
 // Global cap for manifest preloads to avoid stampedes
 let manifestPreloadsInFlight = 0;
@@ -92,6 +94,32 @@ function resolveRunnerOrigins(capsuleId?: string, artifactId?: string | null): s
   }
 
   return Array.from(origins);
+}
+
+function buildPreviewSrcDoc(bundleUrl: string): string {
+  const escapedBundle = bundleUrl.replace(/"/g, "&quot;");
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script src="${PREVIEW_GUARD_URL}"></script>
+    <script>
+      (async () => {
+        try {
+          const res = await fetch("${escapedBundle}", { cache: "no-store" });
+          const html = await res.text();
+          document.open();
+          document.write(html);
+          document.close();
+        } catch (err) {
+          document.body.innerText = "Preview failed to load.";
+          console.error("E-VIBECODR-0999 preview guard fetch failed", err);
+        }
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>`;
 }
 
 export function FeedCard({ post, onTagClick }: FeedCardProps) {
@@ -126,6 +154,8 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const pauseStateRef = useRef<"paused" | "running">("running");
   const lastIntersectionRatioRef = useRef(1);
   const [isModerating, setIsModerating] = useState(false);
+  const previewKillTimerRef = useRef<number | null>(null);
+  const previewRetryRef = useRef(false);
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const previewLogsRef = useRef<PreviewLogEntry[]>([]);
   const prefersReducedMotion = useReducedMotion();
@@ -139,6 +169,37 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     setLikeCount(post.stats.likes);
     setIsFollowingAuthor(post.viewer?.followingAuthor ?? false);
   }, [post.id, post.stats.likes, post.viewer?.liked, post.viewer?.followingAuthor]);
+
+  useEffect(() => {
+    if (isRunning) {
+      if (previewKillTimerRef.current) {
+        clearTimeout(previewKillTimerRef.current);
+      }
+      previewKillTimerRef.current = window.setTimeout(() => {
+        setPreviewError(true);
+        setIsRunning(false);
+        pushPreviewLog({
+          level: "error",
+          message: `Preview killed after ${PREVIEW_KILL_MS}ms`,
+        });
+        if (!previewRetryRef.current) {
+          previewRetryRef.current = true;
+          window.setTimeout(() => {
+            previewRetryRef.current = false;
+          }, 500);
+        }
+      }, PREVIEW_KILL_MS);
+    } else if (previewKillTimerRef.current) {
+      clearTimeout(previewKillTimerRef.current);
+      previewKillTimerRef.current = null;
+    }
+    return () => {
+      if (previewKillTimerRef.current) {
+        clearTimeout(previewKillTimerRef.current);
+        previewKillTimerRef.current = null;
+      }
+    };
+  }, [isRunning, pushPreviewLog]);
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -261,6 +322,9 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsuleId ? capsulesApi.bundleSrc(capsuleId) : ""),
     [artifactId, capsuleId]
   );
+  const previewSrcDoc = useMemo(() => {
+    return bundleUrl ? buildPreviewSrcDoc(bundleUrl) : undefined;
+  }, [bundleUrl]);
   const runnerOrigins = useMemo(
     () => resolveRunnerOrigins(capsuleId, artifactId),
     [artifactId, capsuleId]
@@ -790,6 +854,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                 <div className="absolute inset-0 z-10">
                   <iframe
                     ref={iframeRef}
+                    srcDoc={previewSrcDoc}
                     src={bundleUrl}
                     className="h-full w-full border-0"
                     sandbox="allow-scripts"
