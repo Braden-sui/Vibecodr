@@ -36,7 +36,7 @@ type RuntimeBudgetsConfig = {
   /**
    * Hard kill timeout for client-static (react-jsx, html) runtimes.
    * @enforcement KILL - iframe navigated to about:blank, error shown to user
-   * @default 5000
+   * @default 30000
    */
   clientStaticBootMs: number;
 
@@ -56,7 +56,7 @@ type RuntimeBudgetsConfig = {
   /**
    * Hard kill timeout for WebContainer boot.
    * @enforcement KILL - iframe navigated to about:blank, error shown to user
-   * @default 6000
+   * @default 30000
    */
   webContainerBootHardKillMs: number;
 
@@ -71,7 +71,7 @@ type RuntimeBudgetsConfig = {
 /**
  * Default budget values.
  *
- * SOTP Decision: Target 4-5s p95 for WebContainer, hard kill at 6s.
+ * SOTP Decision: 30s hard kill for client-static; WebContainer warn stays at 5s but hard kill matches 30s cap.
  *
  * These can be overridden via environment variables:
  * - VIBECODR_RUNTIME_MAX_CONCURRENT
@@ -86,7 +86,7 @@ const DEFAULT_BUDGETS: RuntimeBudgetsConfig = {
   maxConcurrentRunners: 2,
 
   // KILL: Hard kill for client-static runtimes
-  clientStaticBootMs: 5_000,
+  clientStaticBootMs: 30_000,
 
   // DEPRECATED: Use webContainerBootTargetMs or webContainerBootHardKillMs
   webContainerBootMs: 5_000,
@@ -95,7 +95,7 @@ const DEFAULT_BUDGETS: RuntimeBudgetsConfig = {
   webContainerBootTargetMs: 5_000,
 
   // KILL: Hard kill for WebContainer runtimes
-  webContainerBootHardKillMs: 6_000,
+  webContainerBootHardKillMs: 30_000,
 
   // KILL (TODO): Should terminate session after threshold
   runSessionMs: 60_000,
