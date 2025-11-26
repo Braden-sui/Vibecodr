@@ -12,7 +12,7 @@ describe("runtimeHeaders", () => {
 
     expect(shouldApplyRuntimeHeaders(request, response)).toBe(true);
     expect(secured.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
-    expect(secured.headers.get("Permissions-Policy")).toContain("camera=()");
+    expect(secured.headers.get("Permissions-Policy")).toBeNull();
     expect(secured.headers.get("Cross-Origin-Embedder-Policy")).toBe("require-corp");
     expect(secured.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'nonce-[^';]+'/);
     expect(secured.headers.get("Content-Security-Policy")).not.toContain("unsafe-inline");
@@ -23,6 +23,21 @@ describe("runtimeHeaders", () => {
     const response = new Response("{}", { headers: { "content-type": "application/javascript" } });
 
     expect(shouldApplyRuntimeHeaders(request, response)).toBe(false);
+  });
+
+  it("does not rewrite non-runtime html routes", () => {
+    const request = new Request("https://vibecodr.space/post/123");
+    const response = new Response("<html></html>", {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "frame-ancestors 'none'",
+      },
+    });
+
+    const secured = applyRuntimeHeaders(response, request);
+
+    expect(shouldApplyRuntimeHeaders(request, response)).toBe(false);
+    expect(secured.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
   });
 
   it("allows embeds to be framed broadly while keeping COEP off", () => {

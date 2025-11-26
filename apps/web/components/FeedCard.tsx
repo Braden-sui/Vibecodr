@@ -7,6 +7,7 @@ import { CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import VibeCard from "@/src/components/VibeCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FeedRuntimePreview } from "@/components/runtime/FeedRuntimePreview";
 import {
   Play,
   GitFork,
@@ -63,7 +64,6 @@ let activePreviewCount = 0;
 const MAX_ACTIVE_PREVIEWS = 2;
 const PREVIEW_KILL_MS = 6_000;
 const PREVIEW_KILL_WARN_MS = 3_000;
-const PREVIEW_GUARD_URL = "/runtime-assets/v0.1.0/guard.js";
 
 // Global cap for manifest preloads to avoid stampedes
 let manifestPreloadsInFlight = 0;
@@ -95,32 +95,6 @@ function resolveRunnerOrigins(capsuleId?: string, artifactId?: string | null): s
   }
 
   return Array.from(origins);
-}
-
-function buildPreviewSrcDoc(bundleUrl: string): string {
-  const escapedBundle = bundleUrl.replace(/"/g, "&quot;");
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script src="${PREVIEW_GUARD_URL}"></script>
-    <script>
-      (async () => {
-        try {
-          const res = await fetch("${escapedBundle}", { cache: "no-store" });
-          const html = await res.text();
-          document.open();
-          document.write(html);
-          document.close();
-        } catch (err) {
-          document.body.innerText = "Preview failed to load.";
-          console.error("E-VIBECODR-0999 preview guard fetch failed", err);
-        }
-      })();
-    </script>
-  </head>
-  <body></body>
-</html>`;
 }
 
 export function FeedCard({ post, onTagClick }: FeedCardProps) {
@@ -373,13 +347,6 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const artifactId = post.capsule?.artifactId ?? null;
   const isWebContainer = post.capsule?.runner === "webcontainer";
   // Note: WebContainer runner should support equivalent pause/resume semantics when inline runs are enabled.
-  const bundleUrl = useMemo(
-    () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsuleId ? capsulesApi.bundleSrc(capsuleId) : ""),
-    [artifactId, capsuleId]
-  );
-  const previewSrcDoc = useMemo(() => {
-    return bundleUrl ? buildPreviewSrcDoc(bundleUrl) : undefined;
-  }, [bundleUrl]);
   const runnerOrigins = useMemo(
     () => resolveRunnerOrigins(capsuleId, artifactId),
     [artifactId, capsuleId]
@@ -689,6 +656,49 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     setIsHovering(false);
   };
 
+  const handlePreviewReady = useCallback(() => {
+    const bootTime = Date.now() - (prebootStartRef.current || Date.now());
+    if (bootTime > (isWebContainer ? 1500 : 1000)) {
+      console.warn(
+        `Preview exceeded ${isWebContainer ? "WebContainer" : "client-static"} budget: ${bootTime}ms`
+      );
+    }
+    if (clickRunIncrementRef.current) {
+      activePreviewCount = Math.max(0, activePreviewCount - 1);
+      clickRunIncrementRef.current = false;
+    }
+    if (!previewLoaded) {
+      setPreviewLoaded(true);
+    }
+  }, [isWebContainer, previewLoaded]);
+
+  const handlePreviewError = useCallback(
+    (message?: string) => {
+      const normalizedMessage =
+        message || "This vibe failed to load here. Open the player for a full run.";
+      if (typeof console !== "undefined" && typeof console.error === "function") {
+        console.error("[feed_preview] runtime error", {
+          postId: post.id,
+          capsuleId,
+          artifactId,
+          message: normalizedMessage,
+        });
+      }
+      setPreviewErrorMessage(normalizedMessage);
+      setIsRunning(false);
+      pushPreviewLog({
+        level: "error",
+        message: normalizedMessage,
+      });
+      resetPreviewTimers();
+      if (clickRunIncrementRef.current) {
+        activePreviewCount = Math.max(0, activePreviewCount - 1);
+        clickRunIncrementRef.current = false;
+      }
+    },
+    [artifactId, capsuleId, post.id, pushPreviewLog, resetPreviewTimers]
+  );
+
   // Handle click to run
   const handleClickToRun = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -700,6 +710,16 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
       toast({
         title: "Preview limit reached",
         description: "Only two inline previews can run at once. Opening the player instead.",
+        variant: "warning",
+      });
+      window.location.href = `/player/${post.id}`;
+      return;
+    }
+
+    if (!artifactId) {
+      toast({
+        title: "Preview unavailable",
+        description: "Open the player to run this vibe without limits.",
         variant: "warning",
       });
       window.location.href = `/player/${post.id}`;
@@ -911,51 +931,15 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
               )}
             >
               {/* Preview iframe for running apps */}
-              {isRunning && capsuleId && (
+              {isRunning && capsuleId && artifactId && (
                 <div className="absolute inset-0 z-10">
-                  <iframe
+                  <FeedRuntimePreview
                     ref={iframeRef}
-                    srcDoc={previewSrcDoc}
-                    src={bundleUrl}
-                    className="h-full w-full border-0"
-                    title={`Preview for ${post.title}`}
-                    sandbox="allow-scripts"
-                    // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit
-                    // Capsules use postMessage for parent communication, not same-origin APIs
-                    data-runtime-network-mode={process.env.NEXT_PUBLIC_RUNTIME_BUNDLE_NETWORK_MODE || "offline"}
-                    style={{
-                      colorScheme: "normal",
-                    }}
-                    onLoad={() => {
-                      const bootTime = Date.now() - (prebootStartRef.current || Date.now());
-                      if (bootTime > (isWebContainer ? 1500 : 1000)) {
-                        console.warn(
-                          `Preview exceeded ${isWebContainer ? "WebContainer" : "client-static"} budget: ${bootTime}ms`
-                        );
-                      }
-                      if (clickRunIncrementRef.current) {
-                        activePreviewCount = Math.max(0, activePreviewCount - 1);
-                        clickRunIncrementRef.current = false;
-                      }
-                      if (!previewLoaded) {
-                        setPreviewLoaded(true);
-                      }
-                    }}
-                    onError={() => {
-                      setPreviewErrorMessage(
-                        "Preview failed to load here. Open the player to run without a time limit."
-                      );
-                      setIsRunning(false);
-                      pushPreviewLog({
-                        level: "error",
-                        message: "Preview iframe failed to load",
-                      });
-                      resetPreviewTimers();
-                      if (clickRunIncrementRef.current) {
-                        activePreviewCount = Math.max(0, activePreviewCount - 1);
-                        clickRunIncrementRef.current = false;
-                      }
-                    }}
+                    artifactId={String(artifactId)}
+                    capsuleId={capsuleId}
+                    className="h-full w-full"
+                    onReady={handlePreviewReady}
+                    onError={handlePreviewError}
                   />
                   {bootCountdownMs !== null && !previewLoaded && (
                     <div

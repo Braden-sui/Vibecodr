@@ -22,11 +22,19 @@ function isRuntimePage(request: Request): boolean {
   return RUNTIME_PAGE_PATHS.some((pattern) => pattern.test(pathname));
 }
 
+function isRuntimePathname(pathname: string): boolean {
+  return RUNTIME_PAGE_PATHS.some((pattern) => pattern.test(pathname));
+}
+
 export function shouldApplyRuntimeHeaders(request: Request, response: Response): boolean {
   return isHtmlResponse(response) && isRuntimePage(request);
 }
 
 export function applyRuntimeHeadersForPath(response: Response, pathname: string): Response {
+  if (!isRuntimePathname(pathname)) {
+    return response;
+  }
+
   const headers = new Headers(response.headers);
   const allowEmbedding = EMBED_PATH_PATTERN.test(pathname);
   const frameAncestors = allowEmbedding ? "*" : "'self'";

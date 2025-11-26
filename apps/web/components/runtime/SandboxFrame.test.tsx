@@ -72,7 +72,7 @@ describe("SandboxFrame", () => {
   });
 
   it("includes the provided nonce across CSP and scripts", () => {
-    const manifestWithNonce = { ...manifest, cspNonce: "abc123" };
+    const manifestWithNonce = { ...manifest, cspNonce: "abc123", type: "react-jsx" };
     const { getByTitle } = render(
       <SandboxFrame manifest={manifestWithNonce} title="nonce-test" />
     );
@@ -83,5 +83,21 @@ describe("SandboxFrame", () => {
     expect(srcdoc).toContain("'nonce-abc123'");
     expect(srcdoc).toContain('nonce="abc123"');
     expect(srcdoc).not.toContain("unsafe-inline");
+  });
+
+  it("allows HTML runtimes to fetch bundles and inline styles inside the sandbox", () => {
+    const { getByTitle } = render(
+      <SandboxFrame
+        manifest={{ ...manifest, type: "html" }}
+        bundleUrl="https://cdn.example/artifacts/html-bundle.html"
+        title="html-runtime-frame"
+      />
+    );
+
+    const srcdoc = getByTitle("html-runtime-frame").getAttribute("srcdoc") || "";
+
+    expect(srcdoc).toMatch(/connect-src\s+https:\/\/cdn\.example/);
+    expect(srcdoc).toMatch(/style-src\s+'self'\s+'unsafe-inline'/);
+    expect(srcdoc).not.toMatch(/<script[^>]+src="https:\/\/cdn\.example\/artifacts\/html-bundle\.html"/);
   });
 });

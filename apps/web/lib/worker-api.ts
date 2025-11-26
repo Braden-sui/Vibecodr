@@ -6,6 +6,8 @@ function normalizeBaseUrl(value?: string | null) {
   return value.replace(/\/+$/, "");
 }
 
+// WHY: Runtime/API base defaults to workers.dev unless env overrides supply a custom domain.
+// INVARIANT: Only use an alternate base when env vars explicitly provide it.
 export function getWorkerApiBase() {
   const envBases = [
     process.env.WORKER_API_BASE,

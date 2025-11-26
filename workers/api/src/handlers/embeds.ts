@@ -31,7 +31,7 @@ const EMBED_MIN_HEIGHT = 200;
 const EMBED_MAX_HEIGHT = 900;
 const OEMBED_RATE_LIMIT = 60;
 const EMBED_RATE_LIMIT = 120;
-export const EMBED_IFRAME_SANDBOX = "allow-scripts allow-same-origin";
+export const EMBED_IFRAME_SANDBOX = "allow-scripts";
 export const EMBED_IFRAME_ALLOW =
   "accelerometer 'none'; autoplay 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
 export const EMBED_PERMISSIONS_POLICY_HEADER =

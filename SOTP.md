@@ -10,9 +10,9 @@
 
 Vibecodr is a social platform for sharing runnable "vibes" (capsules)—mini-apps that execute in sandboxed iframes. The architecture demonstrates solid foundational security: iframe sandboxing, nonce-based CSP, structured error codes, and layered Clerk JWT auth in Cloudflare Workers.
 
-**Critical gaps exist in three areas:**
+**Critical gaps exist in three areas (with sandbox inconsistency now remediated):**
 
-1. **Sandbox inconsistency**: FeedCard uses `allow-scripts allow-same-origin` vs PlayerIframe's stricter `allow-scripts` only
+1. **Sandbox consistency (addressed 2025-11-26):** Feed previews and embeds now reuse the SandboxFrame runtime with `allow-scripts` only; keep monitoring for regressions.
 
 2. **Incomplete budget enforcement** for WebContainer runners
 
@@ -26,15 +26,15 @@ Vibecodr is a social platform for sharing runnable "vibes" (capsules)—mini-app
 
 ### 2.1 CSP & Sandbox Configuration
 
-**[CRITICAL] Sandbox Attribute Inconsistency:**
+**[CRITICAL → ADDRESSED] Sandbox Attribute Inconsistency:**
 
 | Location | Sandbox Value | Risk |
 |----------|---------------|------|
 | `lib/runtime/sandboxPolicies.ts:1` | `allow-scripts` | Safe |
 | `components/Player/PlayerIframe.tsx:552` | `RUNTIME_IFRAME_SANDBOX` | Safe |
-| `components/FeedCard.tsx:746` | `allow-scripts allow-same-origin` | **DANGEROUS** |
-| `public/embed.js:16` | `allow-scripts allow-same-origin` | **DANGEROUS** |
-| `lib/profile/blocks.tsx:308` | `allow-scripts allow-same-origin` | **DANGEROUS** |
+| `components/FeedCard.tsx` | `SandboxFrame` (`allow-scripts`, permission policy applied) | Safe (updated) |
+| `public/embed.js:16` | `allow-scripts` | Safe |
+| `lib/profile/blocks.tsx:308` | `RUNTIME_IFRAME_SANDBOX` | Safe (updated) |
 
 **Why this matters:** Per MDN/OWASP, `allow-scripts + allow-same-origin` allows sandboxed content to remove sandbox restrictions entirely.
 

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import VibeCard from "@/src/components/VibeCard";
 import { Plan, normalizePlan } from "@vibecodr/shared";
+import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
 
 export type ProfilePageData = {
   user: {
@@ -305,9 +306,12 @@ const renderCapsuleEmbed: BlockRenderer = ({ block }) => {
       <iframe
         src={embedUrl}
         title="Profile vibe"
-        sandbox="allow-scripts"
+        sandbox={RUNTIME_IFRAME_SANDBOX}
+        allow={RUNTIME_IFRAME_PERMISSIONS}
         // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit
         className="w-full"
+        referrerPolicy="no-referrer"
+        loading="lazy"
         style={{ height: `${Math.max(240, Math.min(height, 1200))}px`, border: "0" }}
       />
     </div>
