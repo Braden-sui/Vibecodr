@@ -17,6 +17,7 @@ import { trackRuntimeEvent } from "@/lib/analytics";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import { loadRuntime } from "@/lib/runtime/registry";
 import { getRuntimeBudgets } from "./runtimeBudgets";
+import { getRuntimeErrorInfo } from "@/lib/runtime/errorMessages";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
@@ -697,16 +698,26 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         )}
 
         {/* Error State */}
-        {status === "error" && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 p-8 backdrop-blur-sm">
-            <AlertCircle className="h-12 w-12 text-destructive" />
-            <h3 className="mt-4 text-lg font-semibold">Failed to load vibe</h3>
-            <p className="mt-2 text-center text-sm text-muted-foreground">{errorMessage}</p>
-            <Badge variant="destructive" className="mt-4">
-              Error
-            </Badge>
-          </div>
-        )}
+        {status === "error" && (() => {
+          const errorInfo = getRuntimeErrorInfo(errorMessage);
+          return (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 p-8 backdrop-blur-sm">
+              <AlertCircle className="h-12 w-12 text-destructive" />
+              <h3 className="mt-4 text-lg font-semibold">{errorInfo.title}</h3>
+              <p className="mt-2 max-w-sm text-center text-sm text-muted-foreground">
+                {errorInfo.message}
+              </p>
+              {errorInfo.suggestion && (
+                <p className="mt-1 max-w-sm text-center text-xs text-muted-foreground/70">
+                  {errorInfo.suggestion}
+                </p>
+              )}
+              <Badge variant="destructive" className="mt-4">
+                Error
+              </Badge>
+            </div>
+          );
+        })()}
 
         {/* Sandboxed Iframe */}
         {runtimeRender}

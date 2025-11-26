@@ -40,9 +40,31 @@ function generateNonce(): string {
   return `${Date.now()}`;
 }
 
-function buildSandboxCsp(nonce: string): string {
+function getBundleOrigin(bundleUrl: string | undefined): string | null {
+  if (!bundleUrl) return null;
+  try {
+    const url = new URL(bundleUrl, window.location.href);
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function buildSandboxCsp(nonce: string, bundleUrl?: string): string {
   const mode = getRuntimeBundleNetworkMode();
-  const connectSrc = mode === "allow-https" ? "connect-src 'self' https:" : "connect-src 'none'";
+  const bundleOrigin = getBundleOrigin(bundleUrl);
+
+  // WHY: HTML bundles need to fetch their content. Always allow the bundle origin
+  // in connect-src so the HTML fetch works, even in offline mode.
+  let connectSrc: string;
+  if (mode === "allow-https") {
+    connectSrc = "connect-src 'self' https:";
+  } else if (bundleOrigin) {
+    // INVARIANT: Allow only the bundle origin for HTML fetches in offline mode
+    connectSrc = `connect-src ${bundleOrigin}`;
+  } else {
+    connectSrc = "connect-src 'none'";
+  }
 
   return [
     "default-src 'none'",
@@ -65,10 +87,53 @@ export function buildSandboxFrameSrcDoc({
   });
   const hasBundleUrl = typeof bundleUrl === "string" && bundleUrl.length > 0;
   const nonce = manifest.cspNonce || generateNonce();
+  const isHtmlRuntime = manifest.type === "html";
 
-  const bundleScript = hasBundleUrl
-    ? `<script nonce="${nonce}" defer src="${bundleUrl}"></script>`
-    : "";
+  // WHY: React bundles are JS that registers components and auto-bootstraps.
+  // HTML bundles are actual HTML content that must be fetched as text and
+  // passed to VibecodrHtmlRuntime.render(). Loading HTML as a <script> fails.
+  let bundleLoadScript = "";
+  if (hasBundleUrl) {
+    if (isHtmlRuntime) {
+      // INVARIANT: HTML bundles are fetched as text and rendered via the HTML runtime.
+      // The HTML runtime script must load before this executes.
+      const escapedBundleUrl = bundleUrl.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      bundleLoadScript = `
+    <script nonce="${nonce}">
+      (function() {
+        var bundleUrl = "${escapedBundleUrl}";
+        fetch(bundleUrl, { mode: "cors", credentials: "omit" })
+          .then(function(res) {
+            if (!res.ok) {
+              throw new Error("E-VIBECODR-2111 HTML bundle fetch failed: " + res.status);
+            }
+            return res.text();
+          })
+          .then(function(html) {
+            if (window.VibecodrHtmlRuntime && typeof window.VibecodrHtmlRuntime.render === "function") {
+              window.VibecodrHtmlRuntime.render({ html: html, mountSelector: "#root" });
+            } else if (window.vibecodrBridge && typeof window.vibecodrBridge.error === "function") {
+              window.vibecodrBridge.error("E-VIBECODR-2112 HTML runtime not available", {
+                code: "E-VIBECODR-2112",
+                phase: "bundle-load"
+              });
+            }
+          })
+          .catch(function(err) {
+            if (window.vibecodrBridge && typeof window.vibecodrBridge.error === "function") {
+              window.vibecodrBridge.error(err.message || "HTML bundle load failed", {
+                code: "E-VIBECODR-2111",
+                phase: "bundle-fetch"
+              });
+            }
+          });
+      })();
+    </script>`;
+    } else {
+      // React/JS bundles load as scripts and self-bootstrap
+      bundleLoadScript = `<script nonce="${nonce}" defer src="${bundleUrl}"></script>`;
+    }
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -77,7 +142,7 @@ export function buildSandboxFrameSrcDoc({
     <meta name="robots" content="noindex" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="${buildSandboxCsp(nonce)}"
+      content="${buildSandboxCsp(nonce, bundleUrl)}"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style nonce="${nonce}">
@@ -98,8 +163,8 @@ export function buildSandboxFrameSrcDoc({
       window.vibecodrRuntimeManifest = ${manifestJson};
       window.vibecodrRuntimeOptions = ${optionsJson};
     </script>
-    ${bundleScript}
     <script nonce="${nonce}" src="${manifest.runtimeAssets.runtimeScriptUrl}"></script>
+    ${bundleLoadScript}
   </head>
   <body>
     <div id="root"></div>

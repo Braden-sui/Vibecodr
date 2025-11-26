@@ -1178,6 +1178,22 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Runtime manifest asset is missing.",
     logMessage: "Runtime manifest missing required asset",
   },
+  "E-VIBECODR-2111": {
+    code: "E-VIBECODR-2111",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Failed to load the HTML bundle for this vibe.",
+    logMessage: "HTML bundle fetch failed",
+  },
+  "E-VIBECODR-2112": {
+    code: "E-VIBECODR-2112",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "The HTML runtime is not available. This may be a bug in Vibecodr.",
+    logMessage: "HTML runtime not available after script load",
+  },
   "E-VIBECODR-2132": {
     code: "E-VIBECODR-2132",
     category: "runtime",

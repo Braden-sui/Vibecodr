@@ -513,12 +513,33 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
 
   const manifestResult = await loadRuntimeManifestForArtifact(env, artifactId);
   if (!manifestResult.ok) {
+    console.log("BUNDLE_REQUEST_MANIFEST_FAILED", {
+      artifactId,
+    });
     return manifestResult.response;
   }
 
-  const { manifest, runtimeVersion } = manifestResult.data;
+  const { artifact, manifest, runtimeVersion } = manifestResult.data;
+
+  // DEBUG: Log bundle request details for troubleshooting ZIP → runtime issues
+  console.log("BUNDLE_REQUEST", {
+    artifactId,
+    type: artifact.type,
+    policy_status: artifact.policy_status,
+    visibility: artifact.visibility,
+    status: artifact.status,
+    runtime_version: runtimeVersion,
+    manifestType: manifest.type,
+    bundleKey: manifest.bundle?.r2Key,
+  });
+
   const bundleKey = manifest.bundle?.r2Key;
   if (!bundleKey || typeof bundleKey !== "string") {
+    console.error("BUNDLE_REQUEST_MISSING_KEY", {
+      artifactId,
+      type: artifact.type,
+      bundleKey,
+    });
     return json(
       {
         error: "Runtime bundle reference missing",
@@ -530,6 +551,11 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
 
   const object = await env.R2.get(bundleKey);
   if (!object) {
+    console.error("BUNDLE_REQUEST_R2_NOT_FOUND", {
+      artifactId,
+      type: artifact.type,
+      bundleKey,
+    });
     return json(
       {
         error: "Runtime bundle not found",
@@ -548,6 +574,16 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
   const cspHeader = buildBundleCsp(bundleMode);
   const artifactHeader = manifest.artifactId ? String(manifest.artifactId) : artifactId;
 
+  // DEBUG: Log final bundle response details
+  console.log("BUNDLE_RESPONSE", {
+    artifactId,
+    type: artifact.type,
+    contentType,
+    storedContentType,
+    bundleMode,
+    bundleSizeBytes: object.size,
+  });
+
   return new Response(object.body, {
     status: 200,
     headers: {
@@ -555,6 +591,7 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
       "Cache-Control": "public, max-age=31536000, immutable",
       "X-Runtime-Artifact": artifactHeader,
       "X-Runtime-Version": runtimeVersion || "",
+      "X-Runtime-Type": artifact.type,
       "Content-Security-Policy": cspHeader,
     },
   });
