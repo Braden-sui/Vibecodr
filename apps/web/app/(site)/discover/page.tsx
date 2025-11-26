@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { motion } from "motion/react";
 import { useAuth } from "@clerk/clerk-react";
 import { ApiFeedResponseSchema } from "@vibecodr/shared";
 import { FeedCard } from "@/components/FeedCard";
@@ -12,8 +11,7 @@ import { featuredTags, normalizeTag } from "@/lib/tags";
 import { trackClientError, trackEvent } from "@/lib/analytics";
 import { usePageMeta } from "@/lib/seo";
 import KineticHeader from "@/src/components/KineticHeader";
-import { Compass, Loader2, Sparkles, Tag as TagIcon } from "lucide-react";
-import { useReducedMotion } from "@/lib/useReducedMotion";
+import { Compass, Sparkles, Tag as TagIcon } from "lucide-react";
 
 const DEFAULT_TAG = normalizeTag(featuredTags[0]) || "ai";
 
@@ -23,7 +21,6 @@ export default function DiscoverPage() {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const prefersReducedMotion = useReducedMotion();
   const tokenRef = useRef(getToken);
 
   const origin =
@@ -172,19 +169,8 @@ export default function DiscoverPage() {
   );
 
   return (
-    <motion.div
-      className="space-y-8"
-      initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
-      animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
-    >
-      <motion.section
-        className="vc-glass p-6"
-        initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
-        whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.3 }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      >
+    <div className="space-y-8">
+      <section className="vc-glass p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -222,7 +208,7 @@ export default function DiscoverPage() {
             );
           })}
         </div>
-      </motion.section>
+      </section>
 
       {error && (
         <div className="rounded-xl border border-dashed border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -254,6 +240,6 @@ export default function DiscoverPage() {
           </div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }

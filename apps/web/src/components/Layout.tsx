@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { motion } from "framer-motion";
 import EtheriaSkyBackground from "@/src/components/EtheriaSkyBackground";
 import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -49,17 +48,10 @@ const Layout = () => {
                 }}
             >
                 <div className="container mx-auto px-4 py-8 max-w-5xl">
-                    {/* Shared Layout Context for smooth page transitions */}
-                    <motion.div
-                        layout
-                        className="w-full"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 20 }}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                    >
+                    {/* Content wrapper - no layout animation to prevent flashing on navigation */}
+                    <div className="w-full">
                         <Outlet />
-                    </motion.div>
+                    </div>
                 </div>
             </main>
         </div>

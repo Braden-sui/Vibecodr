@@ -889,14 +889,12 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     }
   };
 
+  // Note: Animation is handled by parent container using CSS animate-in classes
+  // to prevent re-animation when switching tabs or navigating
   return (
     <VibeCard
       ref={cardRef}
       className="group relative overflow-hidden rounded-2xl vc-glass shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg p-0"
-      initial={prefersReducedMotion ? undefined : { opacity: 0.98, y: 8 }}
-      whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.2 }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
       {/* Cover/Preview Area (apps only) */}
       {isApp && (

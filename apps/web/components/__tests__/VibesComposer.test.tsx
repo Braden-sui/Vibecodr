@@ -32,6 +32,7 @@ vi.mock("@/lib/api", () => ({
   capsulesApi: {
     publish: vi.fn(),
     importGithub: vi.fn(),
+    importZip: vi.fn(),
   },
   coversApi: {
     upload: vi.fn(),
@@ -157,12 +158,19 @@ describe("VibesComposer inline code mode", () => {
       const stepInput = screen.getByLabelText("Step");
       fireEvent.change(stepInput, { target: { value: "5" } });
 
+      const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+      await waitFor(() => expect(buildButton).not.toBeDisabled());
+      await user.click(buildButton);
+
+      await waitFor(() => {
+        expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
+      });
+
       const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
       await waitFor(() => expect(shareButton).not.toBeDisabled());
       await user.click(shareButton);
 
       await waitFor(() => {
-        expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
         expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
       });
 
@@ -221,6 +229,13 @@ describe("VibesComposer inline code mode", () => {
     await user.clear(labelInput);
     await user.type(labelInput, "Speed");
 
+    const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+    await user.click(buildButton);
+
+    await waitFor(() => {
+      expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
+    });
+
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await user.click(shareButton);
 
@@ -265,6 +280,9 @@ describe("VibesComposer inline code mode", () => {
     fireEvent.focus(titleInput);
     fireEvent.change(titleInput, { target: { value: "My inline app" } });
 
+    const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+    expect(buildButton).toBeDisabled();
+
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     expect(shareButton).toBeDisabled();
     expect(capsulesPublishMock).not.toHaveBeenCalled();
@@ -299,11 +317,17 @@ describe("VibesComposer inline code mode", () => {
     );
     fireEvent.change(codeTextarea, { target: { value: "<div>Hello</div>" } });
 
+    const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+    await user.click(buildButton);
+
+    await waitFor(() => {
+      expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
+    });
+
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await user.click(shareButton);
 
     await waitFor(() => {
-      expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
       expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
     });
 
@@ -349,15 +373,15 @@ describe("VibesComposer inline code mode", () => {
     );
     fireEvent.change(codeTextarea, { target: { value: "<div>oops</div>" } });
 
-    const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
-    await user.click(shareButton);
+    const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+    await user.click(buildButton);
 
     await waitFor(() => {
       expect(capsulesPublishMock).toHaveBeenCalled();
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Bad code")).toBeInTheDocument();
+      expect(screen.getAllByText("Bad code").length).toBeGreaterThan(0);
     });
 
     expect(postsApiCreateMock).not.toHaveBeenCalled();
@@ -384,8 +408,8 @@ describe("VibesComposer inline code mode", () => {
     );
     fireEvent.change(codeTextarea, { target: { value: "<div>Hi</div>" } });
 
-    const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
-    await user.click(shareButton);
+    const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+    await user.click(buildButton);
 
     await waitFor(() => {
       expect(redirectToSignIn).toHaveBeenCalled();
@@ -404,7 +428,21 @@ describe("VibesComposer inline code mode", () => {
     capsulesImportGithubMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ success: true, capsuleId: "caps123", manifest: { title: "Imported App" } }),
+      json: async () => ({
+        success: true,
+        capsuleId: "caps123",
+        manifest: { version: "1.0", runner: "client-static", entry: "index.html", title: "Imported App" },
+        draftManifest: { version: "1.0", runner: "client-static", entry: "index.html", title: "Imported App" },
+        filesSummary: {
+          capsuleId: "caps123",
+          contentHash: "hash",
+          totalSize: 1024,
+          fileCount: 1,
+          entryPoint: "index.html",
+          entryCandidates: ["index.html"],
+        },
+        warnings: [],
+      }),
     } as any);
 
     coversUploadMock.mockResolvedValue({
@@ -426,12 +464,12 @@ describe("VibesComposer inline code mode", () => {
     const repoInput = screen.getByPlaceholderText("https://github.com/user/repo");
     fireEvent.change(repoInput, { target: { value: "https://github.com/user/repo" } });
 
-    const importButton = screen.getByRole("button", { name: "Import Repository" });
+    const importButton = screen.getByRole("button", { name: "Import & attach" });
     await user.click(importButton);
 
     await waitFor(() => {
       expect(capsulesImportGithubMock).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Repository imported successfully")).toBeInTheDocument();
+      expect(screen.getByText("Repository imported and attached")).toBeInTheDocument();
     });
 
     const titleInput = screen.getByPlaceholderText("Title for your app");
@@ -487,12 +525,16 @@ describe("VibesComposer inline code mode", () => {
     const aiTagButton = await screen.findByRole("button", { name: "#ai" });
     await user.click(aiTagButton);
 
+    const buildButton = screen.getByRole("button", { name: /Build & attach app/i });
+    await user.click(buildButton);
+
+    await waitFor(() => expect(capsulesPublishMock).toHaveBeenCalledTimes(1));
+
     const shareButton = screen.getByRole("button", { name: /Share Vibe/i });
     await waitFor(() => expect(shareButton).not.toBeDisabled());
     await user.click(shareButton);
 
     await waitFor(() => {
-      expect(capsulesPublishMock).toHaveBeenCalledTimes(1);
       expect(postsApiCreateMock).toHaveBeenCalledTimes(1);
     });
 

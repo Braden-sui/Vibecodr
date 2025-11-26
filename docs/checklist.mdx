@@ -105,7 +105,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] Publish flow with title, tags, cover upload, visibility, and capability prompts (backed by capsule publish endpoint).
 - [x] Immutable bundles written to R2 under `capsules/{contentHash}/...` with manifest and metadata.
 - [x] Manifest stored/linked in D1; integrity hash captured in metadata.
-- [x] Unified `VibesComposer` on the feed for status posts, image attachments, GitHub imports, ZIP uploads, and inline code.
+- [x] Unified `VibesComposer` on the feed with a bounded app attach flow (GitHub, ZIP, inline) plus status, image, and link posts.
 - [ ] Build pipeline inside Studio for shallow download + analysis + esbuild-wasm (client-first) with Worker fallback for heavy builds.
 - [ ] Entry detection + size checks surfaced directly in Studio UI (SSR/server-only code flagged to users).
 - [ ] License detection (SPDX) surfaced; warnings when missing.

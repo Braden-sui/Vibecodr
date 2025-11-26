@@ -5,7 +5,7 @@ Major surfaces and their responsibilities. UI routes live in `apps/web`, Worker 
 ## Web SPA (apps/web)
 - `/` – Runnable feed with tabs (latest, following, foryou), text search via `?q=`, tag filters via `?tags=`, and inline run buttons that respect runtime budgets.
 - `/discover` – Tag-focused lane backed by `/posts/discover`; defaults to featured tags and lets users follow a tag filter.
-- `/post/new` (alias `/composer`) – VibesComposer that imports from GitHub/ZIP or inline code, then creates a post plus optional capsule.
+- `/post/new` (alias `/composer`) – VibesComposer with a social composer + app attach sub-flow (GitHub/ZIP/inline) that builds/attaches the app before posting.
 - `/post/:id` – Report posts render inline; app posts redirect to `/player/:id` for full runtime controls.
 - `/player/:postId` – Full-screen player with sandboxed iframe, param controls, console/log streaming, report/share/remix hooks, and runtime budget enforcement.
 - `/vibe/:capsuleId/remixes` – Remix family tree view for a capsule (origin, parents, and descendants).

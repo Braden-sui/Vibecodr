@@ -2,17 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
-import { motion } from "motion/react";
 import { useAuth } from "@clerk/clerk-react";
 import { FeedCard } from "@/components/FeedCard";
 import { VibesComposer } from "@/components/VibesComposer";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Filter, Sparkles, Tag as TagIcon, Play } from "lucide-react";
+import { Sparkles, Tag as TagIcon, Play } from "lucide-react";
 import { trackClientError, trackEvent } from "@/lib/analytics";
 import { postsApi, type FeedPost, mapApiFeedPostToFeedPost } from "@/lib/api";
 import { ApiFeedResponseSchema } from "@vibecodr/shared";
-import { useReducedMotion } from "@/lib/useReducedMotion";
 import KineticHeader from "@/src/components/KineticHeader";
 import { usePageMeta } from "@/lib/seo";
 import { featuredTags, normalizeTag, normalizeTagList } from "@/lib/tags";
@@ -32,7 +30,6 @@ export default function FeedPage() {
   const location = useLocation();
   const { getToken } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const prefersReducedMotion = useReducedMotion();
   const tokenRef = useRef(getToken);
   const origin =
     typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
@@ -239,34 +236,26 @@ export default function FeedPage() {
   const heroTags = heroPost && Array.isArray(heroPost.tags) ? heroPost.tags.slice(0, 3) : [];
   const isHeroLoading = isLoading && !heroPost;
 
+  // Composer section - no layout animation to prevent flashing on tab switch
   const composerSection = (
-    <motion.div
-      className="relative mx-auto max-w-3xl"
-      layout
-      initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
-      whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.4 }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-    >
+    <div className="relative mx-auto max-w-3xl">
       <VibesComposer
         onPostCreated={handlePostCreated}
         className="mb-6 vc-glass"
       />
-    </motion.div>
+    </div>
   );
 
+  // Post list - use CSS transitions instead of motion to prevent re-animation on tab switch
   const renderPostList = (items: FeedPost[]) => (
     <div className="mx-auto max-w-2xl space-y-5">
-      {items.map((post, index) => (
-        <motion.div
+      {items.map((post) => (
+        <div
           key={post.id}
-          initial={prefersReducedMotion ? undefined : { opacity: 0, y: 16 }}
-          whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ delay: prefersReducedMotion ? 0 : Math.min(0.05 * index, 0.25), duration: 0.35 }}
+          className="animate-in fade-in slide-in-from-bottom-2 duration-300"
         >
           <FeedCard post={post} onTagClick={handleFeedTagClick} />
-        </motion.div>
+        </div>
       ))}
     </div>
   );
@@ -357,21 +346,11 @@ export default function FeedPage() {
     </div>
   );
 
+  // Remove location.key to prevent full remount on navigation
+  // Use stable key to prevent re-animation when switching lanes
   return (
-    <motion.div
-      key={location.key ?? location.pathname}
-      className="space-y-10"
-      initial={prefersReducedMotion ? undefined : { opacity: 0, y: 8 }}
-      animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
-    >
-      <motion.section
-        className="vc-glass p-8"
-        initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
-        whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.35 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      >
+    <div className="space-y-10">
+      <section className="vc-glass p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -387,16 +366,10 @@ export default function FeedPage() {
             <Link to="/post/new">Start a vibe</Link>
           </Button>
         </div>
-      </motion.section>
+      </section>
 
       {heroPost && (
-        <motion.section
-          className="vc-glass p-6"
-          initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
-          whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        >
+        <section className="vc-glass p-6 animate-in fade-in duration-300">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Featured vibe</div>
@@ -430,33 +403,21 @@ export default function FeedPage() {
               <Link to={heroHref}>Open featured vibe</Link>
             </Button>
           </div>
-        </motion.section>
+        </section>
       )}
 
       {isHeroLoading && !heroPost && (
-        <motion.section
-          className="vc-glass p-6"
-          initial={prefersReducedMotion ? undefined : { opacity: 0, y: 10 }}
-          whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="space-y-3">
+        <section className="vc-glass p-6">
+          <div className="space-y-3 animate-pulse">
             <div className="h-4 w-24 rounded bg-muted" />
             <div className="h-6 w-2/3 rounded bg-muted" />
             <div className="h-4 w-full rounded bg-muted" />
             <div className="h-4 w-3/4 rounded bg-muted" />
           </div>
-        </motion.section>
+        </section>
       )}
 
-      <motion.section
-        className="vc-glass space-y-4 p-6"
-        initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
-        whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.3 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      >
+      <section className="vc-glass space-y-4 p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -509,7 +470,7 @@ export default function FeedPage() {
             </div>
           </div>
         )}
-      </motion.section>
+      </section>
 
       <Tabs value={mode} onValueChange={handleModeChange}>
         <TabsList className="grid w-full max-w-md grid-cols-3 p-1">
@@ -581,6 +542,6 @@ export default function FeedPage() {
           )}
         </TabsContent>
       </Tabs>
-    </motion.div>
+    </div>
   );
 }

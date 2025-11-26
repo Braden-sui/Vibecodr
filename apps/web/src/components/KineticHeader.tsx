@@ -1,15 +1,22 @@
-import React, { useRef, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import React, { useRef, useState, useMemo } from "react";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 
 interface KineticHeaderProps {
     text: string;
     className?: string;
 }
 
+/**
+ * KineticHeader - Interactive header with variable font weight on hover.
+ * Uses CSS animations instead of framer-motion to prevent re-animation on re-renders.
+ */
 const KineticHeader = ({ text, className }: KineticHeaderProps) => {
     const ref = useRef<HTMLHeadingElement>(null);
     const [weight, setWeight] = useState(400);
     const shouldReduceMotion = useReducedMotion();
+
+    // Memoize the character array to prevent re-renders from causing re-animation
+    const characters = useMemo(() => text.split(""), [text]);
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (shouldReduceMotion || !ref.current) return;
@@ -37,7 +44,7 @@ const KineticHeader = ({ text, className }: KineticHeaderProps) => {
     };
 
     return (
-        <motion.h1
+        <h1
             ref={ref}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
@@ -49,23 +56,21 @@ const KineticHeader = ({ text, className }: KineticHeaderProps) => {
             }}
         >
             <span className="sr-only">{text}</span>
-            {text.split("").map((char, i) => (
-                <motion.span
-                    key={i}
+            {characters.map((char, i) => (
+                <span
+                    key={`${text}-${i}`}
                     aria-hidden="true"
-                    initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                        delay: shouldReduceMotion ? 0 : i * 0.05,
-                        duration: shouldReduceMotion ? 0 : 0.5,
-                        ease: "backOut"
+                    className="inline-block animate-in fade-in slide-in-from-bottom-2"
+                    style={{
+                        animationDelay: shouldReduceMotion ? "0ms" : `${i * 30}ms`,
+                        animationDuration: shouldReduceMotion ? "0ms" : "400ms",
+                        animationFillMode: "both",
                     }}
-                    className="inline-block"
                 >
                     {char === " " ? "\u00A0" : char}
-                </motion.span>
+                </span>
             ))}
-        </motion.h1>
+        </h1>
     );
 };
 

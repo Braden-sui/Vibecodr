@@ -1,6 +1,6 @@
+import { useRef } from "react";
 import { BrowserRouter, Link, useLocation } from "react-router-dom";
 import { ClerkProvider } from "@clerk/clerk-react";
-import { motion } from "motion/react";
 import { AnalyticsProvider } from "@/providers/posthog-provider";
 import { EnsureUserSynced } from "@/components/EnsureUserSynced";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -14,20 +14,26 @@ import { TopbarSearch } from "@/components/TopbarSearch";
 import { SignedIn, SignedOut, SignInButton, SignUpButton } from "@clerk/clerk-react";
 import { Highlight, HighlightItem } from "@/lib/animate-ui/highlight";
 import { useReducedMotion } from "@/lib/useReducedMotion";
+import { cn } from "@/lib/utils";
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 function PrimaryNav() {
   const location = useLocation();
   const prefersReducedMotion = useReducedMotion();
+  // Track if this is the initial mount to prevent re-animation on route changes
+  const hasAnimatedRef = useRef(false);
+  const shouldAnimate = !prefersReducedMotion && !hasAnimatedRef.current;
+  if (!hasAnimatedRef.current) hasAnimatedRef.current = true;
+
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`);
 
   return (
-    <motion.header
-      className="sticky top-0 z-30 vc-glass rounded-none border-x-0 border-t-0"
-      initial={prefersReducedMotion ? false : { y: -12, opacity: 0 }}
-      animate={prefersReducedMotion ? false : { y: 0, opacity: 1 }}
-      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+    <header
+      className={cn(
+        "sticky top-0 z-30 vc-glass rounded-none border-x-0 border-t-0",
+        shouldAnimate && "animate-in fade-in slide-in-from-top-3 duration-400"
+      )}
     >
       <nav className="container mx-auto flex items-center gap-5 py-4">
         <Highlight className="flex items-center gap-2 rounded-full px-2 py-1" radiusClassName="rounded-full">
@@ -72,31 +78,25 @@ function PrimaryNav() {
           </SignedIn>
           <SignedOut>
             <SignInButton>
-              <motion.button
-                className="rounded-full px-4 py-2 text-sm font-medium hover:text-primary"
+              <button
+                className="rounded-full px-4 py-2 text-sm font-medium transition-transform hover:text-primary hover:scale-[1.03] active:scale-[0.98]"
                 type="button"
-                whileHover={prefersReducedMotion ? undefined : { scale: 1.03, y: -1 }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-                transition={{ duration: 0.14 }}
               >
                 Sign In
-              </motion.button>
+              </button>
             </SignInButton>
             <SignUpButton>
-              <motion.button
-                className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-vc-soft"
+              <button
+                className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-vc-soft transition-all hover:scale-[1.04] hover:shadow-[0_8px_30px_-18px_rgba(59,130,246,0.65)] active:scale-[0.98]"
                 type="button"
-                whileHover={prefersReducedMotion ? undefined : { scale: 1.04, boxShadow: "0 8px 30px -18px rgba(59,130,246,0.65)" }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-                transition={{ duration: 0.14 }}
               >
                 Sign Up
-              </motion.button>
+              </button>
             </SignUpButton>
           </SignedOut>
         </div>
       </nav>
-    </motion.header>
+    </header>
   );
 }
 

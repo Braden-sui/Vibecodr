@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
   Send,
@@ -23,6 +24,9 @@ import {
   CheckCircle2,
   Sparkles,
   Tag,
+  Check,
+  Minus,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
@@ -34,17 +38,41 @@ import { useReducedMotion } from "@/lib/useReducedMotion";
 import { featuredTags, normalizeTag } from "@/lib/tags";
 import { ApiImportResponseSchema, toDraftCapsule } from "@vibecodr/shared";
 
-type VibeType = FeedPost["type"];
-type AppComposerMode = "github" | "zip" | "code";
-
-type ImportStatus = "idle" | "importing" | "ready" | "error";
-
 export interface VibesComposerProps {
   onPostCreated?: (post: FeedPost) => void;
   className?: string;
 }
 
+type VibeType = FeedPost["type"];
+type AppComposerMode = "github" | "zip" | "code";
+type ImportStatus = "idle" | "processing" | "ready" | "error";
+type AppProgressStep = "select" | "upload" | "analyze" | "build" | "ready";
+
+type AppAttachment = {
+  capsuleId: string;
+  source: AppComposerMode;
+  title?: string | null;
+  warnings?: Array<{ path?: string; message: string } | string>;
+  fileName?: string | null;
+};
+
+type AppProgressState = {
+  status: ImportStatus;
+  active: AppProgressStep;
+  message?: string | null;
+};
+
 const MAX_TAGS = 3;
+
+const PROGRESS_STEPS: Array<{ key: AppProgressStep; label: string; helper?: string }> = [
+  { key: "select", label: "Source", helper: "Choose GitHub, ZIP, or inline code" },
+  { key: "upload", label: "Upload", helper: "Send files to the builder" },
+  { key: "analyze", label: "Analyze", helper: "Inspect manifest + dependencies" },
+  { key: "build", label: "Build", helper: "Bundle and prepare capsule" },
+  { key: "ready", label: "Ready", helper: "Attach app to your post" },
+];
+
+const PROGRESS_ORDER: AppProgressStep[] = PROGRESS_STEPS.map((step) => step.key);
 
 const formatErrorMessage = (value: unknown): string => {
   if (!value) return "";
@@ -62,13 +90,43 @@ const formatErrorMessage = (value: unknown): string => {
   return String(value);
 };
 
+const toWarningText = (warning: string | { path?: string; message: string }): string => {
+  if (typeof warning === "string") return warning;
+  if (warning.path) {
+    return `${warning.path}: ${warning.message}`;
+  }
+  return warning.message;
+};
+
+const deriveStepState = (
+  step: AppProgressStep,
+  progress: AppProgressState,
+  isAttached: boolean,
+): "done" | "active" | "pending" | "error" => {
+  if (isAttached || progress.status === "ready") {
+    return "done";
+  }
+  if (progress.status === "error" && progress.active === step) {
+    return "error";
+  }
+  if (progress.status === "idle") {
+    return step === "select" ? "active" : "pending";
+  }
+  const activeIndex = PROGRESS_ORDER.indexOf(progress.active);
+  const stepIndex = PROGRESS_ORDER.indexOf(step);
+  if (stepIndex < activeIndex) return "done";
+  if (stepIndex === activeIndex) return progress.status === "processing" ? "active" : "pending";
+  return "pending";
+};
+
 /**
- * VibesComposer - Unified composer for all vibe creation modes
- * Handles text/status posts, image attachments, GitHub imports, ZIP uploads, and inline code
+ * VibesComposer - Unified composer for social post types with a bounded app sub-flow.
+ * Users pick a vibe type, then (for apps) complete an attach flow with its own progress rail.
  */
 export function VibesComposer({ onPostCreated, className }: VibesComposerProps) {
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
+
   const [vibeType, setVibeType] = useState<VibeType>("thought");
   const [appMode, setAppMode] = useState<AppComposerMode>("github");
   const [isExpanded, setIsExpanded] = useState(false);
@@ -78,7 +136,47 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const [tagInput, setTagInput] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [composerError, setComposerError] = useState<string | null>(null);
+
+  const [appAttachment, setAppAttachment] = useState<AppAttachment | null>(null);
+  const [appProgress, setAppProgress] = useState<AppProgressState>({
+    status: "idle",
+    active: "select",
+    message: null,
+  });
+  const [appError, setAppError] = useState<string | null>(null);
+
+  const [githubUrl, setGithubUrl] = useState("");
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
+  const [zipImportWarnings, setZipImportWarnings] = useState<Array<{ path?: string; message: string } | string>>([]);
+  const [code, setCode] = useState("");
+  const [allowStorage, setAllowStorage] = useState(false);
+  const [enableParam, setEnableParam] = useState(false);
+  const [paramLabel, setParamLabel] = useState("Intensity");
+  const [paramDefault, setParamDefault] = useState(50);
+  const [paramMin, setParamMin] = useState(0);
+  const [paramMax, setParamMax] = useState(100);
+  const [paramStep, setParamStep] = useState(1);
+
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [coverKey, setCoverKey] = useState<string | null>(null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+
+  const prefersReducedMotion = useReducedMotion();
+  const isAppVibe = vibeType === "app";
+  const isImageVibe = vibeType === "image";
+  const isLinkVibe = vibeType === "link";
+  const isLongformVibe = vibeType === "longform";
+  const isThoughtVibe = vibeType === "thought";
+  const isGithubMode = isAppVibe && appMode === "github";
+  const isZipMode = isAppVibe && appMode === "zip";
+  const isCodeMode = isAppVibe && appMode === "code";
+  const isAppBusy = appProgress.status === "processing";
+  const hasAttachedApp = Boolean(appAttachment?.capsuleId);
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -91,83 +189,94 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     };
   };
 
-  // GitHub import state
-  const [githubUrl, setGithubUrl] = useState("");
-  const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
-  const [importError, setImportError] = useState<string | null>(null);
-  const [capsuleId, setCapsuleId] = useState<string | null>(null);
-  const [capsuleSource, setCapsuleSource] = useState<"github" | "zip" | "code" | null>(null);
+  const resetInlineAdvanced = () => {
+    setAllowStorage(false);
+    setEnableParam(false);
+    setParamLabel("Intensity");
+    setParamDefault(50);
+    setParamMin(0);
+    setParamMax(100);
+    setParamStep(1);
+  };
 
-  // Image state
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [coverKey, setCoverKey] = useState<string | null>(null);
-  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const resetAppFlow = () => {
+    setAppAttachment(null);
+    setAppProgress({ status: "idle", active: "select", message: null });
+    setAppError(null);
+    setGithubUrl("");
+    setZipFile(null);
+    setZipSummary(null);
+    setZipImportWarnings([]);
+    if (zipInputRef.current) {
+      zipInputRef.current.value = "";
+    }
+  };
 
-  // ZIP state
-  const [zipFile, setZipFile] = useState<File | null>(null);
-  const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
-  // WHY: Server now handles all manifest validation; we only track warnings returned from import
-  const [zipImportWarnings, setZipImportWarnings] = useState<Array<{ path?: string; message: string } | string>>([]);
+  const resetComposer = () => {
+    setIsExpanded(false);
+    setTitle("");
+    setDescription("");
+    setLinkUrl("");
+    setSelectedTags([]);
+    setTagInput("");
+    setCode("");
+    resetInlineAdvanced();
+    setComposerError(null);
+    setAppMode("github");
+    resetAppFlow();
+    setImagePreview(null);
+    setCoverKey(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
-  // Inline code state
-  const [code, setCode] = useState("");
-
-  // Inline capabilities & params (Advanced section)
-  const [allowStorage, setAllowStorage] = useState(false);
-  const [enableParam, setEnableParam] = useState(false);
-  const [paramLabel, setParamLabel] = useState("Intensity");
-  const [paramDefault, setParamDefault] = useState(50);
-  const [paramMin, setParamMin] = useState(0);
-  const [paramMax, setParamMax] = useState(100);
-  const [paramStep, setParamStep] = useState(1);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
-
-  const isImporting = importStatus === "importing";
-  const hasImportedCapsule = !!capsuleId;
-  const isAppVibe = vibeType === "app";
-  const isImageVibe = vibeType === "image";
-  const isLinkVibe = vibeType === "link";
-  const isLongformVibe = vibeType === "longform";
-  const isThoughtVibe = vibeType === "thought";
-  const requiresCapsuleImport = isAppVibe && appMode !== "code";
-  const isTagLimitReached = selectedTags.length >= MAX_TAGS;
-  const prefersReducedMotion = useReducedMotion();
-
-  // Auto-detect GitHub URLs in text input
   const handleTextChange = (value: string) => {
     setTitle(value);
 
-    // Auto-detect GitHub URL
     const githubPattern = /https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+/i;
     if (githubPattern.test(value) && !isAppVibe) {
       setVibeType("app");
       setAppMode("github");
       setGithubUrl(value);
+      setIsExpanded(true);
       trackEvent("composer_mode_detected", { type: "app", appMode: "github" });
     }
   };
 
   const handleVibeTypeChange = (nextType: VibeType) => {
     setVibeType(nextType);
-    setError(null);
-    setImportError(null);
+    setComposerError(null);
+    setAppError(null);
+
     if (nextType !== "app") {
-      setImportStatus("idle");
+      resetAppFlow();
       setSelectedTags([]);
       setTagInput("");
     }
+
     if (nextType !== "link") {
       setLinkUrl("");
     }
+
     trackEvent("composer_mode_changed", { type: nextType });
   };
 
   const handleAppModeChange = (nextMode: AppComposerMode) => {
     setAppMode(nextMode);
-    setError(null);
-    setImportError(null);
+    setAppAttachment(null);
+    setAppProgress({ status: "idle", active: "select", message: null });
+    setAppError(null);
+
+    if (nextMode !== "zip") {
+      setZipFile(null);
+      setZipSummary(null);
+      setZipImportWarnings([]);
+      if (zipInputRef.current) {
+        zipInputRef.current.value = "";
+      }
+    }
+
     trackEvent("composer_app_mode_changed", { appMode: nextMode });
   };
 
@@ -202,26 +311,23 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith("image/")) {
-      setError("Please select a valid image file");
+      setComposerError("Please select a valid image file");
       return;
     }
 
-    // Validate file size (5MB limit)
     if (file.size > 5 * 1024 * 1024) {
-      setError("Image must be under 5MB");
+      setComposerError("Image must be under 5MB");
       return;
     }
 
-    if (!capsuleId && !isImageVibe) {
-      setError("Import an app first (via GitHub or ZIP) before adding a cover image.");
+    if (isAppVibe && !hasAttachedApp) {
+      setComposerError("Attach an app before adding a cover image.");
       return;
     }
 
-    setError(null);
+    setComposerError(null);
 
-    // Create preview
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result as string);
@@ -243,7 +349,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       if (!response.ok || !data.ok || !data.key) {
         const message = data.error || "Failed to upload image. Please try again.";
         console.error("Cover upload failed:", message);
-        setError(message);
+        setComposerError(message);
         setImagePreview(null);
         setCoverKey(null);
         return;
@@ -252,7 +358,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       setCoverKey(data.key);
     } catch (err) {
       console.error("Cover upload error:", err);
-      setError("Failed to upload image. Please try again.");
+      setComposerError("Failed to upload image. Please try again.");
       setImagePreview(null);
       setCoverKey(null);
     } finally {
@@ -265,28 +371,26 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     if (!file) return;
 
     if (!file.name.endsWith(".zip")) {
-      setError("Please select a ZIP file");
+      setComposerError("Please select a ZIP file");
       return;
     }
 
     setZipFile(file);
-    setError(null);
-    setImportError(null);
+    setComposerError(null);
+    setAppError(null);
     setZipSummary(null);
     setZipImportWarnings([]);
-    setImportStatus("idle");
+    setAppProgress({ status: "idle", active: "select", message: null });
   };
 
   const handleGithubImport = async () => {
     const trimmedUrl = githubUrl.trim();
-    if (!trimmedUrl || isImporting) return;
+    if (!trimmedUrl || isAppBusy) return;
 
-    setVibeType("app");
-    setAppMode("github");
-    setImportError(null);
-    setZipSummary(null);
+    setAppAttachment(null);
+    setAppError(null);
     setZipImportWarnings([]);
-    setImportStatus("importing");
+    setAppProgress({ status: "processing", active: "analyze", message: "Importing repository" });
 
     try {
       const init = await buildAuthInit();
@@ -294,6 +398,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
       if (response.status === 401) {
         redirectToSignIn();
+        setAppProgress({ status: "idle", active: "select", message: null });
         return;
       }
 
@@ -302,42 +407,40 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
       if (!parsed.success) {
         const message = (raw as any)?.error || "Import failed. Please check the repository URL and try again.";
-        setImportError(message);
-        setImportStatus("error");
+        setAppError(message);
+        setAppProgress({ status: "error", active: "analyze", message });
         trackEvent("composer_github_import_failed", { error: message });
         return;
       }
 
-      // Use canonical DraftCapsule abstraction
       const draft = toDraftCapsule(parsed.data);
-      setCapsuleId(draft.capsuleId);
-      setCapsuleSource("github");
+      setAppAttachment({
+        capsuleId: draft.capsuleId,
+        source: "github",
+        title: draft.manifest?.title ?? trimmedUrl,
+        warnings: draft.warnings ?? [],
+      });
       if (!title.trim() && draft.manifest?.title) {
         setTitle(draft.manifest.title);
       }
-      setImportStatus("ready");
+      setAppProgress({ status: "ready", active: "ready", message: "Repository imported" });
       trackEvent("composer_github_import_success", { capsuleId: draft.capsuleId });
     } catch (err) {
       console.error("Failed to import from GitHub:", err);
-      setImportError("Import failed. Please try again.");
-      setImportStatus("error");
+      setAppError("Import failed. Please try again.");
+      setAppProgress({ status: "error", active: "analyze", message: "Import failed" });
       trackEvent("composer_github_import_error");
     }
   };
 
-  // WHY: Option B â€” Server handles all ZIP analysis, manifest generation, and validation.
-  // Client sends raw ZIP to /import/zip, receives capsuleId + manifest + warnings.
-  // This removes JSZip dependency from the main composer flow and eliminates duplicate logic.
   const handleZipImport = async () => {
-    if (!zipFile || isImporting) return;
+    if (!zipFile || isAppBusy) return;
 
-    setVibeType("app");
-    setAppMode("zip");
-    setImportError(null);
-    setImportStatus("importing");
+    setAppAttachment(null);
+    setAppError(null);
     setZipImportWarnings([]);
+    setAppProgress({ status: "processing", active: "upload", message: "Uploading ZIP" });
 
-    // Show file info immediately for UX feedback
     setZipSummary({
       fileName: zipFile.name,
       totalSize: zipFile.size,
@@ -345,13 +448,11 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     try {
       const init = await buildAuthInit();
-      // INVARIANT: capsulesApi.importZip sends raw ZIP to worker /import/zip
-      // Server analyzes ZIP, generates/validates manifest, enforces safety, writes to R2/DB
       const response = await capsulesApi.importZip(zipFile, init);
 
       if (response.status === 401) {
         redirectToSignIn();
-        setImportStatus("idle");
+        setAppProgress({ status: "idle", active: "select", message: null });
         return;
       }
 
@@ -359,44 +460,44 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       const parsed = ApiImportResponseSchema.safeParse(raw);
 
       if (!parsed.success) {
-        // Handle validation errors from server
         const errorList = Array.isArray((raw as any)?.errors) ? (raw as any).errors : undefined;
         if (errorList?.length) {
-          const errorMessages = errorList.map((e: any) =>
-            typeof e === "string" ? e : e.message
-          );
-          setImportError(`Validation failed: ${errorMessages.join(", ")}`);
-          setImportStatus("error");
+          const errorMessages = errorList.map((e: any) => (typeof e === "string" ? e : e.message));
+          const message = `Validation failed: ${errorMessages.join(", ")}`;
+          setAppError(message);
+          setAppProgress({ status: "error", active: "analyze", message });
           trackEvent("composer_zip_import_failed", { error: "server-validation" });
           return;
         }
 
         const message = (raw as any)?.error || "Upload failed. Please check your ZIP and try again.";
-        setImportError(message);
-        setImportStatus("error");
+        setAppError(message);
+        setAppProgress({ status: "error", active: "upload", message });
         trackEvent("composer_zip_import_failed", { error: message });
         return;
       }
 
-      // Use canonical DraftCapsule abstraction
       const draft = toDraftCapsule(parsed.data);
 
-      // Update summary with server-computed size
       setZipSummary({
         fileName: zipFile.name,
         totalSize: draft.totalSize,
       });
 
-      setCapsuleId(draft.capsuleId);
-      setCapsuleSource("zip");
-      setZipImportWarnings(draft.warnings ?? []);
+      setAppAttachment({
+        capsuleId: draft.capsuleId,
+        source: "zip",
+        title: draft.manifest?.title ?? zipFile.name,
+        warnings: draft.warnings ?? [],
+        fileName: zipFile.name,
+      });
 
-      // Auto-fill title from server-generated manifest if user hasn't entered one
       if (!title.trim() && draft.manifest?.title) {
         setTitle(draft.manifest.title);
       }
 
-      setImportStatus("ready");
+      setZipImportWarnings(draft.warnings ?? []);
+      setAppProgress({ status: "ready", active: "ready", message: "ZIP uploaded" });
       trackEvent("composer_zip_import_success", { capsuleId: draft.capsuleId });
       setZipFile(null);
       if (zipInputRef.current) {
@@ -404,13 +505,145 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       }
     } catch (err) {
       console.error("Failed to import ZIP:", err);
-      setImportError(
-        err instanceof Error ? err.message : "Upload failed. Please check your ZIP and try again."
+      setAppError(
+        err instanceof Error ? err.message : "Upload failed. Please check your ZIP and try again.",
       );
-      setImportStatus("error");
+      setAppProgress({ status: "error", active: "upload", message: "Upload failed" });
       setZipSummary(null);
       setZipImportWarnings([]);
       trackEvent("composer_zip_import_error");
+    }
+  };
+
+  const buildInlineApp = async () => {
+    if (isAppBusy) return;
+    const trimmedCode = code.trim();
+    if (!trimmedCode) {
+      setAppError("Add code before building your app.");
+      return;
+    }
+
+    const manifestTitle = title.trim() || "Inline app";
+    setAppAttachment(null);
+    setAppError(null);
+    setAppProgress({ status: "processing", active: "build", message: "Building inline app" });
+
+    try {
+      const capabilities = allowStorage ? ({ storage: true } as { storage?: boolean }) : undefined;
+
+      let params:
+        | Array<{
+            name: string;
+            type: "slider";
+            label: string;
+            default: number;
+            min?: number;
+            max?: number;
+            step?: number;
+          }>
+        | undefined;
+
+      if (enableParam) {
+        const rawLabel = (paramLabel || "Param").trim();
+        const base = rawLabel.toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+        const safeBase = base.length > 0 ? base : "param";
+        const name = /^[a-zA-Z_]/.test(safeBase) ? safeBase : `p_${safeBase}`;
+
+        params = [
+          {
+            name,
+            type: "slider",
+            label: rawLabel || "Intensity",
+            default: paramDefault,
+            min: paramMin,
+            max: paramMax,
+            step: paramStep,
+          },
+        ];
+      }
+
+      const manifest = {
+        version: "1.0",
+        runner: "webcontainer" as const,
+        entry: "entry.tsx",
+        title: manifestTitle,
+        description: description.trim() || undefined,
+        ...(capabilities && Object.keys(capabilities).length > 0 ? { capabilities } : {}),
+        ...(params && params.length > 0 ? { params } : {}),
+      };
+
+      const formData = new FormData();
+      const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+      const manifestFile = new File([manifestBlob], "manifest.json", { type: "application/json" });
+      formData.append("manifest", manifestFile);
+
+      const hasDefaultExport = /export\s+default\s+/.test(trimmedCode);
+      const hasReactImport = /import\s+React/.test(trimmedCode);
+      const wrappedSource = hasDefaultExport
+        ? trimmedCode
+        : `${hasReactImport ? "" : 'import React from "react";\n\n'}export default function App() {\n  return (\n    <>\n${trimmedCode}\n    </>\n  );\n}`;
+
+      const entryShim = `
+import React from "react";
+import ReactDOM from "react-dom/client";
+import UserApp from "./user-code";
+
+const root = document.getElementById("root") || document.body.appendChild(document.createElement("div"));
+const mount = ReactDOM.createRoot(root);
+mount.render(React.createElement(UserApp));
+
+if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") {
+  window.vibecodrBridge.ready({ capabilities: {} });
+}
+`;
+      const entryFile = new File([entryShim], "entry.tsx", { type: "text/tsx" });
+      formData.append("entry.tsx", entryFile);
+
+      const userFile = new File([wrappedSource], "user-code.tsx", { type: "text/tsx" });
+      formData.append("user-code.tsx", userFile);
+
+      const init = await buildAuthInit();
+      const publishResponse = await capsulesApi.publish(formData, init);
+
+      if (publishResponse.status === 401) {
+        redirectToSignIn();
+        setAppProgress({ status: "idle", active: "select", message: null });
+        return;
+      }
+
+      const publishData = (await publishResponse.json()) as {
+        success?: boolean;
+        capsuleId?: string;
+        error?: string;
+        warnings?: unknown;
+      };
+
+      if (!publishResponse.ok || !publishData.success || !publishData.capsuleId) {
+        const message = publishData.error || "Failed to publish app. Please check your code and try again.";
+        console.error("Inline code publish failed:", message);
+        setAppError(message);
+        setAppProgress({ status: "error", active: "build", message });
+        trackEvent("composer_code_publish_failed", { appMode: "code", runner: "webcontainer" });
+        return;
+      }
+
+      setAppAttachment({
+        capsuleId: publishData.capsuleId,
+        source: "code",
+        title: manifestTitle,
+        warnings: Array.isArray(publishData.warnings) ? (publishData.warnings as any) : [],
+      });
+      setAppProgress({ status: "ready", active: "ready", message: "Inline app attached" });
+      trackEvent("composer_code_publish_success", {
+        appMode: "code",
+        runner: "webcontainer",
+        capsuleId: publishData.capsuleId,
+      });
+    } catch (err) {
+      console.error("Failed to publish inline app:", err);
+      setAppError("Failed to publish app. Please check your code and try again.");
+      setAppProgress({ status: "error", active: "build", message: "Publish failed" });
+      trackEvent("composer_code_publish_error");
     }
   };
 
@@ -430,7 +663,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
     if (isLinkVibe) {
       if (!trimmedLink) {
-        setError("Please add a link to share");
+        setComposerError("Please add a link to share");
         return;
       }
       let parsedLink: URL | null = null;
@@ -441,145 +674,31 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
           raw: trimmedLink,
           error: err instanceof Error ? err.message : String(err),
         });
-        setError("Please enter a valid link URL");
+        setComposerError("Please enter a valid link URL");
         return;
       }
       if (!effectiveTitle) {
         effectiveTitle = parsedLink.hostname || trimmedLink;
       }
     } else if (!effectiveTitle) {
-      setError("Please add a title for your vibe");
+      setComposerError("Please add a title for your vibe");
       return;
     }
 
-    if (isAppVibe && appMode === "code" && !code.trim()) {
-      setError("Please add some code for your app");
-      return;
-    }
-
-    if (isAppVibe && requiresCapsuleImport && !hasImportedCapsule) {
-      setError("Import your app before sharing it to the feed.");
+    if (isAppVibe && !hasAttachedApp) {
+      setComposerError("Attach an app before sharing it to the feed.");
       return;
     }
 
     if (isImageVibe && !coverKey) {
-      setError("Add an image before sharing this vibe.");
+      setComposerError("Add an image before sharing this vibe.");
       return;
     }
 
-    setError(null);
+    setComposerError(null);
     setIsSubmitting(true);
 
     try {
-      let effectiveCapsuleId = isAppVibe ? capsuleId : null;
-
-      if (isAppVibe && appMode === "code") {
-        const userSource = code.trim();
-        // Derive capabilities from Advanced controls (network disabled until premium tiers)
-        const capabilities = allowStorage ? ({ storage: true } as { storage?: boolean }) : undefined;
-
-        // Optional single slider param
-        let params: Array<{
-          name: string;
-          type: "slider";
-          label: string;
-          default: number;
-          min?: number;
-          max?: number;
-          step?: number;
-        }> | undefined;
-
-        if (enableParam) {
-          const rawLabel = (paramLabel || "Param").trim();
-          const base = rawLabel.toLowerCase().replace(/[^a-z0-9_]+/g, "_");
-          const safeBase = base.length > 0 ? base : "param";
-          const name = /^[a-zA-Z_]/.test(safeBase) ? safeBase : `p_${safeBase}`;
-
-          params = [
-            {
-              name,
-              type: "slider",
-              label: rawLabel || "Intensity",
-              default: paramDefault,
-              min: paramMin,
-              max: paramMax,
-              step: paramStep,
-            },
-          ];
-        }
-
-        const manifest = {
-          version: "1.0",
-          runner: "webcontainer" as const,
-          entry: "entry.tsx",
-          title: trimmedTitle,
-          description: trimmedDescription || undefined,
-          ...(capabilities && Object.keys(capabilities).length > 0 ? { capabilities } : {}),
-          ...(params && params.length > 0 ? { params } : {}),
-        };
-
-        const formData = new FormData();
-        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-        const manifestFile = new File([manifestBlob], "manifest.json", { type: "application/json" });
-        formData.append("manifest", manifestFile);
-
-        // WHY: Users may paste raw JSX fragments without wrapping them in a component.
-        // Auto-wrap if the code doesn't export a default function/component.
-        const hasDefaultExport = /export\s+default\s+/.test(userSource);
-        const hasReactImport = /import\s+React/.test(userSource);
-        const wrappedSource = hasDefaultExport
-          ? userSource
-          : `${hasReactImport ? "" : 'import React from "react";\n\n'}export default function App() {\n  return (\n    <>\n${userSource}\n    </>\n  );\n}`;
-
-        const entryShim = `
-import React from "react";
-import ReactDOM from "react-dom/client";
-import UserApp from "./user-code";
-
-const root = document.getElementById("root") || document.body.appendChild(document.createElement("div"));
-const mount = ReactDOM.createRoot(root);
-mount.render(React.createElement(UserApp));
-
-// Signal to parent that the runtime is ready
-if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") {
-  window.vibecodrBridge.ready({ capabilities: {} });
-}
-`;
-        const entryFile = new File([entryShim], "entry.tsx", { type: "text/tsx" });
-        formData.append("entry.tsx", entryFile);
-
-        const userFile = new File([wrappedSource], "user-code.tsx", { type: "text/tsx" });
-        formData.append("user-code.tsx", userFile);
-
-        const init = await buildAuthInit();
-        const publishResponse = await capsulesApi.publish(formData, init);
-
-        if (publishResponse.status === 401) {
-          redirectToSignIn();
-          return;
-        }
-
-        const publishData = (await publishResponse.json()) as {
-          success?: boolean;
-          capsuleId?: string;
-          error?: string;
-          warnings?: unknown;
-        };
-
-        if (!publishResponse.ok || !publishData.success || !publishData.capsuleId) {
-          const message = publishData.error || "Failed to publish app. Please check your code and try again.";
-          console.error("Inline code publish failed:", message);
-          setError(message);
-          trackEvent("composer_code_publish_failed", { appMode: "code", runner: "webcontainer" });
-          return;
-        }
-
-        effectiveCapsuleId = publishData.capsuleId;
-        setCapsuleId(publishData.capsuleId);
-        setCapsuleSource("code");
-        setImportStatus("ready");
-      }
-
       const type: VibeType = isAppVibe ? "app" : vibeType;
       const descriptionPayload =
         isLinkVibe
@@ -588,18 +707,17 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
       const tagsForPost = isAppVibe ? selectedTags : [];
       const coverPayload = isImageVibe || isAppVibe ? coverKey ?? undefined : undefined;
 
-      // Create the post
       const init = await buildAuthInit();
       const response = await postsApi.create(
         {
           title: effectiveTitle,
           description: descriptionPayload,
           type,
-          capsuleId: effectiveCapsuleId ?? undefined,
+          capsuleId: hasAttachedApp ? appAttachment?.capsuleId : undefined,
           coverKey: coverPayload,
           tags: tagsForPost.length > 0 ? tagsForPost : undefined,
         },
-        init
+        init,
       );
 
       if (response.status === 401) {
@@ -609,7 +727,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
 
       if (!response.ok) {
         console.error("Failed to create post:", await response.text());
-        setError("Failed to share your vibe. Please try again.");
+        setComposerError("Failed to share your vibe. Please try again.");
         trackEvent("composer_submit_failed", { type, appMode });
         return;
       }
@@ -618,11 +736,10 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
       const postId = data.id;
 
       if (!postId) {
-        setError("Post created but missing ID. Please refresh.");
+        setComposerError("Post created but missing ID. Please refresh.");
         return;
       }
 
-      // Create optimistic post for immediate feed update
       if (onPostCreated && user) {
         const optimisticPost: FeedPost = {
           id: postId,
@@ -636,14 +753,14 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
             avatarUrl: user.imageUrl || null,
           },
           capsule:
-            isAppVibe && effectiveCapsuleId
+            isAppVibe && hasAttachedApp && appAttachment
               ? {
-              id: effectiveCapsuleId,
-              runner: "client-static",
-              capabilities: undefined,
-              params: undefined,
-              artifactId: null,
-            }
+                  id: appAttachment.capsuleId,
+                  runner: "client-static",
+                  capabilities: undefined,
+                  params: undefined,
+                  artifactId: null,
+                }
               : null,
           coverKey: coverPayload ?? null,
           tags: tagsForPost,
@@ -659,7 +776,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
         onPostCreated(optimisticPost);
       }
 
-      // Show success and reset
       toast({
         title: "Vibe shared!",
         description:
@@ -676,36 +792,14 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
       trackEvent("composer_submit_success", {
         type,
         appMode,
-        hasCapsule: !!effectiveCapsuleId,
+        hasCapsule: hasAttachedApp,
         hasDescription: !!descriptionPayload,
       });
 
-      // Reset form
-      setTitle("");
-      setDescription("");
-      setLinkUrl("");
-      setSelectedTags([]);
-      setTagInput("");
-      setCode("");
-      setAllowStorage(false);
-      setEnableParam(false);
-      setParamLabel("Intensity");
-      setParamDefault(50);
-      setParamMin(0);
-      setParamMax(100);
-      setParamStep(1);
-      setCapsuleId(null);
-      setImagePreview(null);
-      setCoverKey(null);
-      setZipFile(null);
-      setGithubUrl("");
-      setImportStatus("idle");
-      setIsExpanded(false);
-      setVibeType("thought");
-      setAppMode("github");
+      resetComposer();
     } catch (err) {
       console.error("Failed to share vibe:", err);
-      setError("Failed to share your vibe. Please try again.");
+      setComposerError("Failed to share your vibe. Please try again.");
       trackEvent("composer_submit_error", { type: vibeType, appMode });
     } finally {
       setIsSubmitting(false);
@@ -724,60 +818,9 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
     setZipFile(null);
     setZipSummary(null);
     setZipImportWarnings([]);
-    setImportError(null);
+    setAppError(null);
     if (zipInputRef.current) {
       zipInputRef.current.value = "";
-    }
-  };
-
-  const resetZipImport = () => {
-    setZipFile(null);
-    setZipSummary(null);
-    setZipImportWarnings([]);
-    if (zipInputRef.current) {
-      zipInputRef.current.value = "";
-    }
-    if (capsuleSource === "zip") {
-      setCapsuleId(null);
-      setCapsuleSource(null);
-      setImportStatus("idle");
-      setImportError(null);
-    }
-  };
-
-  const resetComposer = () => {
-    setIsExpanded(false);
-    setTitle("");
-    setDescription("");
-    setLinkUrl("");
-    setSelectedTags([]);
-    setTagInput("");
-    setCode("");
-    setAllowStorage(false);
-    setEnableParam(false);
-    setParamLabel("Intensity");
-    setParamDefault(50);
-    setParamMin(0);
-    setParamMax(100);
-    setParamStep(1);
-    setError(null);
-    setImportError(null);
-    setGithubUrl("");
-    setCapsuleId(null);
-    setCapsuleSource(null);
-    setImportStatus("idle");
-    setZipFile(null);
-    setZipSummary(null);
-    setZipImportWarnings([]);
-    setImagePreview(null);
-    setCoverKey(null);
-    setVibeType("thought");
-    setAppMode("github");
-    if (zipInputRef.current) {
-      zipInputRef.current.value = "";
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
     }
   };
 
@@ -800,9 +843,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
     );
   }
 
-  const isGithubMode = isAppVibe && appMode === "github";
-  const isZipMode = isAppVibe && appMode === "zip";
-  const isCodeMode = isAppVibe && appMode === "code";
   const titlePlaceholder =
     isGithubMode && !isExpanded
       ? "https://github.com/user/repo"
@@ -827,16 +867,16 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
             : "Add more details (optional)";
   const submitDisabled =
     isSubmitting ||
-    isImporting ||
+    isAppBusy ||
     isUploadingCover ||
     (isLinkVibe && !linkUrl.trim()) ||
     (!title.trim() && !isLinkVibe) ||
-    (isCodeMode && !code.trim()) ||
-    (isGithubMode && !hasImportedCapsule && !!githubUrl.trim()) ||
-    (isZipMode && !!zipFile && !hasImportedCapsule) ||
-    (isAppVibe && requiresCapsuleImport && !hasImportedCapsule) ||
+    (isAppVibe && !hasAttachedApp) ||
     (isImageVibe && !coverKey);
 
+  const progressForDisplay = hasAttachedApp
+    ? { status: "ready", active: "ready", message: "App attached" }
+    : appProgress;
   return (
     <motion.section
       layout
@@ -854,7 +894,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Vibe Type Selector */}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -907,7 +946,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                 Longform
               </Button>
             </div>
-
             {isAppVibe && (
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button
@@ -943,7 +981,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
               </div>
             )}
 
-            {/* Main Input */}
             <div className="space-y-2">
               <Input
                 placeholder={titlePlaceholder}
@@ -956,7 +993,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                   }
                 }}
                 onFocus={() => setIsExpanded(true)}
-                disabled={isSubmitting || isImporting}
+                disabled={isSubmitting || isAppBusy}
               />
 
               {isExpanded && (
@@ -972,7 +1009,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                         placeholder="https://example.com/your-link"
                         value={linkUrl}
                         onChange={(e) => setLinkUrl(e.target.value)}
-                        disabled={isSubmitting || isImporting}
+                        disabled={isSubmitting || isAppBusy}
                       />
                     </div>
                   )}
@@ -983,360 +1020,482 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       rows={isLongformVibe ? 6 : 3}
-                      disabled={isSubmitting || isImporting}
+                      disabled={isSubmitting || isAppBusy}
                     />
                   )}
-
                   {isAppVibe && (
-                    <div className="space-y-2 rounded-md border p-3">
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-4 w-4" />
-                        <span className="text-sm font-medium">Tags (apps)</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Add up to {MAX_TAGS} tags to help Vibecoders find this app.
-                      </p>
-                      {selectedTags.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedTags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs"
-                            >
-                              #{tag}
-                              <button
-                                type="button"
-                                className="text-muted-foreground hover:text-foreground"
-                                onClick={() => removeTag(tag)}
-                                aria-label={`Remove ${tag} tag`}
-                                disabled={isSubmitting || isImporting}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {!isTagLimitReached && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Input
-                            placeholder="e.g. ai, cli, canvas"
-                            value={tagInput}
-                            onChange={(e) => setTagInput(e.target.value)}
-                            onKeyDown={handleTagKeyDown}
-                            disabled={isSubmitting || isImporting}
-                            className="w-48"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addTag(tagInput)}
-                            disabled={!tagInput.trim() || isSubmitting || isImporting || isTagLimitReached}
-                          >
-                            Add tag
-                          </Button>
-                        </div>
-                      )}
-                      <div className="flex flex-wrap gap-2">
-                        {featuredTags.map((tag) => {
-                          const active = selectedTags.includes(tag);
-                          const atLimit = isTagLimitReached && !active;
-                          return (
-                            <Button
-                              key={tag}
-                              type="button"
-                              variant={active ? "secondary" : "ghost"}
-                              size="sm"
-                              className="h-8 px-3"
-                              onClick={() => addTag(tag)}
-                              disabled={atLimit || isSubmitting || isImporting}
-                            >
-                              #{tag}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Inline Code Section */}
-                  {isCodeMode && (
-                    <div className="space-y-2 rounded-md border p-3">
-                      <div className="flex items-center gap-2">
-                        <Code className="h-4 w-4" />
-                        <span className="text-sm font-medium">Inline App Code</span>
-                      </div>
-                      <Textarea
-                        placeholder="Write your app code here. HTML stays client-static; JS/TSX runs in the sandboxed runtime."
-                        value={code}
-                        onChange={(e) => setCode(e.target.value)}
-                        rows={10}
-                        disabled={isSubmitting || isImporting}
-                      />
-
-                      {/* Advanced manifest controls */}
-                      <div className="mt-3 space-y-3 border-t pt-3">
-                        <div>
-                          <p className="text-sm font-medium">Advanced (optional)</p>
-                          <p className="text-xs text-muted-foreground">
-                            Configure basic capabilities and a simple parameter for this app.
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Outbound network access is disabled until premium VM tiers launch.
-                          </p>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="space-y-1">
-                            <Label htmlFor="inline-code-storage" className="text-xs font-medium">
-                              Allow storage
-                            </Label>
+                    <div className="space-y-3 rounded-md border p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Code className="h-4 w-4" />
+                          <div>
+                            <p className="text-sm font-medium">Attach an app</p>
                             <p className="text-xs text-muted-foreground">
-                              Enable IndexedDB access for this app.
+                              Pick a source, let us build, then attach the capsule before posting.
                             </p>
                           </div>
-                          <Switch
-                            id="inline-code-storage"
-                            checked={allowStorage}
-                            onCheckedChange={(checked) => setAllowStorage(Boolean(checked))}
-                            disabled={isSubmitting || isImporting}
-                          />
                         </div>
+                        {hasAttachedApp && <Badge variant="secondary">App attached</Badge>}
+                      </div>
 
-                        <div className="mt-2 space-y-2 border-t pt-3">
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                              <span className="text-xs font-medium">Parameter (optional)</span>
-                              <p className="text-xs text-muted-foreground">
-                                Expose a single slider to control your app.
-                              </p>
-                            </div>
-                            <Switch
-                              id="inline-code-param"
-                              checked={enableParam}
-                              onCheckedChange={(checked) => setEnableParam(Boolean(checked))}
-                              disabled={isSubmitting || isImporting}
-                            />
+                      <div className="grid gap-2 rounded-md bg-muted/40 p-3">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+                          {PROGRESS_STEPS.map((step) => {
+                            const state = deriveStepState(step.key, progressForDisplay, hasAttachedApp);
+                            const isError = state === "error";
+                            const isDone = state === "done";
+                            const isActive = state === "active";
+                            const icon = isError ? (
+                              <AlertCircle className="h-4 w-4 text-destructive" />
+                            ) : isDone ? (
+                              <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                            ) : isActive ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                            ) : (
+                              <Minus className="h-4 w-4 text-muted-foreground" />
+                            );
+
+                            return (
+                              <div
+                                key={step.key}
+                                className={cn(
+                                  "flex items-center gap-2 rounded-md border px-2 py-2",
+                                  isError
+                                    ? "border-destructive/50 bg-destructive/10"
+                                    : isDone
+                                      ? "border-green-500/40 bg-green-500/5"
+                                      : isActive
+                                        ? "border-primary/40 bg-primary/5"
+                                        : "border-muted bg-background",
+                                )}
+                              >
+                                {icon}
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium leading-tight">{step.label}</p>
+                                  <p className="text-[11px] text-muted-foreground leading-tight">{step.helper}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {progressForDisplay.message && (
+                          <p className="text-xs text-muted-foreground">{progressForDisplay.message}</p>
+                        )}
+                      </div>
+                      {isGithubMode && (
+                        <div className="space-y-2 rounded-md border p-3">
+                          <div className="flex items-center gap-2">
+                            <Github className="h-4 w-4" />
+                            <span className="text-sm font-medium">Import from GitHub</span>
                           </div>
-
-                          {enableParam && (
-                            <div className="grid grid-cols-2 gap-3 pt-1">
-                              <div className="space-y-1">
-                                <Label htmlFor="inline-code-param-label" className="text-xs font-medium">
-                                  Label
-                                </Label>
-                                <Input
-                                  id="inline-code-param-label"
-                                  value={paramLabel}
-                                  onChange={(e) => setParamLabel(e.target.value)}
-                                  disabled={isSubmitting || isImporting}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <Label htmlFor="inline-code-param-default" className="text-xs font-medium">
-                                  Default
-                                </Label>
-                                <Input
-                                  id="inline-code-param-default"
-                                  type="number"
-                                  value={paramDefault}
-                                  onChange={(e) => setParamDefault(Number(e.target.value) || 0)}
-                                  disabled={isSubmitting || isImporting}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <Label htmlFor="inline-code-param-min" className="text-xs font-medium">
-                                  Min
-                                </Label>
-                                <Input
-                                  id="inline-code-param-min"
-                                  type="number"
-                                  value={paramMin}
-                                  onChange={(e) => setParamMin(Number(e.target.value) || 0)}
-                                  disabled={isSubmitting || isImporting}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <Label htmlFor="inline-code-param-max" className="text-xs font-medium">
-                                  Max
-                                </Label>
-                                <Input
-                                  id="inline-code-param-max"
-                                  type="number"
-                                  value={paramMax}
-                                  onChange={(e) => setParamMax(Number(e.target.value) || 0)}
-                                  disabled={isSubmitting || isImporting}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <Label htmlFor="inline-code-param-step" className="text-xs font-medium">
-                                  Step
-                                </Label>
-                                <Input
-                                  id="inline-code-param-step"
-                                  type="number"
-                                  value={paramStep}
-                                  onChange={(e) => setParamStep(Number(e.target.value) || 1)}
-                                  disabled={isSubmitting || isImporting}
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {/* GitHub Import Section */}
-                  {isGithubMode && (
-                    <div className="space-y-2 rounded-md border p-3">
-                      <div className="flex items-center gap-2">
-                        <Github className="h-4 w-4" />
-                        <span className="text-sm font-medium">Import from GitHub</span>
-                      </div>
-                      <Input
-                        placeholder="https://github.com/user/repo"
-                        value={githubUrl}
-                        onChange={(e) => setGithubUrl(e.target.value)}
-                        disabled={isImporting || hasImportedCapsule}
-                      />
-                      {!hasImportedCapsule && (
-                        <Button
-                          type="button"
-                          onClick={handleGithubImport}
-                          disabled={!githubUrl.trim() || isImporting}
-                          size="sm"
-                          className="gap-2"
-                        >
-                          {isImporting ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Importing...
-                            </>
-                          ) : (
-                            "Import Repository"
-                          )}
-                        </Button>
-                      )}
-                      {importError && (
-                        <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-                          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                          <span>{importError}</span>
-                        </div>
-                      )}
-                      {hasImportedCapsule && (
-                        <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
-                          <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                          <span>Repository imported successfully</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ZIP Upload Section */}
-                  {isZipMode && (
-                    <div className="space-y-2 rounded-md border p-3">
-                      <div className="flex items-center gap-2">
-                        <Upload className="h-4 w-4" />
-                        <span className="text-sm font-medium">Upload ZIP</span>
-                      </div>
-                      <input
-                        ref={zipInputRef}
-                        type="file"
-                        accept=".zip"
-                        onChange={handleZipSelect}
-                        className="hidden"
-                      />
-                      {!zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => zipInputRef.current?.click()}
-                          disabled={isImporting}
-                        >
-                          Select ZIP File
-                        </Button>
-                      )}
-                      {zipFile && (!hasImportedCapsule || capsuleSource !== "zip") && (
-                        <div className="flex items-center justify-between rounded-md bg-muted p-2">
-                          <span className="text-sm">{zipFile.name}</span>
-                          <div className="flex gap-2">
+                          <Input
+                            placeholder="https://github.com/user/repo"
+                            value={githubUrl}
+                            onChange={(e) => setGithubUrl(e.target.value)}
+                            disabled={isAppBusy}
+                          />
+                          {!hasAttachedApp && (
                             <Button
                               type="button"
-                              onClick={handleZipImport}
-                              disabled={isImporting}
+                              onClick={handleGithubImport}
+                              disabled={!githubUrl.trim() || isAppBusy}
                               size="sm"
                               className="gap-2"
                             >
-                              {isImporting ? (
+                              {isAppBusy ? (
                                 <>
                                   <Loader2 className="h-4 w-4 animate-spin" />
                                   Importing...
                                 </>
                               ) : (
-                                "Import"
+                                "Import & attach"
                               )}
                             </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={clearZip}
-                              disabled={isImporting}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {importError && isZipMode && (
-                        <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-                          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                          <span>{importError}</span>
-                        </div>
-                      )}
-                      {hasImportedCapsule && capsuleSource === "zip" && (
-                        <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
-                          <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                          <span>ZIP imported successfully</span>
-                        </div>
-                      )}
-                      {zipSummary && (
-                        <div className="space-y-2 rounded-md border p-3 text-xs">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium">{zipSummary.fileName}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatBytes(zipSummary.totalSize)}
-                              </p>
+                          )}
+                          {appError && (
+                            <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+                              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              <span>{appError}</span>
                             </div>
-                            <Button variant="ghost" size="sm" onClick={resetZipImport}>
-                              Replace ZIP
-                            </Button>
-                          </div>
-                          {zipImportWarnings.length > 0 && (
-                            <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
-                              <p className="text-xs font-medium">Import warnings</p>
-                              {zipImportWarnings.slice(0, 5).map((warning, index) => {
-                                // API may return string or {path, message} - handle both
-                                const msg = typeof warning === "string" ? warning : warning.message;
-                                const path = typeof warning === "object" && warning.path ? warning.path : null;
-                                return (
-                                  <p key={`import-warning-${index}`}>
-                                    {path && <span className="font-mono">{path}</span>}{path && ": "}{msg}
-                                  </p>
-                                );
-                              })}
+                          )}
+                          {hasAttachedApp && appAttachment?.source === "github" && (
+                            <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
+                              <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              <span>Repository imported and attached</span>
                             </div>
                           )}
                         </div>
                       )}
+                      {isZipMode && (
+                        <div className="space-y-2 rounded-md border p-3">
+                          <div className="flex items-center gap-2">
+                            <Upload className="h-4 w-4" />
+                            <span className="text-sm font-medium">Upload ZIP</span>
+                          </div>
+                          <input
+                            ref={zipInputRef}
+                            type="file"
+                            accept=".zip"
+                            onChange={handleZipSelect}
+                            className="hidden"
+                          />
+                          {!zipFile && !hasAttachedApp && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => zipInputRef.current?.click()}
+                              disabled={isAppBusy}
+                            >
+                              Select ZIP File
+                            </Button>
+                          )}
+                          {zipFile && !hasAttachedApp && (
+                            <div className="flex items-center justify-between rounded-md bg-muted p-2">
+                              <span className="text-sm">{zipFile.name}</span>
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  onClick={handleZipImport}
+                                  disabled={isAppBusy}
+                                  size="sm"
+                                  className="gap-2"
+                                >
+                                  {isAppBusy ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      Importing...
+                                    </>
+                                  ) : (
+                                    "Upload & attach"
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={clearZip}
+                                  disabled={isAppBusy}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                          {appError && isZipMode && (
+                            <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+                              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              <span>{appError}</span>
+                            </div>
+                          )}
+                          {hasAttachedApp && appAttachment?.source === "zip" && (
+                            <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-2 text-sm text-green-700 dark:text-green-400">
+                              <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              <span>ZIP uploaded and attached</span>
+                            </div>
+                          )}
+                          {zipSummary && (
+                            <div className="space-y-2 rounded-md border p-3 text-xs">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-medium">{zipSummary.fileName}</p>
+                                  <p className="text-xs text-muted-foreground">{formatBytes(zipSummary.totalSize)}</p>
+                                </div>
+                                <Button variant="ghost" size="sm" onClick={clearZip}>
+                                  Replace ZIP
+                                </Button>
+                              </div>
+                              {zipImportWarnings.length > 0 && (
+                                <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                                  <p className="text-xs font-medium">Import warnings</p>
+                                  {zipImportWarnings.slice(0, 5).map((warning, index) => (
+                                    <p key={`import-warning-${index}`}>{toWarningText(warning)}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {isCodeMode && (
+                        <div className="space-y-2 rounded-md border p-3">
+                          <div className="flex items-center gap-2">
+                            <Code className="h-4 w-4" />
+                            <span className="text-sm font-medium">Inline App Code</span>
+                          </div>
+                          <Textarea
+                            placeholder="Write your app code here. HTML stays client-static; JS/TSX runs in the sandboxed runtime."
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            rows={10}
+                            disabled={isSubmitting || isAppBusy}
+                          />
+
+                          <div className="mt-3 space-y-3 border-t pt-3">
+                            <div>
+                              <p className="text-sm font-medium">Advanced (optional)</p>
+                              <p className="text-xs text-muted-foreground">
+                                Configure basic capabilities and a simple parameter for this app.
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Outbound network access is disabled until premium VM tiers launch.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="space-y-1">
+                                <Label htmlFor="inline-code-storage" className="text-xs font-medium">
+                                  Allow storage
+                                </Label>
+                                <p className="text-xs text-muted-foreground">Enable IndexedDB access for this app.</p>
+                              </div>
+                              <Switch
+                                id="inline-code-storage"
+                                checked={allowStorage}
+                                onCheckedChange={(checked) => setAllowStorage(Boolean(checked))}
+                                disabled={isSubmitting || isAppBusy}
+                              />
+                            </div>
+
+                            <div className="mt-2 space-y-2 border-t pt-3">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="space-y-1">
+                                  <span className="text-xs font-medium">Parameter (optional)</span>
+                                  <p className="text-xs text-muted-foreground">
+                                    Expose a single slider to control your app.
+                                  </p>
+                                </div>
+                                <Switch
+                                  id="inline-code-param"
+                                  checked={enableParam}
+                                  onCheckedChange={(checked) => setEnableParam(Boolean(checked))}
+                                  disabled={isSubmitting || isAppBusy}
+                                />
+                              </div>
+
+                              {enableParam && (
+                                <div className="grid grid-cols-2 gap-3 pt-1">
+                                  <div className="space-y-1">
+                                    <Label htmlFor="inline-code-param-label" className="text-xs font-medium">
+                                      Label
+                                    </Label>
+                                    <Input
+                                      id="inline-code-param-label"
+                                      value={paramLabel}
+                                      onChange={(e) => setParamLabel(e.target.value)}
+                                      disabled={isSubmitting || isAppBusy}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label htmlFor="inline-code-param-default" className="text-xs font-medium">
+                                      Default
+                                    </Label>
+                                    <Input
+                                      id="inline-code-param-default"
+                                      type="number"
+                                      value={paramDefault}
+                                      onChange={(e) => setParamDefault(Number(e.target.value) || 0)}
+                                      disabled={isSubmitting || isAppBusy}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label htmlFor="inline-code-param-min" className="text-xs font-medium">
+                                      Min
+                                    </Label>
+                                    <Input
+                                      id="inline-code-param-min"
+                                      type="number"
+                                      value={paramMin}
+                                      onChange={(e) => setParamMin(Number(e.target.value) || 0)}
+                                      disabled={isSubmitting || isAppBusy}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label htmlFor="inline-code-param-max" className="text-xs font-medium">
+                                      Max
+                                    </Label>
+                                    <Input
+                                      id="inline-code-param-max"
+                                      type="number"
+                                      value={paramMax}
+                                      onChange={(e) => setParamMax(Number(e.target.value) || 0)}
+                                      disabled={isSubmitting || isAppBusy}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label htmlFor="inline-code-param-step" className="text-xs font-medium">
+                                      Step
+                                    </Label>
+                                    <Input
+                                      id="inline-code-param-step"
+                                      type="number"
+                                      value={paramStep}
+                                      onChange={(e) => setParamStep(Number(e.target.value) || 1)}
+                                      disabled={isSubmitting || isAppBusy}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={buildInlineApp}
+                              disabled={isAppBusy || !code.trim()}
+                              className="gap-2"
+                            >
+                              {isAppBusy ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Building...
+                                </>
+                              ) : (
+                                <>
+                                  <Code className="h-4 w-4" />
+                                  Build & attach app
+                                </>
+                              )}
+                            </Button>
+                            {hasAttachedApp && appAttachment?.source === "code" && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setAppAttachment(null);
+                                  setAppProgress({ status: "idle", active: "select", message: null });
+                                  setAppError(null);
+                                }}
+                                className="gap-1"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                Rebuild
+                              </Button>
+                            )}
+                            {appError && (
+                              <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+                                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                                <span>{appError}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {hasAttachedApp && (
+                        <div className="space-y-2 rounded-md border bg-muted/40 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold">
+                                Attached app: {appAttachment?.title || "Untitled app"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Source: {appAttachment?.source.toUpperCase()} • Capsule ID: {appAttachment?.capsuleId}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setAppAttachment(null);
+                                  setAppProgress({ status: "idle", active: "select", message: null });
+                                  setAppError(null);
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+                          {appAttachment?.warnings && appAttachment.warnings.length > 0 && (
+                            <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
+                              <p className="text-xs font-medium">Warnings</p>
+                              {appAttachment.warnings.slice(0, 4).map((warning, index) => (
+                                <p key={`app-warning-${index}`} className="text-xs">
+                                  {toWarningText(warning)}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="space-y-2 rounded-md border p-3">
+                        <div className="flex items-center gap-2">
+                          <Tag className="h-4 w-4" />
+                          <span className="text-sm font-medium">Tags (apps)</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Add up to {MAX_TAGS} tags to help Vibecoders find this app.
+                        </p>
+                        {selectedTags.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {selectedTags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs"
+                              >
+                                #{tag}
+                                <button
+                                  type="button"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  onClick={() => removeTag(tag)}
+                                  aria-label={`Remove ${tag} tag`}
+                                  disabled={isSubmitting || isAppBusy}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {selectedTags.length < MAX_TAGS && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              placeholder="e.g. ai, cli, canvas"
+                              value={tagInput}
+                              onChange={(e) => setTagInput(e.target.value)}
+                              onKeyDown={handleTagKeyDown}
+                              disabled={isSubmitting || isAppBusy}
+                              className="w-48"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addTag(tagInput)}
+                              disabled={!tagInput.trim() || isSubmitting || isAppBusy}
+                            >
+                              Add tag
+                            </Button>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {featuredTags.map((tag) => {
+                            const active = selectedTags.includes(tag);
+                            const atLimit = selectedTags.length >= MAX_TAGS && !active;
+                            return (
+                              <Button
+                                key={tag}
+                                type="button"
+                                variant={active ? "secondary" : "ghost"}
+                                size="sm"
+                                className="h-8 px-3"
+                                onClick={() => addTag(tag)}
+                                disabled={atLimit || isSubmitting || isAppBusy}
+                              >
+                                #{tag}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
-
-                  {/* Image Upload Section (cover for app or standalone image vibes) */}
-                  {(isImageVibe || (isAppVibe && hasImportedCapsule)) && (
+                  {(isImageVibe || (isAppVibe && hasAttachedApp)) && (
                     <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <ImageIcon className="h-4 w-4" />
@@ -1363,11 +1522,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                       {imagePreview && (
                         <div className="space-y-2">
                           <div className="relative aspect-video w-full overflow-hidden rounded-md">
-                            <img
-                              src={imagePreview ?? ""}
-                              alt="Preview"
-                              className="h-full w-full object-cover"
-                            />
+                            <img src={imagePreview ?? ""} alt="Preview" className="h-full w-full object-cover" />
                             <Button
                               type="button"
                               variant="destructive"
@@ -1387,15 +1542,13 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
               )}
             </div>
 
-            {/* Error Display */}
-            {error && (
+            {composerError && (
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                <span>{formatErrorMessage(error)}</span>
+                <span>{formatErrorMessage(composerError)}</span>
               </div>
             )}
 
-            {/* Action Buttons */}
             {isExpanded && (
               <div className="flex items-center justify-end gap-2">
                 <Button
@@ -1403,16 +1556,11 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                   variant="ghost"
                   size="sm"
                   onClick={resetComposer}
-                  disabled={isSubmitting || isImporting}
+                  disabled={isSubmitting || isAppBusy}
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={submitDisabled}
-                  className="gap-2"
-                >
+                <Button type="submit" size="sm" disabled={submitDisabled} className="gap-2">
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
