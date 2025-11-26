@@ -1,12 +1,19 @@
 import React, { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
 import EtheriaSkyBackground from "@/src/components/EtheriaSkyBackground";
 import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 
 const Layout = () => {
     const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
+    const location = useLocation();
+    const prefersReducedMotion = useReducedMotion();
+
+    // Use pathname as key so animation only triggers on actual page changes, not tab switches
+    const pageKey = location.pathname;
 
     return (
         <div className="min-h-screen text-foreground font-sans selection:bg-accent/30">
@@ -48,10 +55,22 @@ const Layout = () => {
                 }}
             >
                 <div className="container mx-auto px-4 py-8 max-w-5xl">
-                    {/* Content wrapper - no layout animation to prevent flashing on navigation */}
-                    <div className="w-full">
-                        <Outlet />
-                    </div>
+                    {/* Smooth page transition - animates on route change, not on tab switches */}
+                    <AnimatePresence mode="wait" initial={false}>
+                        <motion.div
+                            key={pageKey}
+                            className="w-full"
+                            initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
+                            transition={{ 
+                                duration: 0.25, 
+                                ease: [0.25, 0.1, 0.25, 1] 
+                            }}
+                        >
+                            <Outlet />
+                        </motion.div>
+                    </AnimatePresence>
                 </div>
             </main>
         </div>

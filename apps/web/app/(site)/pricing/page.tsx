@@ -3,10 +3,27 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { usePlanGate } from "@/lib/usePlanGate";
+import { Plan } from "@vibecodr/shared";
 import { Check, Zap, Star, Users } from "lucide-react";
 
-const plans = [
+type PlanCard = {
+  id: Plan;
+  name: string;
+  price: string;
+  period: string;
+  description: string;
+  icon: typeof Zap;
+  color: string;
+  features: string[];
+  cta: string;
+  popular?: boolean;
+  locked?: boolean;
+};
+
+const plans: PlanCard[] = [
   {
+    id: Plan.FREE,
     name: "Free",
     price: "$0",
     period: "forever",
@@ -20,10 +37,10 @@ const plans = [
       "Community support",
       "Basic analytics",
     ],
-    cta: "Current Plan",
-    disabled: true,
+    cta: "Start for free",
   },
   {
+    id: Plan.CREATOR,
     name: "Creator",
     price: "$12",
     period: "per month",
@@ -40,9 +57,9 @@ const plans = [
       "Custom domain",
     ],
     cta: "Upgrade to Creator",
-    disabled: false,
   },
   {
+    id: Plan.PRO,
     name: "Pro",
     price: "$49",
     period: "per month",
@@ -60,9 +77,9 @@ const plans = [
       "Team collaboration (3 seats)",
     ],
     cta: "Upgrade to Pro",
-    disabled: false,
   },
   {
+    id: Plan.TEAM,
     name: "Team",
     price: "$199",
     period: "per month",
@@ -80,32 +97,53 @@ const plans = [
       "Unlimited team seats",
       "SSO & advanced security",
     ],
-    cta: "Upgrade to Team",
-    disabled: true,
+    cta: "Contact sales",
+    locked: true,
   },
 ];
 
 export default function PricingPage() {
+  const { plan: currentPlan, isLoading } = usePlanGate();
+  const isPaidSubscriber = currentPlan !== Plan.FREE;
+  const currentPlanName = plans.find((p) => p.id === currentPlan)?.name ?? currentPlan;
+
   return (
     <div className="container mx-auto px-4 py-12">
-      <div className="mb-12 text-center">
-        <h1 className="mb-4 text-4xl font-bold">Choose Your Plan</h1>
+      <div className="mb-12 text-center space-y-3">
+        <h1 className="text-4xl font-bold">Choose Your Plan</h1>
         <p className="text-lg text-muted-foreground">
           Scale your runnable apps with the plan that fits your needs
         </p>
+        {isPaidSubscriber && (
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
+            <span className="h-2 w-2 rounded-full bg-primary" aria-hidden />
+            Thanks for being a subscriber — you&apos;re on the {currentPlanName} plan.
+          </div>
+        )}
       </div>
 
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
         {plans.map((plan) => {
           const Icon = plan.icon;
+          const isCurrent = currentPlan === plan.id;
+          const buttonLabel = isCurrent ? "Current plan" : plan.cta;
+          const buttonDisabled = plan.locked || isCurrent || isLoading;
+
           return (
             <Card
               key={plan.name}
-              className={`relative vc-surface border-0 ${plan.popular ? "ring-2 ring-blue-500 shadow-lg" : ""}`}
+              className={`relative vc-surface border-0 ${
+                plan.popular ? "ring-2 ring-blue-500 shadow-lg" : ""
+              } ${isCurrent ? "outline outline-2 outline-primary/70" : ""}`}
             >
               {plan.popular && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                   <Badge className="bg-blue-500 text-white">Most Popular</Badge>
+                </div>
+              )}
+              {isCurrent && !plan.popular && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                  <Badge className="bg-primary text-primary-foreground">Your plan</Badge>
                 </div>
               )}
 
@@ -116,9 +154,7 @@ export default function PricingPage() {
                 </div>
                 <div className="mb-2">
                   <span className="text-4xl font-bold">{plan.price}</span>
-                  {plan.period && (
-                    <span className="text-muted-foreground"> / {plan.period}</span>
-                  )}
+                  {plan.period && <span className="text-muted-foreground"> / {plan.period}</span>}
                 </div>
                 <CardDescription>{plan.description}</CardDescription>
               </CardHeader>
@@ -135,16 +171,14 @@ export default function PricingPage() {
 
                 <Button
                   className="w-full"
-                  variant={plan.popular ? "default" : "outline"}
-                  disabled={plan.disabled}
+                  variant={plan.popular || isCurrent ? "default" : "outline"}
+                  disabled={buttonDisabled}
                 >
-                  {plan.cta}
+                  {isLoading ? "Checking plan..." : buttonLabel}
                 </Button>
 
-                {plan.disabled && (
-                  <p className="text-center text-xs text-muted-foreground">
-                    Your current plan
-                  </p>
+                {isCurrent && (
+                  <p className="text-center text-xs text-muted-foreground">Your current plan</p>
                 )}
               </CardContent>
             </Card>

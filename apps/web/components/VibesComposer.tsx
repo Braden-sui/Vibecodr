@@ -874,8 +874,8 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
     (isAppVibe && !hasAttachedApp) ||
     (isImageVibe && !coverKey);
 
-  const progressForDisplay = hasAttachedApp
-    ? { status: "ready", active: "ready", message: "App attached" }
+  const progressForDisplay: AppProgressState = hasAttachedApp
+    ? { status: "ready" as const, active: "ready" as const, message: "App attached" }
     : appProgress;
   return (
     <motion.section
@@ -1392,7 +1392,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                                 Attached app: {appAttachment?.title || "Untitled app"}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Source: {appAttachment?.source.toUpperCase()} • Capsule ID: {appAttachment?.capsuleId}
+                                Source: {appAttachment?.source.toUpperCase()} ï¿½ Capsule ID: {appAttachment?.capsuleId}
                               </p>
                             </div>
                             <div className="flex gap-2">
