@@ -488,9 +488,15 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       }
     }, [params, status, sendToIframe]);
 
+    // WHY: Store onError in a ref to avoid it causing effect re-runs when parent re-renders.
+    const onErrorRef = useRef(onError);
+    useEffect(() => {
+      onErrorRef.current = onError;
+    }, [onError]);
+
     // Load runtime manifest when an artifactId is provided. If it fails, surface an
     // error state before attempting to talk to the iframe runtime.
-    // INVARIANT: This effect must NOT depend on emitRuntimeEvent to avoid a reload loop.
+    // INVARIANT: This effect must NOT depend on callbacks to avoid a reload loop.
     useEffect(() => {
       let cancelled = false;
       heartbeatTrackedRef.current = false;
@@ -535,14 +541,15 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             artifactId,
             error: err instanceof Error ? err.message : String(err),
           });
-          onError?.(errorMessageText);
+          onErrorRef.current?.(errorMessageText);
         }
       })();
 
       return () => {
         cancelled = true;
       };
-    }, [artifactId, capsuleId, onError]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [artifactId, capsuleId]);
 
     // WHY: Store telemetryArtifactId in a ref so startBootTimer doesn't need it as a dependency.
     const telemetryArtifactIdRef = useRef(telemetryArtifactId);
