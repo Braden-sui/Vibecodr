@@ -50,7 +50,7 @@ function getBundleOrigin(bundleUrl: string | undefined): string | null {
   }
 }
 
-function buildSandboxCsp(nonce: string, bundleUrl?: string): string {
+function buildSandboxCsp(nonce: string, bundleUrl?: string, isHtmlRuntime?: boolean): string {
   const mode = getRuntimeBundleNetworkMode();
   const bundleOrigin = getBundleOrigin(bundleUrl);
 
@@ -66,10 +66,17 @@ function buildSandboxCsp(nonce: string, bundleUrl?: string): string {
     connectSrc = "connect-src 'none'";
   }
 
+  // WHY: HTML artifacts contain user-uploaded content with arbitrary inline styles.
+  // We cannot pre-nonce these, so we allow 'unsafe-inline' for style-src on HTML bundles.
+  // SAFETY: The iframe is sandboxed and isolated, limiting the blast radius.
+  const styleSrc = isHtmlRuntime
+    ? `style-src 'self' 'unsafe-inline'`
+    : `style-src 'self' 'nonce-${nonce}'`;
+
   return [
     "default-src 'none'",
     `script-src 'self' 'nonce-${nonce}' https: blob:`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    styleSrc,
     "img-src 'self' data: blob:",
     connectSrc,
   ].join("; ");
@@ -153,7 +160,7 @@ export function buildSandboxFrameSrcDoc({
     <meta name="robots" content="noindex" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="${buildSandboxCsp(nonce, bundleUrl)}"
+      content="${buildSandboxCsp(nonce, bundleUrl, isHtmlRuntime)}"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style nonce="${nonce}">

@@ -477,8 +477,17 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       }
     }, [params, status, sendToIframe]);
 
+    // WHY: Store emitRuntimeEvent in a ref so it can be called inside the manifest-loading
+    // effect without being a dependency. This prevents the dependency cycle where:
+    // manifest loads → telemetryArtifactId changes → emitRuntimeEvent recreates → effect re-runs.
+    const emitRuntimeEventRef = useRef(emitRuntimeEvent);
+    useEffect(() => {
+      emitRuntimeEventRef.current = emitRuntimeEvent;
+    }, [emitRuntimeEvent]);
+
     // Load runtime manifest when an artifactId is provided. If it fails, surface an
     // error state before attempting to talk to the iframe runtime.
+    // INVARIANT: This effect must NOT depend on emitRuntimeEvent to avoid a reload loop.
     useEffect(() => {
       let cancelled = false;
       heartbeatTrackedRef.current = false;
@@ -501,7 +510,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           const manifest = await loadRuntimeManifest(artifactId);
           if (cancelled) return;
           setRuntimeManifest(manifest);
-          emitRuntimeEvent("runtime_manifest_loaded", {
+          emitRuntimeEventRef.current("runtime_manifest_loaded", {
             capsuleId,
             artifactId: manifest.artifactId ?? artifactId,
             runtimeVersion: manifest.runtimeVersion,
@@ -518,7 +527,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           });
           setStatus("error");
           setErrorMessage(errorMessageText);
-          emitRuntimeEvent("runtime_manifest_error", {
+          emitRuntimeEventRef.current("runtime_manifest_error", {
             capsuleId,
             artifactId,
             error: err instanceof Error ? err.message : String(err),
@@ -530,7 +539,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       return () => {
         cancelled = true;
       };
-    }, [artifactId, capsuleId, emitRuntimeEvent, onError]);
+    }, [artifactId, capsuleId, onError]);
 
     // SOTP Decision: Hard kill at 6s for WebContainer, 5s for client-static
     const startBootTimer = useCallback(

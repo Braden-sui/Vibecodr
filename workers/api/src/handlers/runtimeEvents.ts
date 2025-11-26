@@ -12,7 +12,9 @@ type RateLimitState = {
 };
 
 export const RATE_LIMIT_CAPACITY = 120;
-export const RATE_LIMIT_REFILL_INTERVAL_MS = 60 * 1000;
+// WHY: Refill 2 tokens per second = 120/minute sustained rate.
+// Previous value (60s per token) was too restrictive for normal feed usage.
+export const RATE_LIMIT_REFILL_INTERVAL_MS = 500;
 export const RATE_LIMIT_MAX_KEYS = 1000;
 const analyticsRateLimitState = new Map<string, RateLimitState>();
 const TRUSTED_CLIENT_IP_HEADERS = ["cf-connecting-ip", "true-client-ip"];
