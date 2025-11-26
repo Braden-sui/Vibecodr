@@ -102,24 +102,35 @@ export function buildSandboxFrameSrcDoc({
     <script nonce="${nonce}">
       (function() {
         var bundleUrl = "${escapedBundleUrl}";
+        console.log("[vibecodr] HTML bundle fetch starting", { bundleUrl: bundleUrl });
         fetch(bundleUrl, { mode: "cors", credentials: "omit" })
           .then(function(res) {
+            console.log("[vibecodr] HTML bundle fetch response", { status: res.status, ok: res.ok });
             if (!res.ok) {
               throw new Error("E-VIBECODR-2111 HTML bundle fetch failed: " + res.status);
             }
             return res.text();
           })
           .then(function(html) {
+            console.log("[vibecodr] HTML bundle loaded", { length: html.length, preview: html.slice(0, 100) });
             if (window.VibecodrHtmlRuntime && typeof window.VibecodrHtmlRuntime.render === "function") {
               window.VibecodrHtmlRuntime.render({ html: html, mountSelector: "#root" });
-            } else if (window.vibecodrBridge && typeof window.vibecodrBridge.error === "function") {
-              window.vibecodrBridge.error("E-VIBECODR-2112 HTML runtime not available", {
-                code: "E-VIBECODR-2112",
-                phase: "bundle-load"
+              console.log("[vibecodr] HTML runtime render called");
+            } else {
+              console.error("[vibecodr] HTML runtime not available", {
+                hasRuntime: !!window.VibecodrHtmlRuntime,
+                hasBridge: !!window.vibecodrBridge
               });
+              if (window.vibecodrBridge && typeof window.vibecodrBridge.error === "function") {
+                window.vibecodrBridge.error("E-VIBECODR-2112 HTML runtime not available", {
+                  code: "E-VIBECODR-2112",
+                  phase: "bundle-load"
+                });
+              }
             }
           })
           .catch(function(err) {
+            console.error("[vibecodr] HTML bundle fetch error", { error: err.message });
             if (window.vibecodrBridge && typeof window.vibecodrBridge.error === "function") {
               window.vibecodrBridge.error(err.message || "HTML bundle load failed", {
                 code: "E-VIBECODR-2111",

@@ -388,6 +388,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             break;
 
           case "error": {
+            // Clear boot timeout on error - the runtime reported a failure
+            if (bootTimerRef.current) {
+              clearTimeout(bootTimerRef.current);
+              bootTimerRef.current = null;
+            }
             const message = getErrorMessage(payload) ?? "An error occurred";
             setStatus("error");
             setErrorMessage(message);

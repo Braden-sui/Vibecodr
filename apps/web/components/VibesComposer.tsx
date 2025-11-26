@@ -523,6 +523,14 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
         const manifestFile = new File([manifestBlob], "manifest.json", { type: "application/json" });
         formData.append("manifest", manifestFile);
 
+        // WHY: Users may paste raw JSX fragments without wrapping them in a component.
+        // Auto-wrap if the code doesn't export a default function/component.
+        const hasDefaultExport = /export\s+default\s+/.test(userSource);
+        const hasReactImport = /import\s+React/.test(userSource);
+        const wrappedSource = hasDefaultExport
+          ? userSource
+          : `${hasReactImport ? "" : 'import React from "react";\n\n'}export default function App() {\n  return (\n    <>\n${userSource}\n    </>\n  );\n}`;
+
         const entryShim = `
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -531,11 +539,16 @@ import UserApp from "./user-code";
 const root = document.getElementById("root") || document.body.appendChild(document.createElement("div"));
 const mount = ReactDOM.createRoot(root);
 mount.render(React.createElement(UserApp));
+
+// Signal to parent that the runtime is ready
+if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") {
+  window.vibecodrBridge.ready({ capabilities: {} });
+}
 `;
         const entryFile = new File([entryShim], "entry.tsx", { type: "text/tsx" });
         formData.append("entry.tsx", entryFile);
 
-        const userFile = new File([userSource], "user-code.tsx", { type: "text/tsx" });
+        const userFile = new File([wrappedSource], "user-code.tsx", { type: "text/tsx" });
         formData.append("user-code.tsx", userFile);
 
         const init = await buildAuthInit();

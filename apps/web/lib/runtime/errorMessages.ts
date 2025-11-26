@@ -82,6 +82,12 @@ const RUNTIME_ERROR_MAP: Record<string, RuntimeErrorInfo> = {
     message: "Navigation is disabled for security.",
     suggestion: "This vibe tried to navigate away which is not allowed.",
   },
+  // Build failure
+  "E-VIBECODR-0501": {
+    title: "Build Failed",
+    message: "Failed to compile your code.",
+    suggestion: "Check for syntax errors. JSX must be wrapped in a component.",
+  },
   // Bundle reference missing
   "E-VIBECODR-0504": {
     title: "Bundle Missing",
