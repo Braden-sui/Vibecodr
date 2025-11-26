@@ -487,13 +487,13 @@ export const getArtifactManifest: Handler = async (req, env, _ctx, params) => {
   }
 };
 
-export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
+export const getArtifactBundle: Handler = async (req, env, _ctx, params) => {
   const artifactId = params.p1;
   if (!artifactId) {
     return json({ error: "artifactId is required" }, 400);
   }
 
-  const clientIp = getClientIp(_req);
+  const clientIp = getClientIp(req);
   const rate = await checkPublicRateLimit(env, `artifact-bundle:${clientIp ?? "unknown"}`, 120);
   if (!rate.allowed) {
     const retryAfter = rate.resetAt ? Math.ceil((rate.resetAt - Date.now()) / 1000) : 60;
@@ -584,6 +584,9 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
     bundleSizeBytes: object.size,
   });
 
+  const requestOrigin = req.headers.get("Origin");
+  const corsOrigin = requestOrigin === "null" ? "null" : undefined;
+
   return new Response(object.body, {
     status: 200,
     headers: {
@@ -593,9 +596,9 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
       "X-Runtime-Version": runtimeVersion || "",
       "X-Runtime-Type": artifact.type,
       "Content-Security-Policy": cspHeader,
-      // WHY: Sandboxed iframes using srcdoc have origin 'null'.
-      // CORS must allow this for HTML bundle fetch to work.
-      "Access-Control-Allow-Origin": "*",
+      // WHY: Only sandboxed iframes (origin "null") should fetch bundles via CORS.
+      // Script tags and direct requests ignore CORS, so we keep the surface minimal.
+      ...(corsOrigin ? { "Access-Control-Allow-Origin": corsOrigin } : {}),
     },
   });
 };
