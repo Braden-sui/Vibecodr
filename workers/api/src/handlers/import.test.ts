@@ -2,10 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import JSZip from "jszip";
 import type { Env } from "../types";
-import { importZip } from "./import";
+import { importGithub, importZip } from "./import";
 import { Plan, getUserPlan, getUserRunQuotaState } from "../storage/quotas";
 
-const uploadCapsuleBundleMock = vi.fn();
+const persistCapsuleBundleMock = vi.fn();
 const enforceSafetyForFilesMock = vi.fn();
 const sanitizeHtmlEntryIfNeededMock = vi.fn((files: any, _manifest: any) => {
   const totalSize = files.reduce((acc: number, file: any) => acc + file.size, 0);
@@ -34,6 +34,8 @@ vi.mock("./capsules", async () => {
       enforceSafetyForFilesMock(...args),
     sanitizeHtmlEntryIfNeeded: (...args: Parameters<typeof sanitizeHtmlEntryIfNeededMock>) =>
       sanitizeHtmlEntryIfNeededMock(...args),
+    persistCapsuleBundle: (...args: Parameters<typeof persistCapsuleBundleMock>) =>
+      persistCapsuleBundleMock(...args),
   };
 });
 
@@ -46,8 +48,6 @@ vi.mock("../storage/r2", async () => {
   const actual = await vi.importActual<typeof import("../storage/r2")>("../storage/r2");
   return {
     ...actual,
-    uploadCapsuleBundle: (...args: Parameters<typeof uploadCapsuleBundleMock>) =>
-      uploadCapsuleBundleMock(...args),
   };
 });
 
@@ -149,10 +149,16 @@ describe("import handlers success path", () => {
       runsThisMonth: 0,
       result: { allowed: true, limits: { maxRuns: 5000 } as any },
     });
-    uploadCapsuleBundleMock.mockResolvedValue({
-      contentHash: "hash-123",
-      totalSize: 1024,
-      fileCount: 2,
+    enforceSafetyForFilesMock.mockResolvedValue({ shouldQuarantine: false });
+    persistCapsuleBundleMock.mockResolvedValue({
+      capsule: {
+        id: "capsule-123",
+        contentHash: "hash-123",
+        totalSize: 1024,
+        fileCount: 2,
+      },
+      warnings: [],
+      artifact: null,
     });
   });
 
@@ -173,24 +179,117 @@ describe("import handlers success path", () => {
       {} as any
     );
 
-    expect(res.status).toBe(201);
     const body = (await res.json()) as {
       capsuleId: string;
       manifest: any;
-      filesSummary: { contentHash: string; entryPoint: string };
+      draftManifest: any;
+      filesSummary: { contentHash: string; entryPoint: string; entryCandidates: string[] };
       warnings?: any[];
     };
+
+    expect(res.status).toBe(201);
 
     expect(body.capsuleId).toBeTruthy();
     expect(body.manifest.entry).toBe("index.html");
     expect(body.manifest.runner).toBe("client-static");
+    expect(body.manifest.title).toBe("Imported Capsule");
+    expect(body.draftManifest.entry).toBe("index.html");
+    expect(body.filesSummary.entryCandidates).toContain("index.html");
     expect(body.filesSummary.contentHash).toBe("hash-123");
     expect(body.filesSummary.entryPoint).toBe("index.html");
     expect(Array.isArray(body.warnings)).toBe(true);
-    expect(uploadCapsuleBundleMock).toHaveBeenCalledTimes(1);
-    expect(env.__capsules.length).toBe(1);
-    expect(env.__assets.length).toBeGreaterThan(0);
-    expect(env.__storage.usage).toBeGreaterThan(0);
-    expect(env.__storage.version).toBe(1);
+    expect(persistCapsuleBundleMock).toHaveBeenCalledTimes(1);
+    // Verify persistCapsuleBundle was called with correct shape
+    expect(persistCapsuleBundleMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        manifest: expect.objectContaining({ entry: "index.html", runner: "client-static" }),
+        files: expect.any(Array),
+        totalSize: expect.any(Number),
+      })
+    );
+  });
+
+  it("prefers manifest metadata from the archive when present", async () => {
+    const env = createEnv();
+    const zip = new JSZip();
+    zip.file("app.js", "console.log('hi')");
+    zip.file(
+      "manifest.json",
+      JSON.stringify({ version: "1.0", runner: "client-static", entry: "app.js", title: "Hello App" })
+    );
+    const buffer = await zip.generateAsync({ type: "arraybuffer" });
+    const form = new FormData();
+    form.append("file", new File([buffer], "my-app.zip", { type: "application/zip" }));
+
+    const res = await importZip(
+      new Request("https://worker.test/import/zip", {
+        method: "POST",
+        body: form,
+      }),
+      env,
+      {} as any,
+      {} as any
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { manifest: any; filesSummary: { entryCandidates: string[] } };
+    expect(body.manifest.entry).toBe("app.js");
+    expect(body.manifest.title).toBe("Hello App");
+    expect(body.filesSummary.entryCandidates).toContain("app.js");
+  });
+
+  it("defaults manifest title from uploaded ZIP name when missing in archive", async () => {
+    const env = createEnv();
+    const zip = new JSZip();
+    zip.file("main.js", "console.log('hi')");
+    const buffer = await zip.generateAsync({ type: "arraybuffer" });
+    const form = new FormData();
+    form.append("file", new File([buffer], "cool-tool.zip", { type: "application/zip" }));
+
+    const res = await importZip(
+      new Request("https://worker.test/import/zip", {
+        method: "POST",
+        body: form,
+      }),
+      env,
+      {} as any,
+      {} as any
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { manifest: any };
+    expect(body.manifest.title).toBe("cool-tool");
+  });
+
+  it("imports from GitHub and surfaces entry candidates", async () => {
+    const env = createEnv();
+    const zip = new JSZip();
+    zip.folder("repo-main")?.file("app.js", "console.log('hi')");
+    const buffer = await zip.generateAsync({ type: "arraybuffer" });
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn(async () => new Response(buffer));
+    // @ts-expect-error test override of global fetch
+    global.fetch = fetchMock;
+
+    const res = await importGithub(
+      new Request("https://worker.test/import/github", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://github.com/foo/repo" }),
+      }),
+      env,
+      {} as any,
+      {} as any
+    );
+
+    // @ts-expect-error restore global fetch
+    global.fetch = originalFetch;
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { manifest: any; filesSummary: { entryCandidates: string[] } };
+    expect(body.manifest.entry).toBe("app.js");
+    expect(body.manifest.title).toBe("repo");
+    expect(body.filesSummary.entryCandidates).toContain("app.js");
+    expect(fetchMock).toHaveBeenCalled();
   });
 });

@@ -53,7 +53,7 @@ const inspectArtifactMock = vi.fn(async () => {
 
 vi.mock("@/lib/api", () => ({
   adminApi: {
-    inspectArtifact: (...args: unknown[]) => inspectArtifactMock(...args),
+    inspectArtifact: inspectArtifactMock,
     inspectCapsule: vi.fn(),
   },
 }));

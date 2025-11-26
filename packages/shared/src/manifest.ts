@@ -345,3 +345,19 @@ export function updateManifestParams(
     })),
   };
 }
+
+/**
+ * Collect viable entry file candidates from a list of paths.
+ * Used by Studio to populate entry dropdowns after imports.
+ */
+export function collectEntryCandidates(paths: Iterable<string>): string[] {
+  const allowedExtensions = [".html", ".htm", ".js", ".jsx", ".ts", ".tsx"];
+  const candidates = new Set<string>();
+  for (const path of paths) {
+    const lower = path.toLowerCase();
+    if (allowedExtensions.some((ext) => lower.endsWith(ext))) {
+      candidates.add(path);
+    }
+  }
+  return Array.from(candidates).sort();
+}

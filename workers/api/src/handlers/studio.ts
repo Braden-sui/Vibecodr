@@ -1,6 +1,6 @@
 import { requireAuth, type AuthenticatedUser } from "../auth";
 import type { Env, Handler } from "../types";
-import { requireCapsuleManifest } from "../capsule-manifest";
+import { collectEntryCandidates, requireCapsuleManifest } from "../capsule-manifest";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import { CapsuleFile, getCapsuleKey, listCapsuleFiles } from "../storage/r2";
 import { checkBundleSize, getUserPlan, getUserRunQuotaState } from "../storage/quotas";
@@ -78,14 +78,17 @@ export const getCapsuleFilesSummary: Handler = requireAuth(async (req, env, _ctx
     const manifest = requireCapsuleManifest(capsule.manifest_json, { source: "filesSummary", capsuleId });
     const files = await listCapsuleFiles(env.R2, capsule.hash);
     const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
+    const entryCandidates = collectEntryCandidates(files.map((f) => f.path));
 
     return json({
       capsuleId,
       contentHash: capsule.hash,
       manifest,
+      draftManifest: manifest,
       files,
       totalSize,
       fileCount: files.length,
+      entryCandidates,
     });
   } catch (err) {
     if (err instanceof PublishCapsuleError) {
@@ -188,17 +191,53 @@ export const updateCapsuleManifest: Handler = requireAuth(async (req, env, _ctx,
   }
 
   try {
-    await loadOwnedCapsule(env, capsuleId, user.userId);
+    const capsule = await loadOwnedCapsule(env, capsuleId, user.userId);
     const payload = await req.json();
     const validation = validateManifest(payload);
     if (!validation.valid) {
       return json({ error: "Invalid manifest", errors: validation.errors, warnings: validation.warnings }, 400);
     }
 
-    const manifestText = JSON.stringify(payload);
-    await env.DB.prepare("UPDATE capsules SET manifest_json = ? WHERE id = ?").bind(manifestText, capsuleId).run();
+    const manifest = payload as Manifest;
+    const files = await listCapsuleFiles(env.R2, capsule.hash);
+    const entryCandidates = collectEntryCandidates(files.map((f) => f.path));
+    const entryExists = files.some((f) => f.path === manifest.entry);
+    if (!entryExists) {
+      return json(
+        { error: "Entry file missing", entry: manifest.entry, entryCandidates },
+        400
+      );
+    }
 
-    return json({ ok: true, capsuleId, warnings: validation.warnings });
+    const manifestText = JSON.stringify(manifest);
+    const manifestSize = new TextEncoder().encode(manifestText).byteLength;
+
+    try {
+      await env.R2.put(getCapsuleKey(capsule.hash, "manifest.json"), manifestText, {
+        httpMetadata: { contentType: "application/json" },
+      });
+    } catch (err) {
+      return json(
+        {
+          error: "Failed to persist manifest",
+          code: "E-VIBECODR-0410",
+          details: err instanceof Error ? err.message : String(err),
+        },
+        500
+      );
+    }
+
+    await env.DB.prepare("UPDATE capsules SET manifest_json = ? WHERE id = ?").bind(manifestText, capsuleId).run();
+    const updateAssetResult = await env.DB.prepare("UPDATE assets SET size = ? WHERE capsule_id = ? AND key = ?")
+      .bind(manifestSize, capsuleId, "manifest.json")
+      .run();
+    if (!updateAssetResult?.meta || updateAssetResult.meta.changes === 0) {
+      await env.DB.prepare("INSERT INTO assets (id, capsule_id, key, size) VALUES (?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), capsuleId, "manifest.json", manifestSize)
+        .run();
+    }
+
+    return json({ ok: true, capsuleId, warnings: validation.warnings, manifest, entryCandidates });
   } catch (err) {
     if (err instanceof PublishCapsuleError) {
       return json(err.body, err.status);

@@ -56,3 +56,59 @@ export function normalizePlan(value: unknown, fallback: Plan = Plan.FREE): Plan 
   }
   return fallback;
 }
+
+/**
+ * Premium feature tiers
+ * WHY: Define which plans have access to premium power tools like client-side ZIP analysis.
+ * Server remains the single source of truth for validation, but power users on Creator/Pro/Team
+ * get advanced client-side preview capabilities.
+ */
+export const PREMIUM_TIERS = [Plan.CREATOR, Plan.PRO, Plan.TEAM] as const;
+
+/**
+ * Check if a plan has access to premium features
+ * Used to gate Studio power tools like advanced ZIP analysis
+ */
+export function hasPremiumAccess(plan: Plan): boolean {
+  return (PREMIUM_TIERS as readonly Plan[]).includes(plan);
+}
+
+/**
+ * Feature flags by plan
+ * WHY: Centralized feature access definitions for consistency across client/server.
+ */
+export const PLAN_FEATURES = {
+  [Plan.FREE]: {
+    advancedZipAnalysis: false,
+    studioParamsTab: false,
+    studioFilesTab: false,
+    liveStreaming: false,
+  },
+  [Plan.CREATOR]: {
+    advancedZipAnalysis: true,
+    studioParamsTab: true,
+    studioFilesTab: true,
+    liveStreaming: false,
+  },
+  [Plan.PRO]: {
+    advancedZipAnalysis: true,
+    studioParamsTab: true,
+    studioFilesTab: true,
+    liveStreaming: true,
+  },
+  [Plan.TEAM]: {
+    advancedZipAnalysis: true,
+    studioParamsTab: true,
+    studioFilesTab: true,
+    liveStreaming: true,
+  },
+} as const;
+
+export type PlanFeatures = typeof PLAN_FEATURES[Plan];
+
+/**
+ * Check if a plan has access to a specific feature
+ */
+export function hasFeature<K extends keyof PlanFeatures>(plan: Plan, feature: K): boolean {
+  return PLAN_FEATURES[plan][feature];
+}

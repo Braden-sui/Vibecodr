@@ -6,17 +6,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Github, Upload, Loader2, CheckCircle2, FileCode } from "lucide-react";
+import {
+  Github,
+  Upload,
+  Loader2,
+  CheckCircle2,
+  FileCode,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatBytes } from "@/lib/zipBundle";
 import { capsulesApi } from "@/lib/api";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { trackEvent } from "@/lib/analytics";
+import { ApiImportResponseSchema, type ApiImportResponse } from "@vibecodr/shared";
 import type { Manifest } from "@vibecodr/shared/manifest";
+import { ManifestErrorActions, InlineError } from "./ManifestErrorActions";
+import { useManifestActions } from "./useManifestActions";
 import type { CapsuleDraft, DraftArtifact, DraftFile } from "./StudioShell";
+import { AdvancedZipAnalyzer } from "./AdvancedZipAnalyzer";
 
 type ImportMethod = "github" | "zip" | "single";
+
+const MANIFEST_ERROR_MESSAGE = "We found issues in manifest.json. Fix them below or choose an action.";
 
 interface ImportTabProps {
   draft?: CapsuleDraft;
@@ -42,6 +55,53 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
   const { getToken } = useAuth();
   const [singleStatus, setSingleStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [singleError, setSingleError] = useState<string>("");
+  const manifestWarnings = draft?.validationWarnings ?? [];
+  const manifestErrors = draft?.validationErrors ?? [];
+  const hasValidationIssues = manifestWarnings.length > 0 || manifestErrors.length > 0;
+  const isBusy = isImporting || singleStatus === "uploading";
+  const { downloadManifest, openManifestEditor, resetManifest, canDownload } = useManifestActions({
+    draft,
+    onDraftChange,
+    onNavigateToTab: onNavigateToTab as ((tab: string) => void) | undefined,
+  });
+  const entryCandidates = useMemo(() => {
+    if (draft?.entryCandidates && draft.entryCandidates.length > 0) {
+      return draft.entryCandidates;
+    }
+    if (draft?.manifest?.entry) {
+      return [draft.manifest.entry];
+    }
+    return [];
+  }, [draft?.entryCandidates, draft?.manifest?.entry]);
+
+  const handleEntryChange = useCallback(
+    (nextEntry: string) => {
+      onDraftChange((prev) =>
+        prev?.manifest
+          ? {
+              ...prev,
+              manifest: { ...prev.manifest, entry: nextEntry },
+              entryCandidates: Array.from(new Set([nextEntry, ...(prev.entryCandidates ?? [])])),
+            }
+          : prev
+      );
+    },
+    [onDraftChange]
+  );
+
+  const handleTitleChange = useCallback(
+    (nextTitle: string) => {
+      onDraftChange((prev) =>
+        prev?.manifest
+          ? {
+              ...prev,
+              manifest: { ...prev.manifest, title: nextTitle },
+            }
+          : prev
+      );
+    },
+    [onDraftChange]
+  );
 
   const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
     if (typeof buildAuthInitProp === "function") {
@@ -67,6 +127,8 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         capsuleId?: string;
         artifact?: DraftArtifact | null;
         files?: DraftFile[];
+        entryCandidates?: string[];
+        contentHash?: string;
       }
     ) => {
       const hasErrors = Boolean(errors?.length);
@@ -77,6 +139,8 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         manifest,
         files: options?.files,
         sourceZipName: options?.sourceName,
+        entryCandidates: options?.entryCandidates ?? draft?.entryCandidates,
+        contentHash: options?.contentHash ?? draft?.contentHash,
         validationStatus,
         validationWarnings: warnings,
         validationErrors: errors,
@@ -88,8 +152,19 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
       }));
       return validationStatus;
     },
-    [onDraftChange]
+    [draft?.contentHash, draft?.entryCandidates, onDraftChange]
   );
+
+  const handleResetManifest = useCallback(() => {
+    resetManifest({
+      onAfterReset: () => {
+        setError("");
+        setSingleError("");
+        setImportStatus((prev) => (prev === "error" ? "idle" : prev));
+        setSingleStatus((prev) => (prev === "error" ? "idle" : prev));
+      },
+    });
+  }, [resetManifest]);
 
   const totalSize = useMemo(() => {
     if (!draft?.files || draft.files.length === 0) return 0;
@@ -134,57 +209,53 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         return;
       }
 
-      const data = (await response.json()) as {
-        success?: boolean;
-        capsuleId?: string;
-        manifest?: Manifest;
-        filesSummary?: { totalSize?: number; fileCount?: number; entryPoint?: string };
-        warnings?: Array<{ path: string; message: string }>;
-        errors?: Array<{ path: string; message: string }>;
-        artifact?: DraftArtifact | null;
-        error?: string;
-      };
+      const raw = (await response.json()) as unknown;
+      const parsed = ApiImportResponseSchema.safeParse(raw);
 
-      // Handle validation errors from server
-      if (data.errors && data.errors.length > 0) {
-        setImportStatus("error");
-        setError("Manifest validation failed. Review the errors below.");
-        onDraftChange(() => ({
-          id: crypto.randomUUID(),
-          manifest: data.manifest ?? { version: "1.0", runner: "client-static", entry: "index.html" },
-          files: undefined, // Files stored server-side; Files tab can fetch on-demand
-          sourceZipName: file.name,
-          validationStatus: "invalid",
-          validationWarnings: data.warnings,
-          validationErrors: data.errors,
-          buildStatus: "failed",
-          artifact: null,
-          capsuleId: data.capsuleId,
-          publishStatus: "idle",
-          postId: undefined,
-        }));
-        trackEvent("studio_import_zip_failed", { error: "server-validation" });
-        return;
-      }
+      if (!parsed.success) {
+        const errorList = Array.isArray((raw as any)?.errors) ? (raw as any).errors : undefined;
+        if (errorList?.length) {
+          setImportStatus("error");
+          setError(MANIFEST_ERROR_MESSAGE);
+          onDraftChange(() => ({
+            id: crypto.randomUUID(),
+            manifest:
+              (raw as any)?.manifest ?? ({ version: "1.0", runner: "client-static", entry: "index.html" } as Manifest),
+            files: undefined,
+            sourceZipName: file.name,
+            entryCandidates: Array.isArray((raw as any)?.entryCandidates) ? (raw as any).entryCandidates : [],
+            validationStatus: "invalid",
+            validationWarnings: (raw as any)?.warnings,
+            validationErrors: errorList,
+            buildStatus: "failed",
+            artifact: null,
+            capsuleId: (raw as any)?.capsuleId,
+            publishStatus: "idle",
+            postId: undefined,
+          }));
+          trackEvent("studio_import_zip_failed", { error: "server-validation" });
+          return;
+        }
 
-      if (!response.ok || !data.success || !data.manifest) {
-        const message = data.error || "ZIP import failed. Please check your archive.";
+        const message = (raw as any)?.error || "ZIP import failed. Please check your archive.";
         setImportStatus("error");
         setError(message);
         trackEvent("studio_import_zip_failed", { error: message });
         return;
       }
 
-      // Success: use server manifest and capsuleId, files stored server-side
-      const validationStatus = applyServerManifest(data.manifest, data.warnings, data.errors, {
+      const data: ApiImportResponse = parsed.data;
+      const validationStatus = applyServerManifest(data.draftManifest ?? data.manifest, data.warnings, undefined, {
         sourceName: file.name,
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
-        files: undefined, // Files stored server-side; Files tab can fetch via capsulesApi.getFile()
+        files: undefined,
+        entryCandidates: data.filesSummary.entryCandidates,
+        contentHash: data.filesSummary.contentHash,
       });
       if (validationStatus === "invalid") {
         setImportStatus("error");
-        setError("Manifest validation failed. Review the errors below.");
+        setError(MANIFEST_ERROR_MESSAGE);
       } else {
         setImportStatus("success");
         trackEvent("studio_import_zip_success", { capsuleId: data.capsuleId });
@@ -254,11 +325,12 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
         files,
+        entryCandidates: [manifest.entry],
       });
       if (validationStatus === "invalid") {
         setSingleStatus("error");
-        setSingleError("Manifest validation failed. Review the errors below.");
-        setError("Manifest validation failed. Review the errors below.");
+        setSingleError(MANIFEST_ERROR_MESSAGE);
+        setError(MANIFEST_ERROR_MESSAGE);
       } else {
         setSingleStatus("success");
         setImportMethod("single");
@@ -292,31 +364,40 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         return;
       }
 
-      const data = (await response.json()) as {
-        success?: boolean;
-        capsuleId?: string;
-        manifest?: Manifest;
-        warnings?: Array<{ path: string; message: string }>;
-        errors?: Array<{ path: string; message: string }>;
-        artifact?: DraftArtifact | null;
-        error?: string;
-      };
+      const raw = (await response.json()) as unknown;
+      const parsed = ApiImportResponseSchema.safeParse(raw);
+      if (!parsed.success) {
+        const errorList = Array.isArray((raw as any)?.errors) ? (raw as any).errors : undefined;
+        if (errorList?.length) {
+          setImportStatus("error");
+          setError(MANIFEST_ERROR_MESSAGE);
+          applyServerManifest(
+            ((raw as any)?.manifest as Manifest) ?? { version: "1.0", runner: "client-static", entry: "index.html" },
+            (raw as any)?.warnings,
+            errorList,
+            { capsuleId: (raw as any)?.capsuleId }
+          );
+          trackEvent("studio_import_github_failed", { error: "server-validation" });
+          return;
+        }
 
-      if (!response.ok || !data.success || !data.manifest) {
-        const message = data.error || "Import failed. Check the repository and try again.";
+        const message = (raw as any)?.error || "Import failed. Check the repository and try again.";
         setImportStatus("error");
         setError(message);
         trackEvent("studio_import_github_failed", { error: message });
         return;
       }
 
-      const validationStatus = applyServerManifest(data.manifest, data.warnings, data.errors, {
+      const data: ApiImportResponse = parsed.data;
+      const validationStatus = applyServerManifest(data.draftManifest ?? data.manifest, data.warnings, undefined, {
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
+        entryCandidates: data.filesSummary.entryCandidates,
+        contentHash: data.filesSummary.contentHash,
       });
       if (validationStatus === "invalid") {
         setImportStatus("error");
-        setError("Manifest validation failed. Review the errors below.");
+        setError(MANIFEST_ERROR_MESSAGE);
       } else {
         setImportStatus("success");
         trackEvent("studio_import_github_success", { capsuleId: data.capsuleId });
@@ -367,10 +448,6 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
   const handleContinueToPublish = () => {
     onNavigateToTab?.("publish");
   };
-
-  const manifestWarnings = draft?.validationWarnings ?? [];
-  const manifestErrors = draft?.validationErrors ?? [];
-  const hasValidationIssues = manifestWarnings.length > 0 || (manifestErrors?.length ?? 0) > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -449,11 +526,20 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
                   <ImportStep name="Analyze" status={analyzeStepStatus} />
                   <ImportStep name="Ready" status={readyStepStatus} />
 
-                  {error && (
-                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                      {error}
-                    </div>
-                  )}
+                  {error &&
+                    (manifestErrors.length > 0 && error === MANIFEST_ERROR_MESSAGE ? (
+                      <ManifestErrorActions
+                        message={error}
+                        errors={manifestErrors}
+                        onDownloadManifest={canDownload ? downloadManifest : undefined}
+                        onOpenEditor={openManifestEditor}
+                        onResetManifest={handleResetManifest}
+                        disableActions={isBusy}
+                        canDownload={canDownload}
+                      />
+                    ) : (
+                      <InlineError message={error} />
+                    ))}
 
                   {importStatus === "success" && (
                     <div className="rounded-md bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-400">
@@ -523,15 +609,23 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
               )}
 
               {singleStatus === "error" && (
-                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                  {singleError || "Upload failed"}
-                </div>
+                manifestErrors.length > 0 && (singleError || error) === MANIFEST_ERROR_MESSAGE ? (
+                  <ManifestErrorActions
+                    message={singleError || error || MANIFEST_ERROR_MESSAGE}
+                    errors={manifestErrors}
+                    onDownloadManifest={canDownload ? downloadManifest : undefined}
+                    onOpenEditor={openManifestEditor}
+                    onResetManifest={handleResetManifest}
+                    disableActions={isBusy}
+                    canDownload={canDownload}
+                  />
+                ) : (
+                  <InlineError message={singleError || "Upload failed"} />
+                )
               )}
 
               {error && importMethod === "single" && singleStatus !== "error" && (
-                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                  {error}
-                </div>
+                <InlineError message={error} />
               )}
             </CardContent>
           </Card>
@@ -581,28 +675,79 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
                   <ImportStep name="Analyze" status={analyzeStepStatus} />
                   <ImportStep name="Ready" status={readyStepStatus} />
 
-                  {error && (
-                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                      {error}
-                    </div>
-                  )}
+                  {error &&
+                    (manifestErrors.length > 0 && error === MANIFEST_ERROR_MESSAGE ? (
+                      <ManifestErrorActions
+                        message={error}
+                        errors={manifestErrors}
+                        onDownloadManifest={canDownload ? downloadManifest : undefined}
+                        onOpenEditor={openManifestEditor}
+                        onResetManifest={handleResetManifest}
+                        disableActions={isBusy}
+                        canDownload={canDownload}
+                      />
+                    ) : (
+                      <InlineError message={error} />
+                    ))}
 
-                  {importStatus === "success" && (
-                    <div className="flex flex-col gap-3 rounded-md bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-400">
-                      <span>Bundle processed successfully.</span>
-                      <Button size="sm" variant="secondary" onClick={handleContinueToPublish}>
-                        Continue to Publish
-                      </Button>
-                    </div>
-                  )}
+              {importStatus === "success" && (
+                <div className="flex flex-col gap-3 rounded-md bg-green-600/10 p-3 text-sm text-green-700 dark:text-green-400">
+                  <span>Bundle processed successfully.</span>
+                  <Button size="sm" variant="secondary" onClick={handleContinueToPublish}>
+                    Continue to Publish
+                  </Button>
                 </div>
               )}
+            </div>
+          )}
 
-              {draft?.sourceZipName && (
-                <div className="rounded-md border p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{draft.sourceZipName}</p>
+          {draft?.manifest && (
+            <Card className="border-dashed bg-muted/30">
+              <CardHeader>
+                <CardTitle className="text-base">Capsule details</CardTitle>
+                <CardDescription>Inline manifest controls for title and entry.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="manifest-title">Title</Label>
+                  <Input
+                    id="manifest-title"
+                    value={draft.manifest.title ?? ""}
+                    placeholder="Imported Capsule"
+                    onChange={(e) => handleTitleChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Entry file</Label>
+                  <Select
+                    value={draft.manifest.entry}
+                    onValueChange={handleEntryChange}
+                    disabled={entryCandidates.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select entry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {entryCandidates.map((candidate) => (
+                        <SelectItem key={candidate} value={candidate}>
+                          {candidate}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {entryCandidates.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Add an entry file to continue.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {draft?.sourceZipName && (
+            <div className="rounded-md border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{draft.sourceZipName}</p>
                       <p className="text-xs text-muted-foreground">
                         {draft.files?.length ?? 0} files - {formatBytes(totalSize)}
                       </p>
@@ -620,7 +765,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
                       ))}
                     </div>
                   )}
-                  {manifestErrors && manifestErrors.length > 0 && (
+                  {manifestErrors.length > 0 && (
                     <div className="mt-3 space-y-1 text-xs text-destructive">
                       {manifestErrors.slice(0, 3).map((warning, index) => (
                         <p key={`${warning.path}-${index}`}>
@@ -643,11 +788,14 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
               </div>
             </CardContent>
           </Card>
+
+          {/* Premium Power Tool: Advanced ZIP Analyzer */}
+          <AdvancedZipAnalyzer />
         </TabsContent>
       </Tabs>
       {hasValidationIssues && (
         <div className="max-w-4xl">
-          <ValidationIssues warnings={manifestWarnings} errors={manifestErrors ?? []} />
+          <ValidationIssues warnings={manifestWarnings} errors={manifestErrors} />
         </div>
       )}
     </div>

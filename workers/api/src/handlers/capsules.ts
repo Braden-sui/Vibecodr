@@ -320,7 +320,7 @@ export const publishCapsule: Handler = requireAuth(async (req, env, ctx, params,
   }
 });
 
-type PersistCapsuleResult = {
+export type PersistCapsuleResult = {
   capsule: {
     id: string;
     contentHash: string;
@@ -337,7 +337,7 @@ type PersistCapsuleResult = {
   } | null;
 };
 
-type PersistCapsuleInput = {
+export type PersistCapsuleInput = {
   env: Env;
   user: AuthenticatedUser;
   manifest: Manifest;

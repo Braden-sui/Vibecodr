@@ -1,16 +1,24 @@
 /**
  * ZIP Bundle Utilities
  *
- * WHY: Phase 3 (Option B) moved ZIP analysis to the server.
- * The main composer and Studio import flows now send raw ZIPs directly to /import/zip.
+ * WHY (3.2.2): Server is the single source of truth for ZIP validation.
+ * The main composer and Studio import flows send raw ZIPs directly to /import/zip.
  * Server handles all analysis, manifest generation, validation, and storage.
  *
- * DEPRECATION NOTICE:
- * - `analyzeZipFile` is deprecated for main flows. Server handles this now.
- * - `buildCapsuleFormData` is still used by Studio PublishTab for re-publishing edited capsules.
- * - `formatBytes` is a general utility and remains in use.
+ * PREMIUM POWER TOOL:
+ * - `analyzeZipFile` is now a premium Studio power tool (Creator/Pro/Team only).
+ * - It provides instant client-side preview before server upload.
+ * - Does NOT replace server validation — server remains authoritative.
+ * - Used by `AdvancedZipAnalyzer` component in Studio for advanced previews.
  *
- * For new code, prefer server-side ZIP processing via `capsulesApi.importZip()`.
+ * MAIN FLOW:
+ * - Main uploads use `capsulesApi.importZip()` — no client-side ZIP parsing.
+ * - Server knows: max bundle size per plan, safety rules, manifest generation.
+ * - Client-side manifest validation is NOT required for the main upload path.
+ *
+ * OTHER EXPORTS:
+ * - `buildCapsuleFormData` is still used by Studio PublishTab for re-publishing.
+ * - `formatBytes` is a general utility and remains in use.
  */
 
 import JSZip from "jszip";
@@ -37,12 +45,17 @@ export interface ZipAnalysisResult {
 }
 
 /**
- * @deprecated Phase 3 (Option B): Server now handles ZIP analysis via /import/zip.
- * Use `capsulesApi.importZip(file, init)` for main flows.
- * This function remains for backwards compatibility and edge cases.
+ * PREMIUM POWER TOOL: Client-side ZIP analysis for advanced previews
+ *
+ * WHY (3.2.2): This function is now a premium Studio power tool for Creator/Pro/Team users.
+ * It provides instant client-side preview before server upload, but does NOT replace
+ * server validation. The server remains the single source of truth.
+ *
+ * MAIN FLOW: Use `capsulesApi.importZip(file, init)` — no client-side parsing required.
+ * This function is used by `AdvancedZipAnalyzer` component for premium users only.
  *
  * Analyzes a ZIP file client-side, extracting files and validating manifest.
- * INVARIANT: Requires manifest.json in the ZIP (legacy behavior).
+ * INVARIANT: Requires manifest.json in the ZIP for local validation.
  */
 export async function analyzeZipFile(file: File): Promise<ZipAnalysisResult> {
   const zip = await JSZip.loadAsync(file);

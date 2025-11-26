@@ -9,6 +9,7 @@ import { ImportTab } from "@/components/Studio/ImportTab";
 import { ParamsTab } from "@/components/Studio/ParamsTab";
 import { FilesTab } from "@/components/Studio/FilesTab";
 import { PublishTab } from "@/components/Studio/PublishTab";
+import { useManifestActions } from "@/components/Studio/useManifestActions";
 import type { CapsuleDraft } from "@/components/Studio/StudioShell";
 import { capsulesApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
@@ -119,6 +120,12 @@ export default function StudioIndex() {
     }
   };
 
+  const manifestActions = useManifestActions({
+    draft,
+    onDraftChange: setDraft,
+    onNavigateToTab: handleTabChange,
+  });
+
   return (
     <div className="space-y-6">
       {hydrateError && (
@@ -132,6 +139,7 @@ export default function StudioIndex() {
         draft={draft}
         onTabChange={handleTabChange}
         showAdvanced={showAdvanced}
+        manifestActions={{ ...manifestActions, disableActions: isHydrating }}
       >
         {currentTab === "import" && (
           <ImportTab
@@ -142,7 +150,12 @@ export default function StudioIndex() {
           />
         )}
         {currentTab === "params" && showAdvanced && (
-          <ParamsTab draft={draft} onDraftChange={setDraft} buildAuthInit={buildAuthInit} />
+          <ParamsTab
+            draft={draft}
+            onDraftChange={setDraft}
+            buildAuthInit={buildAuthInit}
+            onNavigateToTab={handleTabChange}
+          />
         )}
         {currentTab === "files" && showAdvanced && (
           <FilesTab draft={draft} onDraftChange={setDraft} buildAuthInit={buildAuthInit} isHydrating={isHydrating} />

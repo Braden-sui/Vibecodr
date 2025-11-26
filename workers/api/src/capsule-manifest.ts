@@ -1,4 +1,4 @@
-import { manifestSchema, type Manifest } from "@vibecodr/shared";
+import { collectEntryCandidates, manifestSchema, type Manifest } from "@vibecodr/shared";
 
 const ERROR_PARSE = "E-VIBECODR-0201";
 const ERROR_VALIDATE = "E-VIBECODR-0202";
@@ -81,3 +81,5 @@ export function buildCapsuleSummary(
 
   return { id: capsuleId, ...manifest };
 }
+
+export { collectEntryCandidates };

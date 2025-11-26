@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { manifestSchema, validateManifest, type Manifest } from "./manifest";
+import { collectEntryCandidates, manifestSchema, validateManifest, type Manifest } from "./manifest";
 import { ERROR_MANIFEST_INVALID, ERROR_MANIFEST_TOO_LARGE } from "./errors";
 
 describe("Manifest Validation", () => {
@@ -242,6 +242,18 @@ describe("Manifest Validation", () => {
       const result = validateManifest(manifest);
       expect(result.valid).toBe(true);
       expect(result.warnings).toBeDefined();
+    });
+  });
+
+  describe("collectEntryCandidates", () => {
+    it("returns sorted entry file candidates with allowed extensions", () => {
+      const paths = ["app.js", "index.html", "notes.txt", "src/main.tsx", "README.md"];
+      expect(collectEntryCandidates(paths)).toEqual(["app.js", "index.html", "src/main.tsx"]);
+    });
+
+    it("handles mixed case extensions", () => {
+      const paths = ["INDEX.HTML", "App.JS", "styles.CSS"];
+      expect(collectEntryCandidates(paths)).toEqual(["App.JS", "INDEX.HTML"]);
     });
   });
 });

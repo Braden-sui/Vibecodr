@@ -8,23 +8,22 @@ import JSZip from "jszip";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 import type { Env, Handler } from "../types";
 import { requireAuth, type AuthenticatedUser } from "../auth";
+import { collectEntryCandidates } from "../capsule-manifest";
 import {
   sanitizeHtmlEntryIfNeeded,
   type PublishWarning,
   PublishCapsuleError,
   enforceSafetyForFiles,
-  ensureUserStorageAccount,
+  persistCapsuleBundle,
+  type PersistCapsuleResult,
 } from "./capsules";
 import {
   checkBundleSize,
-  checkStorageQuota,
   getUserRunQuotaState,
   getUserStorageState,
-  incrementStorageUsage,
   type Plan,
 } from "../storage/quotas";
 import type { CapsuleFile } from "../storage/r2";
-import { uploadCapsuleBundle, deleteCapsuleBundle } from "../storage/r2";
 import { bundleWithEsbuild } from "../runtime/esbuildBundler";
 import { json } from "../lib/responses";
 
@@ -35,18 +34,25 @@ interface AnalysisResult {
   detectedLicense?: string;
   hasServerCode: boolean;
   warnings: string[];
+  entryCandidates: string[];
+  sourceName?: string;
+  sourceManifest?: Manifest | null;
 }
 
 type ImportResponse = {
+  success: true;
   capsuleId: string;
   manifest: Manifest;
+  draftManifest: Manifest;
   filesSummary: {
     contentHash: string;
     totalSize: number;
     fileCount: number;
     entryPoint: string;
+    entryCandidates: string[];
   };
   warnings?: PublishWarning[];
+  artifact?: PersistCapsuleResult["artifact"];
 };
 
 type ImportOutcome =
@@ -115,6 +121,7 @@ export const importGithub: Handler = requireAuth(async (req, env, ctx, params, u
     // Extract and analyze
     const analysis = await analyzeArchive(new Uint8Array(archiveBuffer), {
       stripPrefix: `${repoName}-${branch}/`,
+      sourceName: repoName,
     });
 
     if (analysis.hasServerCode) {
@@ -143,6 +150,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
     const contentType = req.headers.get("content-type") || "";
 
     let zipBuffer: ArrayBuffer;
+    let sourceName: string | undefined;
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
@@ -153,6 +161,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
       }
 
       const file = fileEntry as File;
+      sourceName = file.name.replace(/\.zip$/i, "") || undefined;
 
       if (!file.name.endsWith(".zip")) {
         return json({ success: false, error: "File must be a ZIP archive" }, 400);
@@ -195,7 +204,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
     }
 
     // Analyze ZIP contents
-    const analysis = await analyzeArchive(new Uint8Array(zipBuffer));
+    const analysis = await analyzeArchive(new Uint8Array(zipBuffer), { sourceName });
     if (analysis.hasServerCode) {
       analysis.warnings.push("Server-side code detected. Only client-side code will run.");
     }
@@ -217,7 +226,7 @@ export const importZip: Handler = requireAuth(async (req, env, ctx, params, user
  */
 async function analyzeArchive(
   buffer: Uint8Array,
-  options?: { stripPrefix?: string }
+  options?: { stripPrefix?: string; sourceName?: string }
 ): Promise<AnalysisResult> {
   const zip = await JSZip.loadAsync(buffer);
   const files = new Map<string, Uint8Array>();
@@ -225,6 +234,7 @@ async function analyzeArchive(
   let totalSize = 0;
   let detectedLicense: string | undefined;
   let hasServerCode = false;
+  let sourceManifest: Manifest | null = null;
 
   // Extract all files
   for (const [path, file] of Object.entries(zip.files)) {
@@ -249,6 +259,19 @@ async function analyzeArchive(
     const content = await file.async("uint8array");
     files.set(cleanPath, content);
     totalSize += content.byteLength;
+    if (cleanPath.toLowerCase() === "manifest.json") {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(content));
+        const validation = validateManifest(parsed);
+        if (validation.valid) {
+          sourceManifest = parsed as Manifest;
+        } else if (validation.errors && validation.errors.length > 0) {
+          warnings.push(`Manifest in archive ignored: ${validation.errors[0].message}`);
+        }
+      } catch {
+        warnings.push("Manifest in archive ignored: JSON parse failed");
+      }
+    }
 
     // Detect license files
     if (cleanPath.toLowerCase().includes("license")) {
@@ -267,11 +290,14 @@ async function analyzeArchive(
     }
   }
 
-  // Detect entry point
-  const entryPoint = detectEntryPoint(files);
+  const entryCandidates = collectEntryCandidates(files.keys());
+  let entryPoint = sourceManifest?.entry && files.has(sourceManifest.entry) ? sourceManifest.entry : detectEntryPoint(files);
 
   if (!entryPoint) {
     throw new Error("Could not detect entry point (index.html, main.js, etc.)");
+  }
+  if (sourceManifest?.entry && sourceManifest.entry !== entryPoint) {
+    warnings.push(`Manifest entry not found in archive: ${sourceManifest.entry}`);
   }
 
   if (!detectedLicense) {
@@ -285,6 +311,11 @@ async function analyzeArchive(
     detectedLicense,
     hasServerCode,
     warnings,
+    entryCandidates: entryCandidates.includes(entryPoint)
+      ? entryCandidates
+      : [entryPoint, ...entryCandidates],
+    sourceName: options?.sourceName,
+    sourceManifest,
   };
 }
 
@@ -316,27 +347,37 @@ async function generateManifest(
   files: Map<string, Uint8Array>,
   analysis: AnalysisResult
 ): Promise<Manifest> {
+  const baseManifest = analysis.sourceManifest ?? undefined;
+  const defaultTitle =
+    (baseManifest?.title && baseManifest.title.trim()) ||
+    (analysis.sourceName && analysis.sourceName.trim()) ||
+    "Imported Capsule";
+  const defaultDescription =
+    (baseManifest?.description && baseManifest.description.trim()) ||
+    (analysis.sourceName ? `Imported from ${analysis.sourceName}` : "Imported from archive");
   // Detect parameters from entry file if it's HTML
-  const params: Manifest["params"] = [];
+  const params: Manifest["params"] = baseManifest?.params ?? [];
 
   if (analysis.entryPoint.endsWith(".html")) {
     const html = new TextDecoder().decode(files.get(analysis.entryPoint));
     // Simple parameter detection from HTML comments or data attributes
     // In production, this would be more sophisticated
+    void html;
   }
 
   return {
+    ...baseManifest,
     version: "1.0",
-    runner: "client-static",
+    runner: baseManifest?.runner ?? "client-static",
     entry: analysis.entryPoint,
-    title: "Imported Capsule",
-    description: "Imported from GitHub or ZIP",
+    title: defaultTitle,
+    description: defaultDescription,
     params,
-    capabilities: {
+    capabilities: baseManifest?.capabilities ?? {
       storage: false,
       workers: false,
     },
-    license: analysis.detectedLicense,
+    license: baseManifest?.license ?? analysis.detectedLicense,
   };
 }
 
@@ -473,16 +514,6 @@ function detectEntryPoint(files: Map<string, Uint8Array>): string | null {
   return null;
 }
 
-function summarizeFiles(files: CapsuleFile[], entryPoint: string, contentHash: string) {
-  const totalSize = files.reduce((acc, f) => acc + f.size, 0);
-  return {
-    contentHash,
-    totalSize,
-    fileCount: files.length,
-    entryPoint,
-  };
-}
-
 async function buildManifestWithMetadata(
   manifest: Manifest,
   files: CapsuleFile[],
@@ -513,40 +544,6 @@ async function buildManifestWithMetadata(
   };
 
   return { manifest: manifestWithMeta, manifestText, manifestFile };
-}
-
-async function persistDraftCapsule(params: {
-  env: Env;
-  user: AuthenticatedUser;
-  manifest: Manifest;
-  manifestText: string;
-  files: CapsuleFile[];
-  warnings?: PublishWarning[];
-}): Promise<ImportResponse> {
-  const { env, user, manifest, manifestText, files, warnings } = params;
-  const uploadResult = await uploadCapsuleBundle(env.R2, files, manifest, user.userId);
-  const capsuleId = crypto.randomUUID();
-
-  await env.DB.prepare(
-    "INSERT INTO capsules (id, owner_id, manifest_json, hash, created_at) VALUES (?, ?, ?, ?, ?)"
-  )
-    .bind(capsuleId, user.userId, manifestText, uploadResult.contentHash, Math.floor(Date.now() / 1000))
-    .run();
-
-  for (const file of files) {
-    await env.DB.prepare("INSERT INTO assets (id, capsule_id, key, size) VALUES (?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), capsuleId, file.path, file.size)
-      .run();
-  }
-
-  const filesSummary = summarizeFiles(files, manifest.entry, uploadResult.contentHash);
-
-  return {
-    capsuleId,
-    manifest,
-    filesSummary,
-    warnings,
-  };
 }
 
 async function processImport(
@@ -589,9 +586,13 @@ async function processImport(
     warnings: bundlerWarnings,
   } = await bundleWithEsbuild(analysis.files, analysis.entryPoint);
 
+  const bundledEntryCandidates = collectEntryCandidates(bundledFiles.keys());
   const analysisForManifest: AnalysisResult = {
     ...analysis,
     entryPoint: bundledEntryPoint,
+    entryCandidates: bundledEntryCandidates.includes(bundledEntryPoint)
+      ? bundledEntryCandidates
+      : [bundledEntryPoint, ...bundledEntryCandidates],
   };
 
   const manifestDraft = await generateManifest(bundledFiles, analysisForManifest);
@@ -611,10 +612,14 @@ async function processImport(
   // Convert bundled files for storage
   const bundledCapsuleFiles = convertBundledMapToCapsuleFiles(bundledFiles);
 
-  // Safety + optional HTML sanitization
+  // Safety enforcement - capture quarantine result for persistCapsuleBundle
+  let safetyResult: { shouldQuarantine: boolean; quarantineReason?: string } = { shouldQuarantine: false };
   try {
     onProgress?.("safety", 0.45);
-    await enforceSafetyForFiles(env, manifestDraft, bundledCapsuleFiles);
+    const enforcement = await enforceSafetyForFiles(env, manifestDraft, bundledCapsuleFiles);
+    if (enforcement) {
+      safetyResult = enforcement;
+    }
   } catch (err) {
     if (err instanceof PublishCapsuleError) {
       return { ok: false, status: err.status, body: err.body };
@@ -622,31 +627,10 @@ async function processImport(
     throw err;
   }
 
+  // HTML sanitization (also done in persistCapsuleBundle, but needed here for manifest metadata)
   const sanitized = sanitizeHtmlEntryIfNeeded(bundledCapsuleFiles, manifestDraft);
   let filesForUpload = sanitized.files;
   let totalSize = sanitized.totalSize;
-
-  const bundleSizeCheck = checkBundleSize(plan, totalSize);
-  if (!bundleSizeCheck.allowed) {
-    writeImportAnalytics(env, {
-      outcome: "error",
-      code: "bundle_limit",
-      plan,
-      totalSize,
-      userId: user.userId,
-    });
-    return {
-      ok: false,
-      status: 400,
-      body: {
-        error: "Bundle size limit exceeded",
-        reason: bundleSizeCheck.reason,
-        plan,
-        limits: bundleSizeCheck.limits,
-        usage: { bundleSize: totalSize },
-      },
-    };
-  }
 
   onProgress?.("manifest", 0.6);
   const { manifest, manifestText, manifestFile } = await buildManifestWithMetadata(
@@ -657,28 +641,6 @@ async function processImport(
 
   filesForUpload = [...filesForUpload, manifestFile];
   totalSize += manifestFile.size;
-
-  const finalSizeCheck = checkBundleSize(plan, totalSize);
-  if (!finalSizeCheck.allowed) {
-    writeImportAnalytics(env, {
-      outcome: "error",
-      code: "bundle_limit",
-      plan,
-      totalSize,
-      userId: user.userId,
-    });
-    return {
-      ok: false,
-      status: 400,
-      body: {
-        error: "Bundle size limit exceeded",
-        reason: finalSizeCheck.reason,
-        plan,
-        limits: finalSizeCheck.limits,
-        usage: { bundleSize: totalSize },
-      },
-    };
-  }
 
   const validationWithMeta = validateManifest(manifest);
   if (!validationWithMeta.valid) {
@@ -693,112 +655,69 @@ async function processImport(
     };
   }
 
-  const storageCheck = checkStorageQuota(plan, storageState.storageUsageBytes, totalSize);
-  if (!storageCheck.allowed) {
-    writeImportAnalytics(env, {
-      outcome: "error",
-      code: "storage_limit",
-      plan,
-      totalSize,
-      userId: user.userId,
-    });
-    return {
-      ok: false,
-      status: 400,
-      body: {
-        error: "Storage quota exceeded",
-        reason: storageCheck.reason,
-        plan,
-        limits: storageCheck.limits,
-        usage: {
-          storage: storageState.storageUsageBytes,
-          additional: totalSize,
-        },
-      },
-    };
-  }
-
-  await ensureUserStorageAccount(env, user, plan);
-
   const warnings = toPublishWarnings(
     analysisForManifest.warnings,
     bundlerWarnings,
     validationWithMeta.warnings ?? validation.warnings
   );
 
+  // Use canonical persistCapsuleBundle - handles quotas, storage, R2, D1, and runtime artifacts
   onProgress?.("persisting", 0.8);
-  const result = await persistDraftCapsule({
-    env,
-    user,
-    manifest,
-    manifestText,
-    files: filesForUpload,
-    warnings,
-  });
-
+  let persistResult: PersistCapsuleResult;
   try {
-    await incrementStorageUsage(user.userId, env, totalSize);
-  } catch (err) {
-    await cleanupDraftCapsule(env, result.capsuleId, result.filesSummary.contentHash);
-    writeImportAnalytics(env, {
-      outcome: "error",
-      code: "storage_accounting",
-      plan,
+    persistResult = await persistCapsuleBundle({
+      env,
+      user,
+      manifest,
+      manifestText,
+      files: filesForUpload,
       totalSize,
-      userId: user.userId,
+      warnings,
+      shouldQuarantine: safetyResult.shouldQuarantine,
+      quarantineReason: safetyResult.quarantineReason,
     });
-    return {
-      ok: false,
-      status: 500,
-      body: {
-        error: "Failed to record storage usage",
-        code: "E-VIBECODR-0406",
-        details: err instanceof Error ? err.message : String(err),
-      },
-    };
+  } catch (err) {
+    if (err instanceof PublishCapsuleError) {
+      writeImportAnalytics(env, {
+        outcome: "error",
+        code: err.body?.code as string ?? "persist_failed",
+        plan,
+        totalSize,
+        userId: user.userId,
+      });
+      return { ok: false, status: err.status, body: err.body };
+    }
+    throw err;
   }
 
   writeImportAnalytics(env, {
     outcome: "success",
     plan,
     totalSize,
-    fileCount: result.filesSummary.fileCount,
+    fileCount: persistResult.capsule.fileCount,
     warnings: warnings?.length ?? 0,
     userId: user.userId,
   });
 
+  // Transform to ImportResponse shape
+  const response: ImportResponse = {
+    success: true,
+    capsuleId: persistResult.capsule.id,
+    manifest,
+    draftManifest: manifest,
+    filesSummary: {
+      contentHash: persistResult.capsule.contentHash,
+      totalSize: persistResult.capsule.totalSize,
+      fileCount: persistResult.capsule.fileCount,
+      entryPoint: manifest.entry,
+      entryCandidates: analysisForManifest.entryCandidates,
+    },
+    warnings: persistResult.warnings,
+    artifact: persistResult.artifact,
+  };
+
   onProgress?.("done", 1);
-  return { ok: true, status: 201, body: result };
-}
-
-async function cleanupDraftCapsule(env: Env, capsuleId: string, contentHash: string) {
-  try {
-    await env.DB.prepare("DELETE FROM assets WHERE capsule_id = ?").bind(capsuleId).run();
-  } catch (err) {
-    console.error("E-VIBECODR-0407 cleanup draft assets failed", {
-      capsuleId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  try {
-    await env.DB.prepare("DELETE FROM capsules WHERE id = ?").bind(capsuleId).run();
-  } catch (err) {
-    console.error("E-VIBECODR-0408 cleanup draft capsule failed", {
-      capsuleId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  try {
-    await deleteCapsuleBundle(env.R2, contentHash);
-  } catch (err) {
-    console.error("E-VIBECODR-0409 cleanup draft R2 bundle failed", {
-      capsuleId,
-      contentHash,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  return { ok: true, status: 201, body: response };
 }
 
 function shouldStreamProgress(req: Request): boolean {

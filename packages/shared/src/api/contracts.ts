@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { manifestSchema } from "../manifest";
 export * from "./quotas";
 
 export const postTypes = ["thought", "image", "link", "app", "longform"] as const;
@@ -146,6 +147,61 @@ export const ApiRemixTreeResponseSchema = z.object({
   truncated: z.boolean().optional(),
 });
 
+const ValidationIssueSchema = z.object({
+  path: z.string(),
+  message: z.string(),
+});
+
+const ArtifactSummarySchema = z.object({
+  id: z.string().optional(),
+  runtimeVersion: z.string().nullable().optional(),
+  bundleDigest: z.string().nullable().optional(),
+  bundleSizeBytes: z.number().nullable().optional(),
+  queued: z.boolean().optional(),
+});
+
+export const ApiFilesSummarySchema = z.object({
+  capsuleId: z.string(),
+  contentHash: z.string(),
+  manifest: manifestSchema,
+  draftManifest: manifestSchema.optional(),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      size: z.number().int(),
+      hash: z.string().optional(),
+    })
+  ),
+  totalSize: z.number().int(),
+  fileCount: z.number().int(),
+  entryPoint: z.string(),
+  entryCandidates: z.array(z.string()).default([]),
+});
+
+export const ApiImportResponseSchema = z.object({
+  success: z.literal(true),
+  capsuleId: z.string(),
+  manifest: manifestSchema,
+  draftManifest: manifestSchema,
+  filesSummary: ApiFilesSummarySchema.pick({
+    contentHash: true,
+    totalSize: true,
+    fileCount: true,
+    entryPoint: true,
+    entryCandidates: true,
+  }),
+  warnings: z.array(ValidationIssueSchema).optional(),
+  artifact: ArtifactSummarySchema.nullable().optional(),
+});
+
+export const ApiUpdateManifestResponseSchema = z.object({
+  ok: z.boolean(),
+  capsuleId: z.string(),
+  warnings: z.array(ValidationIssueSchema).optional(),
+  manifest: manifestSchema.optional(),
+  entryCandidates: z.array(z.string()).optional(),
+});
+
 export type ApiFeedPost = z.infer<typeof ApiFeedPostSchema>;
 export type ApiFeedResponse = z.infer<typeof ApiFeedResponseSchema>;
 export type ApiPostResponse = z.infer<typeof ApiPostResponseSchema>;
@@ -157,3 +213,6 @@ export type ApiRecipeListResponse = z.infer<typeof ApiRecipeListResponseSchema>;
 export type ApiRecipeCreateResponse = z.infer<typeof ApiRecipeCreateResponseSchema>;
 export type ApiRemixNode = z.infer<typeof ApiRemixNodeSchema>;
 export type ApiRemixTreeResponse = z.infer<typeof ApiRemixTreeResponseSchema>;
+export type ApiFilesSummary = z.infer<typeof ApiFilesSummarySchema>;
+export type ApiImportResponse = z.infer<typeof ApiImportResponseSchema>;
+export type ApiUpdateManifestResponse = z.infer<typeof ApiUpdateManifestResponseSchema>;

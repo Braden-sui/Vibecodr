@@ -11,13 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ParamControls } from "@/components/Player/ParamControls";
 import { capsulesApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
+import { ApiUpdateManifestResponseSchema } from "@vibecodr/shared";
 import { paramSchema, type ManifestParam } from "@vibecodr/shared/manifest";
-import type { CapsuleDraft } from "./StudioShell";
+import type { CapsuleDraft, StudioTab } from "./StudioShell";
+import { ManifestErrorActions } from "./ManifestErrorActions";
+import { useManifestActions } from "./useManifestActions";
 
 interface ParamsTabProps {
   draft?: CapsuleDraft;
   onDraftChange: React.Dispatch<React.SetStateAction<CapsuleDraft | undefined>>;
   buildAuthInit?: () => Promise<RequestInit | undefined>;
+  onNavigateToTab?: (tab: StudioTab | "params" | "files" | "import" | "publish") => void;
 }
 
 type ParamIssue = { path: string; message: string };
@@ -35,7 +39,12 @@ type CompileInfo = {
  * - Persists changes to manifest
  * - Triggers compile-draft so downstream publish can reuse the artifact
  */
-export function ParamsTab({ draft, onDraftChange, buildAuthInit: buildAuthInitProp }: ParamsTabProps) {
+export function ParamsTab({
+  draft,
+  onDraftChange,
+  buildAuthInit: buildAuthInitProp,
+  onNavigateToTab,
+}: ParamsTabProps) {
   const capsuleId = draft?.capsuleId;
   const manifest = draft?.manifest;
   const { getToken } = useAuth();
@@ -48,6 +57,28 @@ export function ParamsTab({ draft, onDraftChange, buildAuthInit: buildAuthInitPr
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const manifestErrors = draft?.validationErrors ?? [];
+  const hasManifestErrors = draft?.validationStatus === "invalid" && manifestErrors.length > 0;
+
+  const { downloadManifest, openManifestEditor, resetManifest, canDownload } = useManifestActions({
+    draft,
+    onDraftChange,
+    onNavigateToTab: onNavigateToTab as ((tab: string) => void) | undefined,
+  });
+
+  const handleResetManifest = useCallback(() => {
+    resetManifest({
+      onAfterReset: () => {
+        setParams([]);
+        setParamValues({});
+        setValidationIssues([]);
+        setWarnings([]);
+        setCompileInfo(null);
+        setError(null);
+        setEditingIndex(null);
+      },
+    });
+  }, [resetManifest]);
 
   const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
     if (typeof buildAuthInitProp === "function") {
@@ -149,15 +180,19 @@ export function ParamsTab({ draft, onDraftChange, buildAuthInit: buildAuthInitPr
         const body = (await safeJson(res)) as { error?: string };
         throw new Error(body?.error || `Failed to save manifest (${res.status})`);
       }
-      const body = (await res.json()) as { warnings?: ParamIssue[] };
-      const manifestWarnings = body.warnings ?? [];
+      const raw = (await res.json()) as unknown;
+      const parsed = ApiUpdateManifestResponseSchema.safeParse(raw);
+      const manifestWarnings = parsed.success ? parsed.data.warnings ?? [] : ((raw as any)?.warnings ?? []);
+      const manifestFromServer = parsed.success && parsed.data.manifest ? parsed.data.manifest : nextManifest;
+      const entryCandidates = parsed.success ? parsed.data.entryCandidates : undefined;
       setWarnings(manifestWarnings);
 
       onDraftChange((prev) =>
         prev
           ? {
               ...prev,
-              manifest: nextManifest,
+              manifest: manifestFromServer,
+              entryCandidates: entryCandidates ?? prev.entryCandidates,
               validationWarnings: manifestWarnings,
               validationErrors: undefined,
               validationStatus: "valid",
@@ -230,6 +265,17 @@ export function ParamsTab({ draft, onDraftChange, buildAuthInit: buildAuthInitPr
   return (
     <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-2">
       <div className="space-y-4">
+        {hasManifestErrors && (
+          <ManifestErrorActions
+            message="We found issues in manifest.json. Fix them below or choose an action."
+            errors={manifestErrors}
+            onDownloadManifest={canDownload ? downloadManifest : undefined}
+            onOpenEditor={openManifestEditor}
+            onResetManifest={handleResetManifest}
+            disableActions={isSaving}
+            canDownload={canDownload}
+          />
+        )}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">Parameters</h2>
@@ -422,7 +468,7 @@ export function ParamsTab({ draft, onDraftChange, buildAuthInit: buildAuthInitPr
             {status}
           </div>
         )}
-        {error && (
+        {error && !hasManifestErrors && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             <span>{error}</span>

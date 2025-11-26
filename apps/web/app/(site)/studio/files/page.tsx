@@ -6,22 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { capsulesApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
-
-type FileSummary = { path: string; size: number; hash?: string };
-type SummaryResponse = {
-  capsuleId: string;
-  contentHash: string;
-  manifest: { entry: string; params?: any };
-  files: FileSummary[];
-  totalSize: number;
-  fileCount: number;
-};
+import { ApiFilesSummarySchema, type ApiFilesSummary } from "@vibecodr/shared";
 
 export default function StudioFiles() {
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const capsuleId = search.get("capsuleId") || "";
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [summary, setSummary] = useState<ApiFilesSummary | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -39,7 +30,7 @@ export default function StudioFiles() {
         const body = (await safeJson(res)) as { error?: string };
         throw new Error(body?.error || `Failed to load summary (${res.status})`);
       }
-      const data = (await res.json()) as SummaryResponse;
+      const data = ApiFilesSummarySchema.parse(await res.json());
       setSummary(data);
       setSelectedPath(data.manifest.entry || data.files[0]?.path || null);
       setStatus(null);
@@ -94,8 +85,12 @@ export default function StudioFiles() {
         const parsed = JSON.parse(content) as ManifestDraft;
         const res = await capsulesApi.updateManifest(capsuleId, parsed);
         if (!res.ok) {
-          const body = (await safeJson(res)) as { error?: string };
-          throw new Error(body?.error || `Failed to save manifest (${res.status})`);
+          const body = (await safeJson(res)) as { error?: string; entry?: string; entryCandidates?: string[] };
+          const entryHint =
+            body.entryCandidates && body.entryCandidates.length > 0
+              ? ` Entry must be one of: ${body.entryCandidates.join(", ")}.`
+              : "";
+          throw new Error((body?.error || `Failed to save manifest (${res.status})`) + entryHint);
         }
       } else {
         const res = await capsulesApi.putFile(capsuleId, selectedPath, content, "text/plain");
@@ -116,6 +111,7 @@ export default function StudioFiles() {
   }, [capsuleId, summary, selectedPath, content, fetchSummary]);
 
   const manifestPaths = useMemo(() => ["manifest.json"], []);
+  const entryCandidates = summary?.entryCandidates ?? [];
 
   if (!capsuleId) {
     return (
@@ -139,6 +135,11 @@ export default function StudioFiles() {
         <div>
           <h2 className="text-2xl font-semibold">Files</h2>
           <p className="text-sm text-muted-foreground">Edit draft files and manifest for capsule {capsuleId}.</p>
+          {entryCandidates.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Entry candidates: {entryCandidates.join(", ")}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

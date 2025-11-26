@@ -12,6 +12,8 @@ import { trackClientError } from "@/lib/analytics";
 import { formatBytes } from "@/lib/zipBundle";
 import { inferContentType } from "@/lib/contentType";
 import type { CapsuleDraft, DraftFile } from "./StudioShell";
+import { ManifestErrorActions } from "./ManifestErrorActions";
+import { useManifestActions } from "./useManifestActions";
 
 type FilesTabProps = {
   draft?: CapsuleDraft;
@@ -52,6 +54,25 @@ export function FilesTab({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [compileInfo, setCompileInfo] = useState<CompileInfo | null>(null);
+  const manifestErrors = draft?.validationErrors ?? [];
+  const hasManifestErrors = draft?.validationStatus === "invalid" && manifestErrors.length > 0;
+
+  const { downloadManifest, resetManifest, canDownload } = useManifestActions({
+    draft,
+    onDraftChange,
+  });
+
+  const handleResetManifest = useCallback(() => {
+    resetManifest({
+      onAfterReset: () => {
+        setContent("");
+        setSelectedPath(null);
+        setCompileInfo(null);
+        setError(null);
+        setStatus(null);
+      },
+    });
+  }, [resetManifest]);
 
   const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
     if (typeof buildAuthInitProp === "function") {
@@ -275,6 +296,17 @@ export function FilesTab({
   return (
     <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[320px_1fr]">
       <div className="space-y-4">
+        {hasManifestErrors && (
+          <ManifestErrorActions
+            message="We found issues in manifest.json. Fix them below or choose an action."
+            errors={manifestErrors}
+            onDownloadManifest={canDownload ? downloadManifest : undefined}
+            onOpenEditor={undefined}
+            onResetManifest={handleResetManifest}
+            disableActions={isSaving || isLoadingFile || isHydrating}
+            canDownload={canDownload}
+          />
+        )}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">

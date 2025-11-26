@@ -7,15 +7,16 @@ import { AppRoutes, PostDetailRoute, LegacyProfileRouteWrapper } from "@/src/rou
 const mockNavigate = vi.fn();
 let mockParams: Record<string, string | undefined> = {};
 
-const mockPostsGet = vi.fn();
-const mockProfileGet = vi.fn();
-const mockMapPost = vi.fn();
-const mockUsePageMeta = vi.fn();
-const mockCommentsFetch = vi.fn(async () =>
-  new Response(JSON.stringify({ comments: [] }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  })
+const mockPostsGet = vi.fn<(id: string) => Promise<unknown>>();
+const mockProfileGet = vi.fn<(handle: string) => Promise<unknown>>();
+const mockMapPost = vi.fn<(payload: unknown) => unknown>();
+const mockUsePageMeta = vi.fn<(meta: unknown) => void>();
+const mockCommentsFetch = vi.fn(
+  async (postId: string, _options?: unknown) =>
+    new Response(JSON.stringify({ comments: [], postId }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })
 );
 
 vi.mock("react-router-dom", async () => {
@@ -29,14 +30,14 @@ vi.mock("react-router-dom", async () => {
 
 vi.mock("@/lib/api", () => ({
   postsApi: {
-    get: (...args: unknown[]) => mockPostsGet(...args),
+    get: (id: string) => mockPostsGet(id),
   },
   profileApi: {
-    get: (...args: unknown[]) => mockProfileGet(...args),
+    get: (handle: string) => mockProfileGet(handle),
   },
-  mapApiFeedPostToFeedPost: (...args: unknown[]) => mockMapPost(...args),
+  mapApiFeedPostToFeedPost: (payload: unknown) => mockMapPost(payload),
   commentsApi: {
-    fetch: (...args: unknown[]) => mockCommentsFetch(...args),
+    fetch: (postId: string, options?: unknown) => mockCommentsFetch(postId, options),
     create: vi.fn(async () => new Response(JSON.stringify({ comment: null }), { status: 200 })),
     delete: vi.fn(async () => new Response(null, { status: 204 })),
   },
@@ -60,7 +61,7 @@ vi.mock("@vibecodr/shared", () => ({
 }));
 
 vi.mock("@/lib/seo", () => ({
-  usePageMeta: (...args: unknown[]) => mockUsePageMeta(...args),
+  usePageMeta: (meta: unknown) => mockUsePageMeta(meta),
 }));
 
 describe("routes navigation", () => {
@@ -75,7 +76,7 @@ describe("routes navigation", () => {
   });
 
   it("keeps navigation and SEO-critical paths wired in AppRoutes", () => {
-    const appRoutesElement = AppRoutes({});
+    const appRoutesElement = <AppRoutes />;
     const routePatterns: string[] = [];
     const walk = (node: React.ReactNode) => {
       React.Children.forEach(node, (child) => {

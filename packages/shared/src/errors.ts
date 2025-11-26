@@ -886,6 +886,30 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Unable to save parameters. Please retry.",
     logMessage: "Studio params save failed",
   },
+  "E-VIBECODR-0907": {
+    code: "E-VIBECODR-0907",
+    category: "api",
+    httpStatus: 500,
+    severity: "warning",
+    userMessage: "Unable to load plan information. Some features may be limited.",
+    logMessage: "Plan quota fetch failed for plan gate",
+  },
+  "E-VIBECODR-0908": {
+    code: "E-VIBECODR-0908",
+    category: "runtime",
+    httpStatus: 400,
+    severity: "error",
+    userMessage: "ZIP analysis failed. Please check the file and retry.",
+    logMessage: "Advanced ZIP analyzer client-side analysis failed",
+  },
+  "E-VIBECODR-0909": {
+    code: "E-VIBECODR-0909",
+    category: "runtime",
+    httpStatus: 400,
+    severity: "warning",
+    userMessage: "Invalid file type. Please select a ZIP file.",
+    logMessage: "Advanced ZIP analyzer received non-ZIP file",
+  },
 
   // 10xx: profiles and themes
   "E-VIBECODR-1002": {
@@ -1301,6 +1325,9 @@ export const ERROR_RUNTIME_ANALYTICS_FAILED: ErrorCode = "E-VIBECODR-2130";
 export const ERROR_RUNTIME_ANALYTICS_SUMMARY_FAILED: ErrorCode = "E-VIBECODR-2131";
 export const ERROR_INSPECTOR_COMPILE_STATE_FAILED: ErrorCode = "E-VIBECODR-3201";
 export const ERROR_INSPECTOR_MANIFEST_LOAD_FAILED: ErrorCode = "E-VIBECODR-3202";
+export const ERROR_PLAN_GATE_FETCH_FAILED: ErrorCode = "E-VIBECODR-0907";
+export const ERROR_ADVANCED_ZIP_ANALYSIS_FAILED: ErrorCode = "E-VIBECODR-0908";
+export const ERROR_ADVANCED_ZIP_INVALID_FILE: ErrorCode = "E-VIBECODR-0909";
 
 export function getErrorDefinition(code: string): ErrorDefinition | undefined {
   return definitions[code];

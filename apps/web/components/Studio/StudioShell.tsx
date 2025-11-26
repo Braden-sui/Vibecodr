@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertCircle, Loader2, FileCode, Sliders, Upload, Send } from "lucide-react";
 import type { Manifest } from "@vibecodr/shared/manifest";
+import { ManifestErrorActions } from "./ManifestErrorActions";
 
 export interface DraftFile {
   path: string;
@@ -25,6 +26,8 @@ export interface CapsuleDraft {
   manifest?: Manifest;
   files?: DraftFile[];
   sourceZipName?: string;
+  entryCandidates?: string[];
+  contentHash?: string;
   validationStatus: "idle" | "validating" | "valid" | "invalid";
   validationErrors?: Array<{ path: string; message: string }>;
   validationWarnings?: Array<{ path: string; message: string }>;
@@ -43,6 +46,13 @@ export interface StudioShellProps {
   draft?: CapsuleDraft;
   onTabChange?: (tab: string) => void;
   showAdvanced?: boolean;
+  manifestActions?: {
+    downloadManifest?: () => void;
+    openManifestEditor?: () => void;
+    resetManifest?: () => void;
+    canDownload?: boolean;
+    disableActions?: boolean;
+  };
 }
 
 /**
@@ -50,7 +60,14 @@ export interface StudioShellProps {
  * Provides tab navigation and validation status display
  * Based on mvp-plan.md Studio section
  */
-export function StudioShell({ children, currentTab, draft, onTabChange, showAdvanced = false }: StudioShellProps) {
+export function StudioShell({
+  children,
+  currentTab,
+  draft,
+  onTabChange,
+  showAdvanced = false,
+  manifestActions,
+}: StudioShellProps) {
   const showAdvancedTabs = showAdvanced || currentTab === "params" || currentTab === "files";
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
@@ -157,24 +174,15 @@ export function StudioShell({ children, currentTab, draft, onTabChange, showAdva
       {/* Validation Errors Panel (if any) */}
       {draft?.validationStatus === "invalid" && draft.validationErrors && (
         <div className="border-t bg-destructive/10 p-4">
-          <div className="space-y-2">
-            <h3 className="flex items-center gap-2 font-semibold text-destructive">
-              <AlertCircle className="h-4 w-4" />
-              Validation Errors
-            </h3>
-            <div className="space-y-1">
-              {draft.validationErrors.slice(0, 3).map((error, i) => (
-                <div key={i} className="text-sm text-muted-foreground">
-                  <span className="font-mono text-xs">{error.path}</span>: {error.message}
-                </div>
-              ))}
-              {draft.validationErrors.length > 3 && (
-                <div className="text-sm text-muted-foreground">
-                  +{draft.validationErrors.length - 3} more errors
-                </div>
-              )}
-            </div>
-          </div>
+          <ManifestErrorActions
+            message="We found issues in manifest.json. Fix them below or choose an action."
+            errors={draft.validationErrors}
+            onDownloadManifest={manifestActions?.downloadManifest}
+            onOpenEditor={manifestActions?.openManifestEditor ?? (onTabChange ? () => onTabChange("files") : undefined)}
+            onResetManifest={manifestActions?.resetManifest}
+            canDownload={manifestActions?.canDownload}
+            disableActions={manifestActions?.disableActions}
+          />
         </div>
       )}
 

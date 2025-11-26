@@ -6,6 +6,7 @@ This Worker powers the Vibecodr SPA. All routes are registered in `src/routes.ts
 - **Manifest, import, artifacts**
   - `POST /manifest/validate` – manifest validation with structured errors/warnings.
   - `POST /import/github` (also accepts `/capsules/import/github`), `POST /import/zip` – create capsule drafts from GitHub archives or uploaded ZIPs; supports NDJSON progress streaming when `?progress=1`.
+  - Import responses now include draftManifest plus filesSummary.entryCandidates for inline manifest builders; invalid payloads return structured errors/warnings.
   - Artifacts pipeline: `POST /artifacts` → `PUT /artifacts/:id/sources` → `PUT /artifacts/:id/complete` → `GET /artifacts/:id/manifest` or `/bundle` for runtime bundles produced by the ArtifactCompiler DO.
 
 - **Capsules & Studio**
@@ -13,6 +14,7 @@ This Worker powers the Vibecodr SPA. All routes are registered in `src/routes.ts
   - `GET /capsules/mine` – list capsules owned by the caller.
   - `GET /capsules/:id`, `/verify`, `/manifest`, `/bundle` – capsule metadata, integrity check, runtime manifest, iframe entry bundle.
   - Draft editing: `GET /capsules/:id/files-summary`, `GET|PUT /capsules/:id/files/:path`, `PATCH /capsules/:id/manifest`.
+  - PATCH /capsules/:id/manifest validates entry existence, rewrites manifest.json in R2/assets, and returns validation warnings plus entry candidates.
   - Draft compilation/publish: `POST /capsules/:id/compile-draft`, `POST /capsules/:id/publish` (publishes a compiled draft artifact).
   - Parameter recipes: `GET /capsules/:id/recipes` lists saved parameter sets (visible when the capsule is viewable; quarantined capsules still require owner/mod). `POST /capsules/:id/recipes` saves `{ name, params }` for the capsule manifest, clamps values to param bounds/options, requires auth, and enforces a per-capsule limit of 100 recipes. Returns sanitized params and author metadata.
 

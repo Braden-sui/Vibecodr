@@ -1,9 +1,18 @@
 import { ApiRemixTreeResponseSchema, Plan, postTypes } from "@vibecodr/shared";
-import type { ApiFeedPost, ApiRemixTreeResponse, PostType } from "@vibecodr/shared";
+import type {
+  ApiFeedPost,
+  ApiFilesSummary,
+  ApiImportResponse,
+  ApiRemixTreeResponse,
+  ApiUpdateManifestResponse,
+  PostType,
+} from "@vibecodr/shared";
 import type { Manifest } from "@vibecodr/shared/manifest";
 import type { UpdateProfilePayload } from "@/lib/profile/schema";
 import { getWorkerApiBase } from "@/lib/worker-api";
 import { safeParseCapsuleManifest } from "@/lib/manifest";
+
+export type { ApiImportResponse, ApiFilesSummary, ApiUpdateManifestResponse };
 
 // Tiny API client for the Worker API.
 

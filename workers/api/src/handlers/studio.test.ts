@@ -137,7 +137,7 @@ function createEnv(manifest: any): TestEnv {
   return {
     DB,
     R2,
-    RUNTIME_MANIFEST_KV: {} as any,
+    RUNTIME_MANIFEST_KV: { put: vi.fn() } as any,
     ALLOWLIST_HOSTS: "[]",
     CLERK_JWT_ISSUER: "",
     CLERK_JWT_AUDIENCE: "",
@@ -206,6 +206,8 @@ describe("studio endpoints", () => {
   it("updates manifest with validation", async () => {
     const env = createEnv({ version: "1.0", runner: "client-static", entry: "index.html" });
     const nextManifest = { version: "1.0", runner: "client-static", entry: "index.html", params: [] };
+    env.__r2Objects.set("capsules/hash-123/index.html", { body: new TextEncoder().encode("<html></html>").buffer, contentType: "text/html" });
+    env.__r2Objects.set("capsules/hash-123/manifest.json", { body: new TextEncoder().encode(env.__capsule.manifest_json).buffer, contentType: "application/json" });
 
     const res = await updateCapsuleManifest(
       new Request("https://worker.test/capsules/cap-1/manifest", {
@@ -219,7 +221,32 @@ describe("studio endpoints", () => {
     );
 
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { entryCandidates: string[] };
     expect(JSON.parse(env.__capsule.manifest_json).params).toEqual([]);
+    expect(body.entryCandidates).toContain("index.html");
+    const storedManifest = env.__r2Objects.get("capsules/hash-123/manifest.json");
+    expect(storedManifest).toBeDefined();
+    expect(new TextDecoder().decode(storedManifest!.body)).toContain("\"params\":[]");
+  });
+
+  it("rejects manifest updates when entry file is missing", async () => {
+    const env = createEnv({ version: "1.0", runner: "client-static", entry: "missing.html" });
+    const nextManifest = { version: "1.0", runner: "client-static", entry: "missing.html", params: [] };
+
+    const res = await updateCapsuleManifest(
+      new Request("https://worker.test/capsules/cap-1/manifest", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(nextManifest),
+      }),
+      env,
+      {} as any,
+      { p1: "cap-1" }
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { entry?: string };
+    expect(body.entry).toBe("missing.html");
   });
 
   it("publishes a capsule into posts", async () => {
