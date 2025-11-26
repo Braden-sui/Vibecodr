@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Github, Upload, Loader2, CheckCircle2, FileCode } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { analyzeZipFile, formatBytes } from "@/lib/zipBundle";
+import { formatBytes } from "@/lib/zipBundle";
 import { capsulesApi } from "@/lib/api";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { trackEvent } from "@/lib/analytics";
@@ -114,6 +114,9 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
 
   const readyStepStatus = importStatus === "success" ? "complete" : "pending";
 
+  // WHY: Option B — Server handles all ZIP analysis, manifest generation, and validation.
+  // Client sends raw ZIP directly to /import/zip, server returns capsuleId + manifest + warnings/errors.
+  // This removes JSZip dependency from Studio import flow and eliminates duplicate validation logic.
   const importZipFile = async (file: File) => {
     setIsImporting(true);
     setImportStatus("downloading");
@@ -121,29 +124,9 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
 
     try {
       setImportStatus("analyzing");
-      const analysis = await analyzeZipFile(file);
-
-      if (analysis.errors && analysis.errors.length > 0) {
-        setImportStatus("error");
-        setError("Manifest validation failed. Review the errors below.");
-        onDraftChange(() => ({
-          id: crypto.randomUUID(),
-          manifest: analysis.manifest,
-          files: analysis.files as DraftFile[],
-          sourceZipName: file.name,
-          validationStatus: "invalid",
-          validationWarnings: analysis.warnings,
-          validationErrors: analysis.errors,
-          buildStatus: "failed",
-          artifact: null,
-          capsuleId: undefined,
-          publishStatus: "idle",
-          postId: undefined,
-        }));
-        return;
-      }
-
       const init = await buildAuthInit();
+      // INVARIANT: capsulesApi.importZip sends raw ZIP to worker /import/zip
+      // Server analyzes, generates/validates manifest, enforces safety, writes to R2/DB
       const response = await capsulesApi.importZip(file, init);
 
       if (response.status === 401) {
@@ -155,11 +138,34 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         success?: boolean;
         capsuleId?: string;
         manifest?: Manifest;
+        filesSummary?: { totalSize?: number; fileCount?: number; entryPoint?: string };
         warnings?: Array<{ path: string; message: string }>;
         errors?: Array<{ path: string; message: string }>;
         artifact?: DraftArtifact | null;
         error?: string;
       };
+
+      // Handle validation errors from server
+      if (data.errors && data.errors.length > 0) {
+        setImportStatus("error");
+        setError("Manifest validation failed. Review the errors below.");
+        onDraftChange(() => ({
+          id: crypto.randomUUID(),
+          manifest: data.manifest ?? { version: "1.0", runner: "client-static", entry: "index.html" },
+          files: undefined, // Files stored server-side; Files tab can fetch on-demand
+          sourceZipName: file.name,
+          validationStatus: "invalid",
+          validationWarnings: data.warnings,
+          validationErrors: data.errors,
+          buildStatus: "failed",
+          artifact: null,
+          capsuleId: data.capsuleId,
+          publishStatus: "idle",
+          postId: undefined,
+        }));
+        trackEvent("studio_import_zip_failed", { error: "server-validation" });
+        return;
+      }
 
       if (!response.ok || !data.success || !data.manifest) {
         const message = data.error || "ZIP import failed. Please check your archive.";
@@ -169,11 +175,12 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         return;
       }
 
+      // Success: use server manifest and capsuleId, files stored server-side
       const validationStatus = applyServerManifest(data.manifest, data.warnings, data.errors, {
         sourceName: file.name,
         capsuleId: data.capsuleId,
         artifact: data.artifact ?? null,
-        files: analysis.files as DraftFile[],
+        files: undefined, // Files stored server-side; Files tab can fetch via capsulesApi.getFile()
       });
       if (validationStatus === "invalid") {
         setImportStatus("error");
@@ -631,7 +638,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
                   <li>Must contain an index.html or main entry file</li>
                   <li>All assets should use relative paths</li>
                   <li>No server-side code or Node.js runtime files</li>
-                  <li>Include a manifest.json for best results</li>
+                  <li>manifest.json is optional — we generate one if missing</li>
                 </ul>
               </div>
             </CardContent>

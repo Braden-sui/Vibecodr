@@ -1,3 +1,18 @@
+/**
+ * ZIP Bundle Utilities
+ *
+ * WHY: Phase 3 (Option B) moved ZIP analysis to the server.
+ * The main composer and Studio import flows now send raw ZIPs directly to /import/zip.
+ * Server handles all analysis, manifest generation, validation, and storage.
+ *
+ * DEPRECATION NOTICE:
+ * - `analyzeZipFile` is deprecated for main flows. Server handles this now.
+ * - `buildCapsuleFormData` is still used by Studio PublishTab for re-publishing edited capsules.
+ * - `formatBytes` is a general utility and remains in use.
+ *
+ * For new code, prefer server-side ZIP processing via `capsulesApi.importZip()`.
+ */
+
 import JSZip from "jszip";
 import { validateManifest, type Manifest } from "@vibecodr/shared/manifest";
 
@@ -21,6 +36,14 @@ export interface ZipAnalysisResult {
   totalSize: number;
 }
 
+/**
+ * @deprecated Phase 3 (Option B): Server now handles ZIP analysis via /import/zip.
+ * Use `capsulesApi.importZip(file, init)` for main flows.
+ * This function remains for backwards compatibility and edge cases.
+ *
+ * Analyzes a ZIP file client-side, extracting files and validating manifest.
+ * INVARIANT: Requires manifest.json in the ZIP (legacy behavior).
+ */
 export async function analyzeZipFile(file: File): Promise<ZipAnalysisResult> {
   const zip = await JSZip.loadAsync(file);
   const entries = Object.values(zip.files).filter(
@@ -107,6 +130,11 @@ export async function analyzeZipFile(file: File): Promise<ZipAnalysisResult> {
   };
 }
 
+/**
+ * Builds FormData for capsule publish endpoint from extracted files.
+ * Still used by Studio PublishTab for re-publishing edited capsules.
+ * For new imports, use server-side processing via `capsulesApi.importZip()`.
+ */
 export function buildCapsuleFormData(manifest: Manifest, files: ExtractedZipFile[]): FormData {
   const formData = new FormData();
   let hasManifest = false;

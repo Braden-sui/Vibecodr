@@ -29,12 +29,7 @@ import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { postsApi, capsulesApi, coversApi, type FeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
-import {
-  analyzeZipFile,
-  buildCapsuleFormData,
-  formatBytes,
-  type ZipManifestIssue,
-} from "@/lib/zipBundle";
+import { formatBytes } from "@/lib/zipBundle";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { featuredTags, normalizeTag } from "@/lib/tags";
 
@@ -110,8 +105,8 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   // ZIP state
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
-  const [zipManifestWarnings, setZipManifestWarnings] = useState<ZipManifestIssue[]>([]);
-  const [zipPublishWarnings, setZipPublishWarnings] = useState<Array<{ path?: string; message: string } | string>>([]);
+  // WHY: Server now handles all manifest validation; we only track warnings returned from import
+  const [zipImportWarnings, setZipImportWarnings] = useState<Array<{ path?: string; message: string } | string>>([]);
 
   // Inline code state
   const [code, setCode] = useState("");
@@ -277,8 +272,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     setError(null);
     setImportError(null);
     setZipSummary(null);
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
+    setZipImportWarnings([]);
     setImportStatus("idle");
   };
 
@@ -290,8 +284,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     setAppMode("github");
     setImportError(null);
     setZipSummary(null);
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
+    setZipImportWarnings([]);
     setImportStatus("importing");
 
     try {
@@ -333,6 +326,9 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     }
   };
 
+  // WHY: Option B — Server handles all ZIP analysis, manifest generation, and validation.
+  // Client sends raw ZIP to /import/zip, receives capsuleId + manifest + warnings.
+  // This removes JSZip dependency from the main composer flow and eliminates duplicate logic.
   const handleZipImport = async () => {
     if (!zipFile || isImporting) return;
 
@@ -340,33 +336,19 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     setAppMode("zip");
     setImportError(null);
     setImportStatus("importing");
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
+    setZipImportWarnings([]);
+
+    // Show file info immediately for UX feedback
+    setZipSummary({
+      fileName: zipFile.name,
+      totalSize: zipFile.size,
+    });
 
     try {
-      const analysis = await analyzeZipFile(zipFile);
-
-      if (analysis.errors && analysis.errors.length > 0) {
-        setZipSummary({
-          fileName: zipFile.name,
-          totalSize: analysis.totalSize,
-        });
-        setZipManifestWarnings(analysis.errors);
-        setImportStatus("error");
-        setImportError("Manifest validation failed. Please fix the issues in manifest.json.");
-        trackEvent("composer_zip_import_failed", { error: "manifest-invalid" });
-        return;
-      }
-
-      setZipSummary({
-        fileName: zipFile.name,
-        totalSize: analysis.totalSize,
-      });
-      setZipManifestWarnings(analysis.warnings ?? []);
-
-      const formData = buildCapsuleFormData(analysis.manifest, analysis.files);
       const init = await buildAuthInit();
-      const response = await capsulesApi.publish(formData, init);
+      // INVARIANT: capsulesApi.importZip sends raw ZIP to worker /import/zip
+      // Server analyzes ZIP, generates/validates manifest, enforces safety, writes to R2/DB
+      const response = await capsulesApi.importZip(zipFile, init);
 
       if (response.status === 401) {
         redirectToSignIn();
@@ -377,9 +359,23 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       const data = (await response.json()) as {
         success?: boolean;
         capsuleId?: string;
+        manifest?: { title?: string };
+        filesSummary?: { totalSize?: number; fileCount?: number };
         warnings?: Array<{ path?: string; message: string } | string>;
+        errors?: Array<{ path?: string; message: string }>;
         error?: string;
       };
+
+      // Handle validation errors from server
+      if (data.errors && data.errors.length > 0) {
+        const errorMessages = data.errors.map((e) =>
+          typeof e === "string" ? e : e.message
+        );
+        setImportError(`Validation failed: ${errorMessages.join(", ")}`);
+        setImportStatus("error");
+        trackEvent("composer_zip_import_failed", { error: "server-validation" });
+        return;
+      }
 
       if (!response.ok || !data.success || !data.capsuleId) {
         const message = data.error || "Upload failed. Please check your ZIP and try again.";
@@ -389,12 +385,23 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
         return;
       }
 
+      // Update summary with server-computed size if available
+      if (data.filesSummary?.totalSize) {
+        setZipSummary({
+          fileName: zipFile.name,
+          totalSize: data.filesSummary.totalSize,
+        });
+      }
+
       setCapsuleId(data.capsuleId);
       setCapsuleSource("zip");
-      setZipPublishWarnings(data.warnings ?? []);
-      if (!title.trim() && analysis.manifest.title) {
-        setTitle(analysis.manifest.title);
+      setZipImportWarnings(data.warnings ?? []);
+
+      // Auto-fill title from server-generated manifest if user hasn't entered one
+      if (!title.trim() && data.manifest?.title) {
+        setTitle(data.manifest.title);
       }
+
       setImportStatus("ready");
       trackEvent("composer_zip_import_success", { capsuleId: data.capsuleId });
       setZipFile(null);
@@ -408,8 +415,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       );
       setImportStatus("error");
       setZipSummary(null);
-      setZipManifestWarnings([]);
-      setZipPublishWarnings([]);
+      setZipImportWarnings([]);
       trackEvent("composer_zip_import_error");
     }
   };
@@ -723,8 +729,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
   const clearZip = () => {
     setZipFile(null);
     setZipSummary(null);
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
+    setZipImportWarnings([]);
     setImportError(null);
     if (zipInputRef.current) {
       zipInputRef.current.value = "";
@@ -734,8 +739,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
   const resetZipImport = () => {
     setZipFile(null);
     setZipSummary(null);
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
+    setZipImportWarnings([]);
     if (zipInputRef.current) {
       zipInputRef.current.value = "";
     }
@@ -770,8 +774,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
     setImportStatus("idle");
     setZipFile(null);
     setZipSummary(null);
-    setZipManifestWarnings([]);
-    setZipPublishWarnings([]);
+    setZipImportWarnings([]);
     setImagePreview(null);
     setCoverKey(null);
     setVibeType("thought");
@@ -1318,25 +1321,15 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                               Replace ZIP
                             </Button>
                           </div>
-                          {zipManifestWarnings.length > 0 && (
+                          {zipImportWarnings.length > 0 && (
                             <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
-                              <p className="text-xs font-medium">Manifest warnings</p>
-                              {zipManifestWarnings.slice(0, 4).map((warning, index) => (
-                                <p key={`${warning.path}-${index}`}>
-                                  <span className="font-mono">{warning.path}</span>: {warning.message}
-                                </p>
-                              ))}
-                            </div>
-                          )}
-                          {zipPublishWarnings.length > 0 && (
-                            <div className="space-y-1 rounded-md bg-yellow-500/10 p-2 text-yellow-700 dark:text-yellow-400">
-                              <p className="text-xs font-medium">Publish warnings</p>
-                              {zipPublishWarnings.map((warning, index) => {
+                              <p className="text-xs font-medium">Import warnings</p>
+                              {zipImportWarnings.slice(0, 5).map((warning, index) => {
                                 // API may return string or {path, message} - handle both
                                 const msg = typeof warning === "string" ? warning : warning.message;
                                 const path = typeof warning === "object" && warning.path ? warning.path : null;
                                 return (
-                                  <p key={`publish-warning-${index}`}>
+                                  <p key={`import-warning-${index}`}>
                                     {path && <span className="font-mono">{path}</span>}{path && ": "}{msg}
                                   </p>
                                 );
