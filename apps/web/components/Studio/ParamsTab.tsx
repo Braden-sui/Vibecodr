@@ -181,10 +181,10 @@ export function ParamsTab({
         throw new Error(body?.error || `Failed to save manifest (${res.status})`);
       }
       const raw = (await res.json()) as unknown;
-      const parsed = ApiUpdateManifestResponseSchema.safeParse(raw);
-      const manifestWarnings = parsed.success ? parsed.data.warnings ?? [] : ((raw as any)?.warnings ?? []);
-      const manifestFromServer = parsed.success && parsed.data.manifest ? parsed.data.manifest : nextManifest;
-      const entryCandidates = parsed.success ? parsed.data.entryCandidates : undefined;
+      const updateResult = ApiUpdateManifestResponseSchema.safeParse(raw);
+      const manifestWarnings = updateResult.success ? updateResult.data.warnings ?? [] : ((raw as any)?.warnings ?? []);
+      const manifestFromServer = updateResult.success && updateResult.data.manifest ? updateResult.data.manifest : nextManifest;
+      const entryCandidates = updateResult.success ? updateResult.data.entryCandidates : undefined;
       setWarnings(manifestWarnings);
 
       onDraftChange((prev) =>

@@ -53,6 +53,8 @@ type ImportResponse = {
   };
   warnings?: PublishWarning[];
   artifact?: PersistCapsuleResult["artifact"];
+  /** Source name (repo name or zip filename) for DraftCapsule */
+  sourceName?: string;
 };
 
 type ImportOutcome =
@@ -699,7 +701,7 @@ async function processImport(
     userId: user.userId,
   });
 
-  // Transform to ImportResponse shape
+  // Transform to ImportResponse shape (aligns with DraftCapsule contract)
   const response: ImportResponse = {
     success: true,
     capsuleId: persistResult.capsule.id,
@@ -714,6 +716,7 @@ async function processImport(
     },
     warnings: persistResult.warnings,
     artifact: persistResult.artifact,
+    sourceName: analysis.sourceName,
   };
 
   onProgress?.("done", 1);

@@ -147,18 +147,50 @@ export const ApiRemixTreeResponseSchema = z.object({
   truncated: z.boolean().optional(),
 });
 
-const ValidationIssueSchema = z.object({
+/**
+ * Validation issue for manifest warnings/errors
+ */
+export const ValidationIssueSchema = z.object({
   path: z.string(),
   message: z.string(),
 });
+export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;
 
-const ArtifactSummarySchema = z.object({
+/**
+ * Runtime artifact summary - returned from capsule creation
+ */
+export const ArtifactSummarySchema = z.object({
   id: z.string().optional(),
   runtimeVersion: z.string().nullable().optional(),
   bundleDigest: z.string().nullable().optional(),
   bundleSizeBytes: z.number().nullable().optional(),
   queued: z.boolean().optional(),
+  status: z.enum(["pending", "queued", "ready", "failed"]).optional(),
 });
+export type ArtifactSummary = z.infer<typeof ArtifactSummarySchema>;
+
+/**
+ * DraftCapsule - the canonical shape for a capsule created via import or publish.
+ * This is the core abstraction that both Studio and Composer work against.
+ *
+ * Import flows (GitHub, ZIP) return this shape.
+ * Publish flows return this shape.
+ * Client state extends this with UI-specific fields.
+ */
+export const DraftCapsuleSchema = z.object({
+  capsuleId: z.string(),
+  manifest: manifestSchema,
+  contentHash: z.string(),
+  totalSize: z.number().int(),
+  fileCount: z.number().int(),
+  entryPoint: z.string(),
+  entryCandidates: z.array(z.string()),
+  warnings: z.array(ValidationIssueSchema).optional(),
+  errors: z.array(ValidationIssueSchema).optional(),
+  artifact: ArtifactSummarySchema.nullable().optional(),
+  sourceName: z.string().optional(),
+});
+export type DraftCapsule = z.infer<typeof DraftCapsuleSchema>;
 
 export const ApiFilesSummarySchema = z.object({
   capsuleId: z.string(),
@@ -178,11 +210,18 @@ export const ApiFilesSummarySchema = z.object({
   entryCandidates: z.array(z.string()).default([]),
 });
 
+/**
+ * ApiImportResponse - wraps DraftCapsule with success flag and legacy fields.
+ * Returns the canonical DraftCapsule shape plus backward-compatible fields.
+ */
 export const ApiImportResponseSchema = z.object({
   success: z.literal(true),
+  // Core DraftCapsule fields (flattened for backward compatibility)
   capsuleId: z.string(),
   manifest: manifestSchema,
+  // Legacy field - same as manifest, kept for backward compat
   draftManifest: manifestSchema,
+  // Nested summary for backward compat with existing clients
   filesSummary: ApiFilesSummarySchema.pick({
     contentHash: true,
     totalSize: true,
@@ -192,7 +231,27 @@ export const ApiImportResponseSchema = z.object({
   }),
   warnings: z.array(ValidationIssueSchema).optional(),
   artifact: ArtifactSummarySchema.nullable().optional(),
+  // Source name (repo name or zip filename)
+  sourceName: z.string().optional(),
 });
+
+/**
+ * Helper to extract DraftCapsule from ApiImportResponse
+ */
+export function toDraftCapsule(response: ApiImportResponse): DraftCapsule {
+  return {
+    capsuleId: response.capsuleId,
+    manifest: response.manifest,
+    contentHash: response.filesSummary.contentHash,
+    totalSize: response.filesSummary.totalSize,
+    fileCount: response.filesSummary.fileCount,
+    entryPoint: response.filesSummary.entryPoint,
+    entryCandidates: response.filesSummary.entryCandidates,
+    warnings: response.warnings,
+    artifact: response.artifact,
+    sourceName: response.sourceName,
+  };
+}
 
 export const ApiUpdateManifestResponseSchema = z.object({
   ok: z.boolean(),
@@ -215,4 +274,42 @@ export type ApiRemixNode = z.infer<typeof ApiRemixNodeSchema>;
 export type ApiRemixTreeResponse = z.infer<typeof ApiRemixTreeResponseSchema>;
 export type ApiFilesSummary = z.infer<typeof ApiFilesSummarySchema>;
 export type ApiImportResponse = z.infer<typeof ApiImportResponseSchema>;
+
+/**
+ * ApiPublishResponse - returned from /capsules/publish
+ * Also returns DraftCapsule-compatible shape.
+ */
+export const ApiPublishResponseSchema = z.object({
+  success: z.literal(true),
+  capsule: z.object({
+    id: z.string(),
+    contentHash: z.string(),
+    totalSize: z.number().int(),
+    fileCount: z.number().int(),
+  }),
+  manifest: manifestSchema.optional(),
+  warnings: z.array(ValidationIssueSchema).optional(),
+  artifact: ArtifactSummarySchema.nullable().optional(),
+});
+export type ApiPublishResponse = z.infer<typeof ApiPublishResponseSchema>;
+
+/**
+ * Helper to extract DraftCapsule from ApiPublishResponse
+ */
+export function publishToDraftCapsule(
+  response: ApiPublishResponse,
+  manifest: z.infer<typeof manifestSchema>
+): DraftCapsule {
+  return {
+    capsuleId: response.capsule.id,
+    manifest: response.manifest ?? manifest,
+    contentHash: response.capsule.contentHash,
+    totalSize: response.capsule.totalSize,
+    fileCount: response.capsule.fileCount,
+    entryPoint: manifest.entry,
+    entryCandidates: [manifest.entry],
+    warnings: response.warnings,
+    artifact: response.artifact,
+  };
+}
 export type ApiUpdateManifestResponse = z.infer<typeof ApiUpdateManifestResponseSchema>;

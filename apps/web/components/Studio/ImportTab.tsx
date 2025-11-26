@@ -20,11 +20,11 @@ import { formatBytes } from "@/lib/zipBundle";
 import { capsulesApi } from "@/lib/api";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { trackEvent } from "@/lib/analytics";
-import { ApiImportResponseSchema, type ApiImportResponse } from "@vibecodr/shared";
+import { ApiImportResponseSchema, type ApiImportResponse, toDraftCapsule } from "@vibecodr/shared";
 import type { Manifest } from "@vibecodr/shared/manifest";
 import { ManifestErrorActions, InlineError } from "./ManifestErrorActions";
 import { useManifestActions } from "./useManifestActions";
-import type { CapsuleDraft, DraftArtifact, DraftFile } from "./StudioShell";
+import { fromDraftCapsule, type CapsuleDraft, type DraftArtifact, type DraftFile } from "./StudioShell";
 import { AdvancedZipAnalyzer } from "./AdvancedZipAnalyzer";
 
 type ImportMethod = "github" | "zip" | "single";
@@ -244,16 +244,17 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         return;
       }
 
+      // Use canonical toDraftCapsule -> fromDraftCapsule conversion
       const data: ApiImportResponse = parsed.data;
-      const validationStatus = applyServerManifest(data.draftManifest ?? data.manifest, data.warnings, undefined, {
-        sourceName: file.name,
-        capsuleId: data.capsuleId,
-        artifact: data.artifact ?? null,
-        files: undefined,
-        entryCandidates: data.filesSummary.entryCandidates,
-        contentHash: data.filesSummary.contentHash,
-      });
-      if (validationStatus === "invalid") {
+      const draftCapsule = toDraftCapsule(data);
+      // Override sourceName with local filename for display
+      draftCapsule.sourceName = file.name;
+      const capsuleDraft = fromDraftCapsule(draftCapsule);
+      capsuleDraft.sourceZipName = file.name;
+
+      onDraftChange(() => capsuleDraft);
+
+      if (capsuleDraft.validationStatus === "invalid") {
         setImportStatus("error");
         setError(MANIFEST_ERROR_MESSAGE);
       } else {
@@ -388,14 +389,14 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
         return;
       }
 
+      // Use canonical toDraftCapsule -> fromDraftCapsule conversion
       const data: ApiImportResponse = parsed.data;
-      const validationStatus = applyServerManifest(data.draftManifest ?? data.manifest, data.warnings, undefined, {
-        capsuleId: data.capsuleId,
-        artifact: data.artifact ?? null,
-        entryCandidates: data.filesSummary.entryCandidates,
-        contentHash: data.filesSummary.contentHash,
-      });
-      if (validationStatus === "invalid") {
+      const draftCapsule = toDraftCapsule(data);
+      const capsuleDraft = fromDraftCapsule(draftCapsule);
+
+      onDraftChange(() => capsuleDraft);
+
+      if (capsuleDraft.validationStatus === "invalid") {
         setImportStatus("error");
         setError(MANIFEST_ERROR_MESSAGE);
       } else {

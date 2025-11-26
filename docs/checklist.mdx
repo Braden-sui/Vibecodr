@@ -100,6 +100,7 @@ This checklist tracks the current state of the Vibecodr MVP and the standards we
 - [x] Studio shell with tabs: Import, Params, Files, Publish.
 - [x] Import adapters: GitHub URL and ZIP upload wired to Worker endpoints.
 - [x] Refactor `/import/zip` into an analyze + prebuild helper (manifest + warnings only) so `/capsules/publish` remains the single write path for capsule creation.
+- [x] Normalize "draft capsule" as a first-class concept via shared `DraftCapsule` type (GitHub/ZIP import → returns DraftCapsule; Studio/Composer both consume unified shape).
 - [x] Files editor for entry/assets/manifest.json with validation hooks.
 - [x] Publish flow with title, tags, cover upload, visibility, and capability prompts (backed by capsule publish endpoint).
 - [x] Immutable bundles written to R2 under `capsules/{contentHash}/...` with manifest and metadata.

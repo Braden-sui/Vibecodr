@@ -4,8 +4,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertCircle, Loader2, FileCode, Sliders, Upload, Send } from "lucide-react";
 import type { Manifest } from "@vibecodr/shared/manifest";
+import type { DraftCapsule, ArtifactSummary, ValidationIssue } from "@vibecodr/shared";
 import { ManifestErrorActions } from "./ManifestErrorActions";
 
+/**
+ * Local file reference for client-side editing
+ */
 export interface DraftFile {
   path: string;
   type?: string;
@@ -13,29 +17,84 @@ export interface DraftFile {
   file?: File;
 }
 
-export interface DraftArtifact {
+/**
+ * Runtime artifact info - extends shared ArtifactSummary with status
+ * Compatible with server's artifact response shape
+ */
+export interface DraftArtifact extends Partial<ArtifactSummary> {
   id?: string;
-  runtimeVersion?: string | null;
-  bundleDigest?: string | null;
-  bundleSizeBytes?: number | null;
   status?: "pending" | "queued" | "ready" | "failed";
 }
 
+/**
+ * CapsuleDraft - Client-side state for a draft capsule.
+ * Extends the shared DraftCapsule contract with UI-specific fields.
+ *
+ * Core fields (from DraftCapsule contract):
+ *   - capsuleId: Server-assigned capsule ID
+ *   - manifest: The capsule manifest
+ *   - contentHash, totalSize, fileCount, entryPoint, entryCandidates
+ *   - artifact: Runtime artifact info
+ *   - warnings, errors: Validation issues
+ *
+ * UI-specific fields:
+ *   - id: Local draft ID for React state management
+ *   - files: Local file references (client-side only)
+ *   - sourceZipName: Original import source name
+ *   - validationStatus, buildStatus, publishStatus: UI state machines
+ *   - postId: Created post ID after publish
+ */
 export interface CapsuleDraft {
+  // Local state ID (for React key/state management)
   id: string;
+
+  // Core DraftCapsule fields (optional until import/publish)
+  capsuleId?: string;
   manifest?: Manifest;
+  contentHash?: string;
+  totalSize?: number;
+  fileCount?: number;
+  entryPoint?: string;
+  entryCandidates?: string[];
+  artifact?: DraftArtifact | null;
+
+  // Validation issues (shared type)
+  validationErrors?: ValidationIssue[];
+  validationWarnings?: ValidationIssue[];
+
+  // Client-only fields
   files?: DraftFile[];
   sourceZipName?: string;
-  entryCandidates?: string[];
-  contentHash?: string;
+  sourceName?: string;
+
+  // UI state machines
   validationStatus: "idle" | "validating" | "valid" | "invalid";
-  validationErrors?: Array<{ path: string; message: string }>;
-  validationWarnings?: Array<{ path: string; message: string }>;
   buildStatus: "idle" | "building" | "success" | "failed";
-  artifact?: DraftArtifact | null;
-  capsuleId?: string;
   publishStatus?: "idle" | "publishing" | "success" | "error";
   postId?: string;
+}
+
+/**
+ * Create a CapsuleDraft from a DraftCapsule (server response)
+ */
+export function fromDraftCapsule(draft: DraftCapsule, localId?: string): CapsuleDraft {
+  return {
+    id: localId ?? crypto.randomUUID(),
+    capsuleId: draft.capsuleId,
+    manifest: draft.manifest,
+    contentHash: draft.contentHash,
+    totalSize: draft.totalSize,
+    fileCount: draft.fileCount,
+    entryPoint: draft.entryPoint,
+    entryCandidates: draft.entryCandidates,
+    artifact: draft.artifact ?? null,
+    validationErrors: draft.errors,
+    validationWarnings: draft.warnings,
+    sourceName: draft.sourceName,
+    validationStatus: draft.errors?.length ? "invalid" : "valid",
+    buildStatus: draft.artifact ? "success" : "idle",
+    publishStatus: "idle",
+  };
 }
 
 export type StudioTab = "import" | "params" | "files" | "publish";

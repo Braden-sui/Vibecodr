@@ -32,6 +32,7 @@ import { trackEvent } from "@/lib/analytics";
 import { formatBytes } from "@/lib/zipBundle";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { featuredTags, normalizeTag } from "@/lib/tags";
+import { ApiImportResponseSchema, toDraftCapsule } from "@vibecodr/shared";
 
 type VibeType = FeedPost["type"];
 type AppComposerMode = "github" | "zip" | "code";
@@ -296,28 +297,26 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
         return;
       }
 
-      const data = (await response.json()) as {
-        success?: boolean;
-        capsuleId?: string;
-        manifest?: { title?: string };
-        error?: string;
-      };
+      const raw = await response.json();
+      const parsed = ApiImportResponseSchema.safeParse(raw);
 
-      if (!response.ok || !data.success || !data.capsuleId) {
-        const message = data.error || "Import failed. Please check the repository URL and try again.";
+      if (!parsed.success) {
+        const message = (raw as any)?.error || "Import failed. Please check the repository URL and try again.";
         setImportError(message);
         setImportStatus("error");
         trackEvent("composer_github_import_failed", { error: message });
         return;
       }
 
-      setCapsuleId(data.capsuleId);
+      // Use canonical DraftCapsule abstraction
+      const draft = toDraftCapsule(parsed.data);
+      setCapsuleId(draft.capsuleId);
       setCapsuleSource("github");
-      if (!title.trim() && data.manifest?.title) {
-        setTitle(data.manifest.title);
+      if (!title.trim() && draft.manifest?.title) {
+        setTitle(draft.manifest.title);
       }
       setImportStatus("ready");
-      trackEvent("composer_github_import_success", { capsuleId: data.capsuleId });
+      trackEvent("composer_github_import_success", { capsuleId: draft.capsuleId });
     } catch (err) {
       console.error("Failed to import from GitHub:", err);
       setImportError("Import failed. Please try again.");
@@ -356,54 +355,49 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
         return;
       }
 
-      const data = (await response.json()) as {
-        success?: boolean;
-        capsuleId?: string;
-        manifest?: { title?: string };
-        filesSummary?: { totalSize?: number; fileCount?: number };
-        warnings?: Array<{ path?: string; message: string } | string>;
-        errors?: Array<{ path?: string; message: string }>;
-        error?: string;
-      };
+      const raw = await response.json();
+      const parsed = ApiImportResponseSchema.safeParse(raw);
 
-      // Handle validation errors from server
-      if (data.errors && data.errors.length > 0) {
-        const errorMessages = data.errors.map((e) =>
-          typeof e === "string" ? e : e.message
-        );
-        setImportError(`Validation failed: ${errorMessages.join(", ")}`);
-        setImportStatus("error");
-        trackEvent("composer_zip_import_failed", { error: "server-validation" });
-        return;
-      }
+      if (!parsed.success) {
+        // Handle validation errors from server
+        const errorList = Array.isArray((raw as any)?.errors) ? (raw as any).errors : undefined;
+        if (errorList?.length) {
+          const errorMessages = errorList.map((e: any) =>
+            typeof e === "string" ? e : e.message
+          );
+          setImportError(`Validation failed: ${errorMessages.join(", ")}`);
+          setImportStatus("error");
+          trackEvent("composer_zip_import_failed", { error: "server-validation" });
+          return;
+        }
 
-      if (!response.ok || !data.success || !data.capsuleId) {
-        const message = data.error || "Upload failed. Please check your ZIP and try again.";
+        const message = (raw as any)?.error || "Upload failed. Please check your ZIP and try again.";
         setImportError(message);
         setImportStatus("error");
         trackEvent("composer_zip_import_failed", { error: message });
         return;
       }
 
-      // Update summary with server-computed size if available
-      if (data.filesSummary?.totalSize) {
-        setZipSummary({
-          fileName: zipFile.name,
-          totalSize: data.filesSummary.totalSize,
-        });
-      }
+      // Use canonical DraftCapsule abstraction
+      const draft = toDraftCapsule(parsed.data);
 
-      setCapsuleId(data.capsuleId);
+      // Update summary with server-computed size
+      setZipSummary({
+        fileName: zipFile.name,
+        totalSize: draft.totalSize,
+      });
+
+      setCapsuleId(draft.capsuleId);
       setCapsuleSource("zip");
-      setZipImportWarnings(data.warnings ?? []);
+      setZipImportWarnings(draft.warnings ?? []);
 
       // Auto-fill title from server-generated manifest if user hasn't entered one
-      if (!title.trim() && data.manifest?.title) {
-        setTitle(data.manifest.title);
+      if (!title.trim() && draft.manifest?.title) {
+        setTitle(draft.manifest.title);
       }
 
       setImportStatus("ready");
-      trackEvent("composer_zip_import_success", { capsuleId: data.capsuleId });
+      trackEvent("composer_zip_import_success", { capsuleId: draft.capsuleId });
       setZipFile(null);
       if (zipInputRef.current) {
         zipInputRef.current.value = "";

@@ -268,7 +268,6 @@ describe("import handlers success path", () => {
     const buffer = await zip.generateAsync({ type: "arraybuffer" });
     const originalFetch = global.fetch;
     const fetchMock = vi.fn(async () => new Response(buffer));
-    // @ts-expect-error test override of global fetch
     global.fetch = fetchMock;
 
     const res = await importGithub(
@@ -282,7 +281,6 @@ describe("import handlers success path", () => {
       {} as any
     );
 
-    // @ts-expect-error restore global fetch
     global.fetch = originalFetch;
 
     expect(res.status).toBe(201);
