@@ -593,6 +593,9 @@ export const getArtifactBundle: Handler = async (_req, env, _ctx, params) => {
       "X-Runtime-Version": runtimeVersion || "",
       "X-Runtime-Type": artifact.type,
       "Content-Security-Policy": cspHeader,
+      // WHY: Sandboxed iframes using srcdoc have origin 'null'.
+      // CORS must allow this for HTML bundle fetch to work.
+      "Access-Control-Allow-Origin": "*",
     },
   });
 };
