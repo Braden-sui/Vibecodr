@@ -1031,7 +1031,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                           <div>
                             <p className="text-sm font-medium">Attach an app</p>
                             <p className="text-xs text-muted-foreground">
-                              Pick a source, let us build, then attach the capsule before posting.
+                              Pick a source, let us build, then attach the app before posting.
                             </p>
                           </div>
                         </div>

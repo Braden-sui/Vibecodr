@@ -229,14 +229,14 @@ const renderCapsuleGrid: BlockRenderer = ({ data }) => {
   if (!pins.length) {
     return (
       <VibeCard className="bg-[color:var(--vc-card)] p-4 text-[color:var(--vc-fg)] shadow">
-        <p className="text-sm text-[var(--vc-muted)]">No pinned capsules yet.</p>
+        <p className="text-sm text-[var(--vc-muted)]">No pinned vibes yet.</p>
       </VibeCard>
     );
   }
 
   return (
-    <section aria-label="Capsules" className="space-y-2">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--vc-muted)]">Pinned capsules</h2>
+    <section aria-label="Vibes" className="space-y-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--vc-muted)]">Pinned vibes</h2>
       <div className="flex flex-wrap gap-2">
         {pins.map((id) => (
           <Badge key={id} variant="secondary" className="text-xs">
@@ -304,7 +304,7 @@ const renderCapsuleEmbed: BlockRenderer = ({ block }) => {
     <div className="overflow-hidden rounded-xl border border-white/20 bg-[color:var(--vc-surface)] backdrop-blur-xl shadow">
       <iframe
         src={embedUrl}
-        title="Profile capsule"
+        title="Profile vibe"
         sandbox="allow-scripts"
         // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit
         className="w-full"
@@ -359,14 +359,14 @@ export const blockRegistry: BlockDefinition[] = [
   },
   {
     type: "capsuleGrid",
-    label: "Capsule grid",
-    description: "Pinned capsules/projects in a grid.",
+    label: "Vibe grid",
+    description: "Pinned vibes or projects in a grid.",
     render: renderCapsuleGrid,
   },
   {
     type: "capsuleEmbed",
-    label: "Capsule embed",
-    description: "Embed a sandboxed capsule iframe.",
+    label: "Vibe embed",
+    description: "Embed a sandboxed vibe iframe.",
     render: renderCapsuleEmbed,
   },
   {

@@ -962,7 +962,7 @@ export default function ProfileSettingsPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label htmlFor="profileCapsuleId" className="text-sm font-medium">
-                    Profile capsule (picker)
+                    Profile vibe (picker)
                   </label>
                   {capsulesLoading ? <span className="text-xs text-muted-foreground">Loading...</span> : null}
                 </div>
@@ -984,24 +984,24 @@ export default function ProfileSettingsPage() {
                   </select>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  One capsule to embed as your primary profile app (sandboxed). Pick from your published capsules.
+                  One vibe to embed as your primary profile app (sandboxed). Pick from your published vibes.
                 </p>
                 <Input
                   value={profileCapsuleId}
                   onChange={(event) => setProfileCapsuleId(event.target.value)}
-                  placeholder="capsule_123 (manual override)"
+                  placeholder="vibe_123 (manual override)"
                   maxLength={64}
                 />
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Pinned capsules</label>
+                  <label className="text-sm font-medium">Pinned vibes</label>
                   <span className="text-xs text-muted-foreground">{pinnedCapsules.length}/12</span>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
                   {capsuleOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No published capsules yet.</p>
+                    <p className="text-xs text-muted-foreground">No published vibes yet.</p>
                   ) : (
                     capsuleOptions.map((capsule) => {
                       const checked = pinnedCapsules.includes(capsule.id);
@@ -1022,7 +1022,7 @@ export default function ProfileSettingsPage() {
                   )}
                 </div>
                 <label htmlFor="pinnedCapsules" className="text-xs font-medium text-muted-foreground">
-                  Manual add (comma-separated) if a capsule is not listed
+                  Manual add (comma-separated) if a vibe is not listed
                 </label>
                 <Input
                   id="pinnedCapsules"
@@ -1036,7 +1036,7 @@ export default function ProfileSettingsPage() {
                         .slice(0, 12),
                     )
                   }
-                  placeholder="capsule_1, capsule_2"
+                  placeholder="vibe_1, vibe_2"
                   maxLength={512}
                 />
               </div>

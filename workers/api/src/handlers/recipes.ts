@@ -280,7 +280,7 @@ export const createCapsuleRecipe: Handler = requireAuth(async (req, env, _ctx, p
   }
   if (!withinLimit) {
     return json(
-      { error: "Recipe limit reached for this capsule", code: "E-VIBECODR-0732" },
+      { error: "Recipe limit reached for this app", code: "E-VIBECODR-0732" },
       429
     );
   }

@@ -31,9 +31,9 @@ const plans: PlanCard[] = [
     icon: Zap,
     color: "text-gray-600",
     features: [
-      "25 MB bundle size",
-      "5,000 runs/month",
-      "1 GB storage",
+      "Up to 5,000 plays/month",
+      "Space for small personal vibes (1 GB storage)",
+      "Apps up to 25 MB each",
       "Community support",
       "Basic analytics",
     ],
@@ -49,9 +49,9 @@ const plans: PlanCard[] = [
     color: "text-blue-600",
     popular: true,
     features: [
-      "25 MB bundle size",
-      "50,000 runs/month",
-      "10 GB storage",
+      "Up to 50,000 plays/month",
+      "Room for a growing library of vibes (10 GB storage)",
+      "Apps up to 25 MB each",
       "Priority support",
       "Advanced analytics",
       "Custom domain",
@@ -67,9 +67,9 @@ const plans: PlanCard[] = [
     icon: Zap,
     color: "text-purple-600",
     features: [
-      "100 MB bundle size",
-      "250,000 runs/month",
-      "50 GB storage",
+      "Up to 250,000 plays/month",
+      "Bigger vibes and projects (50 GB storage)",
+      "Apps up to 100 MB each",
       "Priority support",
       "Advanced analytics",
       "Custom domain",
@@ -87,9 +87,9 @@ const plans: PlanCard[] = [
     icon: Users,
     color: "text-orange-600",
     features: [
-      "250 MB bundle size",
-      "1,000,000 runs/month",
-      "250 GB storage",
+      "Up to 1,000,000 plays/month",
+      "Shared workspace for teams (250 GB storage)",
+      "Apps up to 250 MB each",
       "Dedicated support",
       "Custom analytics",
       "Custom domain",
@@ -112,7 +112,7 @@ export default function PricingPage() {
       <div className="mb-12 text-center space-y-3">
         <h1 className="text-4xl font-bold">Choose Your Plan</h1>
         <p className="text-lg text-muted-foreground">
-          Scale your runnable apps with the plan that fits your needs
+          Pick a plan that matches how many vibes you publish and how often people play them.
         </p>
         {isPaidSubscriber && (
           <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm font-medium text-primary">

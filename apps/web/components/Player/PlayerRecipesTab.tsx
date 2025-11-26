@@ -158,7 +158,7 @@ export function PlayerRecipesTab({
                 />
                 {!canSave && (
                   <p className="text-xs text-muted-foreground">
-                    Sign in to publish your recipe to this capsule.
+                    Sign in to publish your recipe to this app.
                   </p>
                 )}
               </div>

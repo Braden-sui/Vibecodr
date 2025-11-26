@@ -93,7 +93,7 @@ export function FilesTab({
       const response = await capsulesApi.filesSummary(capsuleId, init);
       if (!response.ok) {
         const body = (await safeJson(response)) as { error?: string };
-        throw new Error(body?.error || `Failed to load files for capsule ${capsuleId}`);
+        throw new Error(body?.error || "Failed to load files for this app.");
       }
       const summary = (await response.json()) as {
         capsuleId: string;
@@ -283,7 +283,7 @@ export function FilesTab({
             <CardDescription>Import from GitHub or ZIP to edit files.</CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            The Files tab uses the draft capsule created by Import. Provide a capsuleId in the URL or run an import.
+            The Files tab uses the draft app created by Import. Add a ?capsuleId=... query in the URL or run an import.
           </CardContent>
         </Card>
       </div>
@@ -320,7 +320,7 @@ export function FilesTab({
           </CardHeader>
           <CardContent className="space-y-1 p-0">
             {files.length === 0 && (
-              <p className="px-4 py-3 text-sm text-muted-foreground">No files found for this capsule.</p>
+              <p className="px-4 py-3 text-sm text-muted-foreground">No files found for this app.</p>
             )}
             {files.map((file) => (
               <button
@@ -453,7 +453,7 @@ export function FilesTab({
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Last Compile</CardTitle>
-              <CardDescription>Draft artifact produced by compile-draft.</CardDescription>
+              <CardDescription>Last build output for this app.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
@@ -461,9 +461,9 @@ export function FilesTab({
                 <span>Compile succeeded</span>
               </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <InfoRow label="Artifact ID" value={compileInfo.artifactId} />
-                <InfoRow label="Bundle digest" value={compileInfo.bundleDigest} />
-                <InfoRow label="Bundle size" value={formatBytes(compileInfo.bundleSizeBytes)} />
+                <InfoRow label="Build ID" value={compileInfo.artifactId} />
+                <InfoRow label="Build digest" value={compileInfo.bundleDigest} />
+                <InfoRow label="Build size" value={formatBytes(compileInfo.bundleSizeBytes)} />
                 <InfoRow label="Runtime version" value={compileInfo.runtimeVersion ?? "v0.1.0"} />
               </div>
             </CardContent>

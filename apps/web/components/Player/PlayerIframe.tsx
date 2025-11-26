@@ -529,7 +529,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           });
         } catch (err) {
           if (cancelled) return;
-          const errorMessageText = "Failed to load runtime manifest for this artifact.";
+          const errorMessageText = "We couldn't load this app. Please try again.";
           console.error("[player] runtime manifest load failed", {
             artifactId,
             error: err instanceof Error ? err.message : String(err),

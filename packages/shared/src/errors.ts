@@ -195,7 +195,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 500,
     severity: "error",
-    userMessage: "This capsule is currently unavailable.",
+    userMessage: "This app is currently unavailable.",
     logMessage: "Capsule manifest JSON parse failed",
   },
   "E-VIBECODR-0202": {
@@ -203,7 +203,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 500,
     severity: "error",
-    userMessage: "This capsule is currently unavailable.",
+    userMessage: "This app is currently unavailable.",
     logMessage: "Capsule manifest validation failed",
   },
   "E-VIBECODR-0203": {
@@ -211,7 +211,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 500,
     severity: "error",
-    userMessage: "This capsule is currently unavailable.",
+    userMessage: "This app is currently unavailable.",
     logMessage: "Required capsule manifest missing for source view",
   },
   "E-VIBECODR-0204": {
@@ -235,7 +235,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 502,
     severity: "error",
-    userMessage: "We could not load this capsule's manifest. Please retry.",
+    userMessage: "We could not load this app's configuration. Please retry.",
     logMessage: "Capsule manifest preload or analytics write failed",
   },
 
@@ -293,7 +293,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "proxy",
     httpStatus: 403,
     severity: "error",
-    userMessage: "No hosts are allowed for this capsule.",
+    userMessage: "This app is not allowed to call that host.",
     logMessage: "Proxy host list is empty or disallows the target",
   },
   "E-VIBECODR-0307": {
@@ -431,7 +431,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "capsule",
     httpStatus: 500,
     severity: "warning",
-    userMessage: "Cleanup of draft capsule failed. Retrying may be required.",
+    userMessage: "Cleanup of this draft app failed. Retrying may be required.",
     logMessage: "Cleanup draft capsule failed",
   },
   "E-VIBECODR-0409": {
@@ -465,7 +465,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "capsule",
     httpStatus: 404,
     severity: "error",
-    userMessage: "This capsule is not available.",
+    userMessage: "This app is not available.",
     logMessage: "Capsule access blocked by policy or visibility",
   },
   "E-VIBECODR-0602": {
@@ -497,7 +497,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "capsule",
     httpStatus: 429,
     severity: "error",
-    userMessage: "Run quota exceeded for this capsule.",
+    userMessage: "Play limit exceeded for this app.",
     logMessage: "Run quota exceeded",
   },
   "E-VIBECODR-0606": {
@@ -513,7 +513,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "capsule",
     httpStatus: 429,
     severity: "error",
-    userMessage: "Run quota exceeded for this capsule.",
+    userMessage: "Play limit exceeded for this app.",
     logMessage: "Run quota exceeded while completing run",
   },
   "E-VIBECODR-0608": {
@@ -799,7 +799,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "capsule",
     httpStatus: 429,
     severity: "error",
-    userMessage: "Recipe limit reached for this capsule. Please remove one before adding another.",
+    userMessage: "Recipe limit reached for this app. Please remove one before adding another.",
     logMessage: "Capsule recipe limit exceeded",
   },
   "E-VIBECODR-0733": {
@@ -959,7 +959,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 400,
     severity: "error",
-    userMessage: "The capsule manifest is invalid.",
+    userMessage: "This app's configuration is invalid.",
     logMessage: "Manifest schema validation failed",
   },
   "E-VIBECODR-1101": {
@@ -975,7 +975,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 400,
     severity: "error",
-    userMessage: "This capsule uses an unsupported import.",
+    userMessage: "This app uses an unsupported import.",
     logMessage: "Manifest import allowlist violation",
   },
   "E-VIBECODR-1104": {
@@ -983,7 +983,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 202,
     severity: "warning",
-    userMessage: "Compile telemetry for this capsule may be temporarily degraded.",
+    userMessage: "Compile telemetry for this app may be temporarily degraded.",
     logMessage: "ArtifactCompiler state write failed while recording last compile request",
   },
   "E-VIBECODR-1105": {
@@ -991,7 +991,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 202,
     severity: "warning",
-    userMessage: "Compile telemetry for this capsule may be temporarily degraded.",
+    userMessage: "Compile telemetry for this app may be temporarily degraded.",
     logMessage: "ArtifactCompiler analytics datapoint write failed",
   },
   "E-VIBECODR-1106": {
@@ -1031,7 +1031,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "manifest",
     httpStatus: 400,
     severity: "error",
-    userMessage: "This capsule exceeds the allowed bundle size for the current plan.",
+    userMessage: "This app is too large for the current plan.",
     logMessage: "Manifest bundle size exceeds allowed maximum",
   },
 
@@ -1041,7 +1041,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 500,
     severity: "error",
-    userMessage: "Failed to load the runtime manifest for this artifact.",
+    userMessage: "We couldn't load this app. Please try again.",
     logMessage: "Runtime manifest JSON parse failed",
   },
   "E-VIBECODR-1202": {
@@ -1049,7 +1049,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 500,
     severity: "error",
-    userMessage: "Failed to load the runtime manifest for this artifact.",
+    userMessage: "We couldn't load this app. Please try again.",
     logMessage: "getArtifactManifest handler failed",
   },
   "E-VIBECODR-1203": {
@@ -1075,7 +1075,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 500,
     severity: "warning",
-    userMessage: "Latest artifact cache read failed. Data may be stale.",
+    userMessage: "Latest build cache read failed. Data may be stale.",
     logMessage: "Latest artifact cache read failed",
   },
   "E-VIBECODR-1302": {
@@ -1111,7 +1111,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 500,
     severity: "error",
-    userMessage: "The capsule crashed while running.",
+    userMessage: "The app crashed while running.",
     logMessage: "Artifact runtime crashed inside sandbox",
   },
   "E-VIBECODR-2102": {
@@ -1119,7 +1119,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 500,
     severity: "error",
-    userMessage: "The capsule failed while processing a runtime bridge message.",
+    userMessage: "The app failed while processing a runtime bridge message.",
     logMessage: "Runtime bridge handler threw while processing postMessage payload",
   },
   "E-VIBECODR-2120": {
@@ -1127,7 +1127,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 403,
     severity: "error",
-    userMessage: "Browser storage APIs are disabled inside this capsule.",
+    userMessage: "Browser storage APIs are disabled inside this app.",
     logMessage: "Runtime guard blocked local/session storage access",
   },
   "E-VIBECODR-2121": {
@@ -1135,7 +1135,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 403,
     severity: "error",
-    userMessage: "Cookie access is disabled inside this capsule.",
+    userMessage: "Cookie access is disabled inside this app.",
     logMessage: "Runtime guard blocked document.cookie access",
   },
   "E-VIBECODR-2122": {
@@ -1143,7 +1143,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "runtime",
     httpStatus: 403,
     severity: "error",
-    userMessage: "Navigation APIs are disabled inside this capsule.",
+    userMessage: "Navigation APIs are disabled inside this app.",
     logMessage: "Runtime guard blocked window.open/navigation attempt",
   },
   "E-VIBECODR-2130": {
@@ -1295,7 +1295,7 @@ const definitions: Record<string, ErrorDefinition> = {
     category: "internal",
     httpStatus: 500,
     severity: "error",
-    userMessage: "Inspector failed to load capsule or runtime manifests.",
+    userMessage: "Inspector failed to load app or runtime manifests.",
     logMessage: "Inspector manifest parse or load failed",
   },
 };

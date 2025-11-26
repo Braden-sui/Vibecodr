@@ -116,7 +116,9 @@ export default function StudioFiles() {
   if (!capsuleId) {
     return (
       <section className="mx-auto max-w-3xl p-6">
-        <p className="text-sm text-muted-foreground">Provide a capsuleId query param to edit files.</p>
+        <p className="text-sm text-muted-foreground">
+          Add a ?capsuleId=... query param to edit files for a draft app.
+        </p>
       </section>
     );
   }
@@ -134,7 +136,7 @@ export default function StudioFiles() {
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Files</h2>
-          <p className="text-sm text-muted-foreground">Edit draft files and manifest for capsule {capsuleId}.</p>
+          <p className="text-sm text-muted-foreground">Edit draft files and manifest for this app (ID: {capsuleId}).</p>
           {entryCandidates.length > 0 && (
             <p className="text-xs text-muted-foreground">
               Entry candidates: {entryCandidates.join(", ")}

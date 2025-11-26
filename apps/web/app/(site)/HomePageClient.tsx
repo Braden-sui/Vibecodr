@@ -38,7 +38,7 @@ export default function FeedPage() {
 
   usePageMeta({
     title: "Vibecodr | Run, remix, and publish vibes",
-    description: "Playable capsule feed. Run inline, tweak params, remix, and share embeds.",
+    description: "Playable vibe feed. Run inline, tweak params, remix, and share embeds.",
     url: origin || undefined,
     type: "website",
     siteName: "Vibecodr",

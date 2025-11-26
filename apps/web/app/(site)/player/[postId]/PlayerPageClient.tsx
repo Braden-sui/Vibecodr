@@ -1509,7 +1509,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       if (!post?.capsule?.id || manifestParams.length === 0) {
         toast({
           title: "Cannot save recipe",
-          description: "This capsule does not expose any parameters.",
+          description: "This app does not expose any parameters.",
           variant: "error",
         });
         return;
@@ -1617,7 +1617,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       if (!post?.capsule?.id || manifestParams.length === 0) {
         toast({
           title: "Cannot update recipe",
-          description: "This capsule does not expose any parameters.",
+          description: "This app does not expose any parameters.",
           variant: "error",
         });
         return;

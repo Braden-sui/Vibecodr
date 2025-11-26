@@ -168,8 +168,8 @@ export function QuotaUsage() {
             <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
               {runsPercent >= 90
-                ? "Run quota nearly exhausted! Upgrade for more."
-                : `You've used ${runsPercent.toFixed(0)}% of your monthly runs.`}
+                ? "Play limit nearly reached! Upgrade for more plays."
+                : `You've used ${runsPercent.toFixed(0)}% of your monthly plays.`}
             </p>
           )}
         </div>
@@ -197,7 +197,7 @@ export function QuotaUsage() {
                   Running low on resources
                 </h4>
                 <p className="text-xs text-orange-800 dark:text-orange-200">
-                  Upgrade your plan to get more storage, runs, and larger bundle sizes.
+                  Upgrade your plan to get more storage, plays, and room for bigger apps.
                 </p>
                 <Link to="/pricing">
                   <Button size="sm" className="gap-1">
@@ -216,7 +216,7 @@ export function QuotaUsage() {
             <Link to="/pricing" className="text-blue-600 dark:text-blue-400 hover:underline">
               Upgrade to Creator
             </Link>{" "}
-            for 10x more runs (50k/month)
+            for 10x more plays (50k/month)
           </div>
         )}
       </CardContent>

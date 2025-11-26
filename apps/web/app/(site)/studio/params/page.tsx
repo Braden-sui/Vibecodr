@@ -299,7 +299,7 @@ export default function StudioParams() {
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Params</h2>
-          <p className="text-sm text-muted-foreground">Define controls and live-preview your draft capsule.</p>
+          <p className="text-sm text-muted-foreground">Define controls and live-preview your draft app.</p>
         </div>
       </header>
 

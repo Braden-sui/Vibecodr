@@ -104,7 +104,7 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
           <DialogDescription>
             {session
               ? `Reserve a spot for "${session.title}". Live minutes are limited while we scale Phase 5.`
-              : "Reserve a spot to showcase your projects live with pointer sync and chat. Demo your capsules, walk through features, or stream your coding process."}
+              : "Reserve a spot to showcase your projects live with pointer sync and chat. Demo your vibes, walk through features, or stream your coding process."}
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>

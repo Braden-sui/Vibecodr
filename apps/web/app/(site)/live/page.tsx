@@ -18,8 +18,8 @@ const highlights = [
     icon: MessageCircle,
   },
   {
-    title: "Playable capsules",
-    description: "Run the vibe as you present so viewers can remix it afterward.",
+    title: "Playable vibes",
+    description: "Let viewers run the vibe as you present so they can remix it afterward.",
     icon: Sparkles,
   },
 ];

@@ -84,7 +84,7 @@ export default function RemixTreePage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8">
         <Card className="p-6">
-          <p className="text-sm text-muted-foreground">Missing capsule id.</p>
+          <p className="text-sm text-muted-foreground">Missing vibe ID.</p>
         </Card>
       </div>
     );

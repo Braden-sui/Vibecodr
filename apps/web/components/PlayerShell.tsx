@@ -37,7 +37,7 @@ export interface PlayerShellProps {
 function computePlaceholder(loadError: string | null, isLoading: boolean) {
   if (isLoading) return "Loading vibe...";
   if (loadError === "not_found") return "Vibe not found.";
-  return "This vibe does not have a runnable capsule attached yet.";
+  return "This vibe does not have a playable app attached yet.";
 }
 
 export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(function PlayerShell(

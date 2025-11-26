@@ -1,15 +1,6 @@
 // Cloudflare Worker API implementation for Vibecod
 // Routes documented in SITEMAP.md.
 
-// Polyfill Node.js globals that esbuild-wasm expects but Cloudflare Workers doesn't provide
-// even with nodejs_compat flag. Must be before any esbuild imports.
-if (typeof globalThis.__filename === "undefined") {
-  (globalThis as any).__filename = "/worker.js";
-}
-if (typeof globalThis.__dirname === "undefined") {
-  (globalThis as any).__dirname = "/";
-}
-
 import type { Env } from "./types";
 import { routes } from "./routes";
 import { buildCorsContext, withCors } from "./middleware/cors";
