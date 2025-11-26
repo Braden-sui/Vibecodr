@@ -184,24 +184,35 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       },
       [capsuleId, telemetryArtifactId]
     );
+
+    // WHY: Store emitRuntimeEvent in a ref so handlers don't need it as a dependency.
+    // This prevents cascading re-renders when telemetryArtifactId changes.
+    const emitRuntimeEventRef = useRef(emitRuntimeEvent);
+    useEffect(() => {
+      emitRuntimeEventRef.current = emitRuntimeEvent;
+    }, [emitRuntimeEvent]);
+
     const postOrigins = useMemo(() => {
       // INVARIANT: only allow explicit runtime origins; sandboxed runtimes use the null origin.
       return runnerOrigins.filter((origin): origin is string => Boolean(origin));
     }, [runnerOrigins]);
+
+    // INVARIANT: These handlers use emitRuntimeEventRef to avoid dependency on emitRuntimeEvent.
+    // This prevents the runtime frame effect from re-running when telemetryArtifactId changes.
     const handleSandboxReady = useCallback(() => {
-      emitRuntimeEvent("runtime_frame_loaded");
-    }, [emitRuntimeEvent]);
+      emitRuntimeEventRef.current("runtime_frame_loaded");
+    }, []);
 
     const handleSandboxError = useCallback(
       (message: string) => {
-        emitRuntimeEvent("runtime_frame_error", {
+        emitRuntimeEventRef.current("runtime_frame_error", {
           message,
         });
         setStatus("error");
         setErrorMessage(message);
         onError?.(message);
       },
-      [emitRuntimeEvent, onError]
+      [onError]
     );
 
     const handlePolicyViolation = useCallback(
@@ -209,12 +220,12 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         setStatus("error");
         setErrorMessage(violation.message);
         onError?.(violation.message);
-        emitRuntimeEvent("runtime_policy_violation", {
+        emitRuntimeEventRef.current("runtime_policy_violation", {
           message: violation.message,
           code: violation.code,
         });
       },
-      [emitRuntimeEvent, onError]
+      [onError]
     );
 
     const sendToIframe = useCallback(
@@ -477,14 +488,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       }
     }, [params, status, sendToIframe]);
 
-    // WHY: Store emitRuntimeEvent in a ref so it can be called inside the manifest-loading
-    // effect without being a dependency. This prevents the dependency cycle where:
-    // manifest loads → telemetryArtifactId changes → emitRuntimeEvent recreates → effect re-runs.
-    const emitRuntimeEventRef = useRef(emitRuntimeEvent);
-    useEffect(() => {
-      emitRuntimeEventRef.current = emitRuntimeEvent;
-    }, [emitRuntimeEvent]);
-
     // Load runtime manifest when an artifactId is provided. If it fails, surface an
     // error state before attempting to talk to the iframe runtime.
     // INVARIANT: This effect must NOT depend on emitRuntimeEvent to avoid a reload loop.
@@ -541,7 +544,14 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       };
     }, [artifactId, capsuleId, onError]);
 
+    // WHY: Store telemetryArtifactId in a ref so startBootTimer doesn't need it as a dependency.
+    const telemetryArtifactIdRef = useRef(telemetryArtifactId);
+    useEffect(() => {
+      telemetryArtifactIdRef.current = telemetryArtifactId;
+    }, [telemetryArtifactId]);
+
     // SOTP Decision: Hard kill at 6s for WebContainer, 5s for client-static
+    // INVARIANT: Uses refs for emitRuntimeEvent and telemetryArtifactId to avoid dependency loop.
     const startBootTimer = useCallback(
       (isWebContainer: boolean) => {
         // Clear any existing timer
@@ -565,15 +575,15 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
 
           console.error("E-VIBECODR-0526 runtime boot timeout exceeded, triggering hard kill", {
             capsuleId,
-            artifactId: telemetryArtifactId,
+            artifactId: telemetryArtifactIdRef.current,
             bootDuration,
             hardKillMs,
             isWebContainer,
           });
 
-          emitRuntimeEvent("runtime_boot_timeout", {
+          emitRuntimeEventRef.current("runtime_boot_timeout", {
             capsuleId,
-            artifactId: telemetryArtifactId,
+            artifactId: telemetryArtifactIdRef.current,
             bootDuration,
             hardKillMs,
             isWebContainer,
@@ -592,7 +602,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           onError?.(`Boot timeout: runtime did not respond within ${Math.round(hardKillMs / 1000)}s`);
         }, hardKillMs);
       },
-      [capsuleId, telemetryArtifactId, emitRuntimeEvent, onError]
+      [capsuleId, onError]
     );
 
     useEffect(() => {
@@ -626,7 +636,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           artifactId: runtimeManifest.artifactId,
           error: error instanceof Error ? error.message : String(error),
         });
-        emitRuntimeEvent("runtime_loader_error", {
+        emitRuntimeEventRef.current("runtime_loader_error", {
           capsuleId,
           artifactId: runtimeManifest.artifactId ?? artifactId,
           error: error instanceof Error ? error.message : String(error),
@@ -635,13 +645,14 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         setErrorMessage(errorMessage);
         setRuntimeFrame(null);
       }
+      // INVARIANT: Handlers use refs internally, so they're stable and won't cause re-runs.
+      // The effect should only re-run when runtimeManifest or bundleUrl changes.
     }, [
       runtimeManifest,
       bundleUrl,
       handleSandboxReady,
       handleSandboxError,
       handlePolicyViolation,
-      emitRuntimeEvent,
       capsuleId,
       artifactId,
       startBootTimer,
