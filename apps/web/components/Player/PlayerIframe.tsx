@@ -645,18 +645,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         setErrorMessage(errorMessage);
         setRuntimeFrame(null);
       }
-      // INVARIANT: Handlers use refs internally, so they're stable and won't cause re-runs.
+      // INVARIANT: Handlers use refs internally, so they're stable and safe to call.
+      // We intentionally exclude handlers from deps to prevent iframe recreation loops.
       // The effect should only re-run when runtimeManifest or bundleUrl changes.
-    }, [
-      runtimeManifest,
-      bundleUrl,
-      handleSandboxReady,
-      handleSandboxError,
-      handlePolicyViolation,
-      capsuleId,
-      artifactId,
-      startBootTimer,
-    ]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [runtimeManifest, bundleUrl]);
 
     useEffect(() => {
       const onVisibility = () => {
