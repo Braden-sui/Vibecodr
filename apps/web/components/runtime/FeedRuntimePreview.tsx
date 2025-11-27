@@ -1,19 +1,10 @@
 "use client";
 
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-} from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import { artifactsApi, capsulesApi } from "@/lib/api";
-import { loadRuntimeManifest, type ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
-import { loadRuntime } from "@/lib/runtime/registry";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
+import { useRuntimeSession } from "@/lib/runtime/useRuntimeSession";
 
 export interface FeedRuntimePreviewProps {
   artifactId: string;
@@ -30,9 +21,6 @@ export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRunti
     forwardedRef
   ) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
-    const [runtimeManifest, setRuntimeManifest] = useState<ClientRuntimeManifest | null>(null);
-    const [runtimeFrame, setRuntimeFrame] = useState<ReactElement | null>(null);
-    const [loadError, setLoadError] = useState<string | null>(null);
 
     useImperativeHandle<HTMLIFrameElement | null, HTMLIFrameElement | null>(
       forwardedRef,
@@ -40,80 +28,25 @@ export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRunti
       []
     );
 
-    const bundleUrl = useMemo(
-      () => artifactsApi.bundleSrc(String(artifactId)) || capsulesApi.bundleSrc(capsuleId),
-      [artifactId, capsuleId]
-    );
+    const bundleUrl = useMemo(() => {
+      return artifactsApi.bundleSrc(String(artifactId)) || capsulesApi.bundleSrc(capsuleId);
+    }, [artifactId, capsuleId]);
 
-    useEffect(() => {
-      let cancelled = false;
-      setRuntimeManifest(null);
-      setRuntimeFrame(null);
-      setLoadError(null);
-
-      (async () => {
-        try {
-          const manifest = await loadRuntimeManifest(String(artifactId));
-          if (cancelled) return;
-          setRuntimeManifest(manifest);
-        } catch (error) {
-          if (cancelled) return;
-          const message = "Preview failed to load.";
-          setLoadError(message);
-          if (typeof console !== "undefined" && typeof console.error === "function") {
-            console.error("E-VIBECODR-2113 feed runtime manifest load failed", {
-              artifactId,
-              capsuleId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-          onError?.(message);
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-      };
-    }, [artifactId, capsuleId, onError]);
-
-    useEffect(() => {
-      if (!runtimeManifest) {
-        return;
-      }
-
-      try {
-        const frame = loadRuntime(runtimeManifest.type, {
-          manifest: runtimeManifest,
-          bundleUrl,
-          params,
-          className,
-          title: `Preview for ${capsuleId}`,
-          frameRef: iframeRef,
-          onReady: () => {
-            setLoadError(null);
-            onReady?.();
-          },
-          onError: (message) => {
-            const normalized = message || "Preview failed to load.";
-            setLoadError(normalized);
-            onError?.(normalized);
-          },
-        });
-        setRuntimeFrame(frame);
-      } catch (error) {
-        const message = "Preview failed to start.";
-        setLoadError(message);
-        setRuntimeFrame(null);
-        if (typeof console !== "undefined" && typeof console.error === "function") {
-          console.error("E-VIBECODR-2114 feed runtime loader failed", {
-            artifactId,
-            capsuleId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-        onError?.(message);
-      }
-    }, [artifactId, bundleUrl, capsuleId, className, onError, onReady, params, runtimeManifest]);
+    const { runtimeFrame, state } = useRuntimeSession({
+      artifactId,
+      capsuleId,
+      bundleUrl,
+      params,
+      surface: "feed",
+      autoStart: true,
+      maxBootMs: 0,
+      maxRunMs: 0,
+      className,
+      title: `Preview for ${capsuleId}`,
+      frameRef: iframeRef,
+      onReady,
+      onError,
+    });
 
     const combinedClassName = ["h-full", "w-full", "border-0", "bg-transparent", className]
       .filter(Boolean)
@@ -125,7 +58,7 @@ export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRunti
         <iframe
           ref={iframeRef}
           title="Vibe runtime preview"
-          src={loadError ? "about:blank" : bundleUrl}
+          src={state.status === "error" ? "about:blank" : bundleUrl}
           sandbox={RUNTIME_IFRAME_SANDBOX}
           allow={RUNTIME_IFRAME_PERMISSIONS}
           referrerPolicy="no-referrer"

@@ -158,7 +158,7 @@ describe("PlayerIframe", () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
 
-    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "null");
+    expect(postMessage).toHaveBeenCalledWith({ type: "pause" }, "*");
   });
 
   it("notifies parent when runtime posts an error message", () => {

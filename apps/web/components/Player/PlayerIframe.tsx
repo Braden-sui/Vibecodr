@@ -15,13 +15,13 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { artifactsApi, capsulesApi } from "@/lib/api";
 import { trackRuntimeEvent } from "@/lib/analytics";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
-import { loadRuntime } from "@/lib/runtime/registry";
 import { getRuntimeBudgets } from "./runtimeBudgets";
 import { getRuntimeErrorInfo } from "@/lib/runtime/errorMessages";
 import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
+import { useRuntimeSession } from "@/lib/runtime/useRuntimeSession";
 
 export const RUNTIME_EVENT_LIMIT = 120;
 export const RUNTIME_LOG_LIMIT = 200;
@@ -124,13 +124,12 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       () => resolveRunnerOrigins(bundleUrl, Boolean(artifactId)),
       [artifactId, bundleUrl]
     );
-    const [runtimeManifest, setRuntimeManifest] = useState<ClientRuntimeManifest | null>(null);
-    const [runtimeFrame, setRuntimeFrame] = useState<ReactElement | null>(null);
     const heartbeatTrackedRef = useRef(false);
     const runtimeEventCountRef = useRef(0);
     const runtimeEventLimitHitRef = useRef(false);
     const runtimeLogCountRef = useRef(0);
     const runtimeLogLimitHitRef = useRef(false);
+    const telemetryArtifactIdRef = useRef<string | undefined>(artifactId);
     const paramsRef = useRef(params);
     useEffect(() => {
       paramsRef.current = params;
@@ -157,9 +156,9 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     useEffect(() => {
       resetRuntimeBudgets();
     }, [artifactId, capsuleId, resetRuntimeBudgets]);
-    const telemetryArtifactId = runtimeManifest?.artifactId ?? artifactId;
     const emitRuntimeEvent = useCallback(
       (event: string, payload?: Record<string, unknown>) => {
+        const telemetryArtifactId = telemetryArtifactIdRef.current;
         if (runtimeEventCountRef.current >= RUNTIME_EVENT_LIMIT) {
           if (!runtimeEventLimitHitRef.current) {
             runtimeEventLimitHitRef.current = true;
@@ -182,7 +181,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           ...(payload ?? {}),
         });
       },
-      [capsuleId, telemetryArtifactId]
+      [capsuleId]
     );
 
     // WHY: Store emitRuntimeEvent in a ref so handlers don't need it as a dependency.
@@ -227,6 +226,54 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       },
       [onError]
     );
+
+    const { runtimeFrame, state: runtimeSessionState } = useRuntimeSession({
+      artifactId: artifactId ?? "",
+      capsuleId,
+      bundleUrl,
+      params: paramsRef.current,
+      surface: "player",
+      autoStart: Boolean(artifactId),
+      maxBootMs: 0,
+      maxRunMs: 0,
+      className: "h-full w-full border-0",
+      title: "Vibe Runner",
+      frameRef: iframeRef,
+      onReady: handleSandboxReady,
+      onError: handleSandboxError,
+      onPolicyViolation: handlePolicyViolation,
+    });
+    const runtimeManifest = runtimeSessionState.manifest;
+
+    useEffect(() => {
+      telemetryArtifactIdRef.current = runtimeManifest?.artifactId ?? artifactId;
+    }, [artifactId, runtimeManifest]);
+
+    useEffect(() => {
+      if (runtimeSessionState.status === "loading") {
+        setStatus("loading");
+        setErrorMessage("");
+        onLoading?.();
+      } else if (runtimeSessionState.status === "error") {
+        const message =
+          runtimeSessionState.error || "We couldn't load this app. Please try again.";
+        setStatus("error");
+        setErrorMessage(message);
+        emitRuntimeEventRef.current("runtime_manifest_error", {
+          capsuleId,
+          artifactId,
+          error: message,
+        });
+        onError?.(message);
+      }
+    }, [
+      artifactId,
+      capsuleId,
+      onError,
+      onLoading,
+      runtimeSessionState.error,
+      runtimeSessionState.status,
+    ]);
 
     const sendToIframe = useCallback(
       (type: string, payload?: unknown) => {
@@ -334,7 +381,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         const payload = message.payload;
         const telemetryBase = {
           capsuleId,
-          artifactId: telemetryArtifactId,
+          artifactId: telemetryArtifactIdRef.current,
         };
 
         switch (type) {
@@ -377,7 +424,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
                   runtimeLogLimitHitRef.current = true;
                   console.warn("E-VIBECODR-0525 runtime logs capped for this session", {
                     capsuleId,
-                    artifactId: telemetryArtifactId,
+                    artifactId: telemetryArtifactIdRef.current,
                     cappedAt: RUNTIME_LOG_LIMIT,
                   });
                   emitRuntimeEvent("runtime_logs_capped", {
@@ -448,7 +495,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
               if (available.includes("parentOriginAccess")) {
                 console.error("E-VIBECODR-0527 SECURITY WARNING: sandbox misconfiguration detected", {
                   capsuleId,
-                  artifactId: telemetryArtifactId,
+                  artifactId: telemetryArtifactIdRef.current,
                   warnings,
                   message: "Capsule has access to parent origin - sandbox may not be properly configured",
                 });
@@ -478,7 +525,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       onReady,
       onStats,
       runnerOrigins,
-      telemetryArtifactId,
     ]);
 
     // Send params to iframe when they change
@@ -493,69 +539,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     useEffect(() => {
       onErrorRef.current = onError;
     }, [onError]);
-
-    // Load runtime manifest when an artifactId is provided. If it fails, surface an
-    // error state before attempting to talk to the iframe runtime.
-    // INVARIANT: This effect must NOT depend on callbacks to avoid a reload loop.
-    useEffect(() => {
-      let cancelled = false;
-      heartbeatTrackedRef.current = false;
-      setRuntimeManifest(null);
-      setRuntimeFrame(null);
-
-      if (!artifactId) {
-        setStatus("loading");
-        setErrorMessage("");
-        return () => {
-          cancelled = true;
-        };
-      }
-
-      setStatus("loading");
-      setErrorMessage("");
-
-      (async () => {
-        try {
-          const manifest = await loadRuntimeManifest(artifactId);
-          if (cancelled) return;
-          setRuntimeManifest(manifest);
-          emitRuntimeEventRef.current("runtime_manifest_loaded", {
-            capsuleId,
-            artifactId: manifest.artifactId ?? artifactId,
-            runtimeVersion: manifest.runtimeVersion,
-            runtimeType: manifest.type,
-            bundleDigest: manifest.bundle.digest,
-            bundleSizeBytes: manifest.bundle.sizeBytes,
-          });
-        } catch (err) {
-          if (cancelled) return;
-          const errorMessageText = "We couldn't load this app. Please try again.";
-          console.error("[player] runtime manifest load failed", {
-            artifactId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          setStatus("error");
-          setErrorMessage(errorMessageText);
-          emitRuntimeEventRef.current("runtime_manifest_error", {
-            capsuleId,
-            artifactId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          onErrorRef.current?.(errorMessageText);
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [artifactId, capsuleId]);
-
-    // WHY: Store telemetryArtifactId in a ref so startBootTimer doesn't need it as a dependency.
-    const telemetryArtifactIdRef = useRef(telemetryArtifactId);
-    useEffect(() => {
-      telemetryArtifactIdRef.current = telemetryArtifactId;
-    }, [telemetryArtifactId]);
 
     // SOTP Decision: Hard kill at 6s for WebContainer, 5s for client-static
     // INVARIANT: Uses refs for emitRuntimeEvent and telemetryArtifactId to avoid dependency loop.
@@ -613,50 +596,22 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     );
 
     useEffect(() => {
-      if (!runtimeManifest) {
-        setRuntimeFrame(null);
+      if (!runtimeManifest || !artifactId) {
         return;
       }
-
-      // Start boot timer based on runtime type
-      // NOTE: Currently only client-static runtimes (react-jsx, html) are supported
-      // WebContainer support would use webContainerBootHardKillMs when implemented
-      const isWebContainer = false; // Reserved for future WebContainer runtime
+      setStatus("loading");
+      setErrorMessage("");
+      emitRuntimeEventRef.current("runtime_manifest_loaded", {
+        capsuleId,
+        artifactId: runtimeManifest.artifactId ?? artifactId,
+        runtimeVersion: runtimeManifest.runtimeVersion,
+        runtimeType: runtimeManifest.type,
+        bundleDigest: runtimeManifest.bundle.digest,
+        bundleSizeBytes: runtimeManifest.bundle.sizeBytes,
+      });
+      const isWebContainer = false;
       startBootTimer(isWebContainer);
-
-      try {
-        const element = loadRuntime(runtimeManifest.type, {
-          manifest: runtimeManifest,
-          bundleUrl,
-          params: paramsRef.current,
-          frameRef: iframeRef,
-          title: "Vibecodr runtime",
-          onReady: handleSandboxReady,
-          onError: handleSandboxError,
-          onPolicyViolation: handlePolicyViolation,
-        });
-        setRuntimeFrame(element);
-      } catch (error) {
-        const errorMessage = "Failed to initialize runtime.";
-        console.error("E-VIBECODR-2108 runtime loader failed to render", {
-          capsuleId,
-          artifactId: runtimeManifest.artifactId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        emitRuntimeEventRef.current("runtime_loader_error", {
-          capsuleId,
-          artifactId: runtimeManifest.artifactId ?? artifactId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        setStatus("error");
-        setErrorMessage(errorMessage);
-        setRuntimeFrame(null);
-      }
-      // INVARIANT: Handlers use refs internally, so they're stable and safe to call.
-      // We intentionally exclude handlers from deps to prevent iframe recreation loops.
-      // The effect should only re-run when runtimeManifest or bundleUrl changes.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [runtimeManifest, bundleUrl]);
+    }, [artifactId, capsuleId, runtimeManifest, startBootTimer]);
 
     useEffect(() => {
       const onVisibility = () => {

@@ -72,7 +72,11 @@ describe("SandboxFrame", () => {
   });
 
   it("includes the provided nonce across CSP and scripts", () => {
-    const manifestWithNonce = { ...manifest, cspNonce: "abc123", type: "react-jsx" };
+    const manifestWithNonce: ClientRuntimeManifest = {
+      ...manifest,
+      cspNonce: "abc123",
+      type: "react-jsx",
+    };
     const { getByTitle } = render(
       <SandboxFrame manifest={manifestWithNonce} title="nonce-test" />
     );
