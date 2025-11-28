@@ -27,6 +27,8 @@ export type ReactCompileOutcome = ReactCompileResult | ReactCompileError;
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
+// WHY: Only allow commonly used, safe frontend libraries that are also in the import map.
+// INVARIANT: Keep aligned with apps/web/components/runtime/SandboxFrame.tsx import map.
 const ALLOWED_IMPORTS = new Set([
   "react",
   "react-dom",
@@ -35,6 +37,8 @@ const ALLOWED_IMPORTS = new Set([
   "d3",
   "three",
   "clsx",
+  "framer-motion",
+  "motion",
 ]);
 
 // INVARIANT: Caller passes already-size-gated source when using plan-aware quotas.

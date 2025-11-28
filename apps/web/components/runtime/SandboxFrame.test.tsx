@@ -104,4 +104,50 @@ describe("SandboxFrame", () => {
     expect(srcdoc).toMatch(/style-src\s+'self'\s+'unsafe-inline'/);
     expect(srcdoc).not.toMatch(/<script[^>]+src="https:\/\/cdn\.example\/artifacts\/html-bundle\.html"/);
   });
+
+  it("includes import map with React and common libraries for react-jsx bundles", () => {
+    const reactManifest: ClientRuntimeManifest = {
+      ...manifest,
+      type: "react-jsx",
+      runtimeAssets: {
+        ...manifest.runtimeAssets,
+        runtimeScriptUrl: "/runtime-assets/v0.1.0/react-runtime.js",
+      },
+    };
+
+    const { getByTitle } = render(
+      <SandboxFrame
+        manifest={reactManifest}
+        bundleUrl="https://cdn.example/artifacts/bundle.js"
+        title="react-runtime-frame"
+      />
+    );
+
+    const srcdoc = getByTitle("react-runtime-frame").getAttribute("srcdoc") || "";
+
+    // Verify import map is included with common libraries
+    expect(srcdoc).toContain("importmap");
+    expect(srcdoc).toContain("https://esm.sh/react@18");
+    expect(srcdoc).toContain("https://esm.sh/react-dom@18");
+    expect(srcdoc).toContain("https://esm.sh/lucide-react");
+    expect(srcdoc).toContain("https://esm.sh/framer-motion");
+
+    // Verify bundle is loaded as ES module
+    expect(srcdoc).toContain('type="module"');
+    expect(srcdoc).toContain("https://cdn.example/artifacts/bundle.js");
+  });
+
+  it("does not include import map for HTML runtimes", () => {
+    const { getByTitle } = render(
+      <SandboxFrame
+        manifest={{ ...manifest, type: "html" }}
+        bundleUrl="https://cdn.example/artifacts/bundle.html"
+        title="html-no-importmap"
+      />
+    );
+
+    const srcdoc = getByTitle("html-no-importmap").getAttribute("srcdoc") || "";
+    expect(srcdoc).not.toContain("importmap");
+    expect(srcdoc).not.toContain("esm.sh");
+  });
 });

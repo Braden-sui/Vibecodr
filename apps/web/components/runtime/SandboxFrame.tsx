@@ -56,12 +56,16 @@ function buildSandboxCsp(nonce: string, bundleUrl?: string, isHtmlRuntime?: bool
 
   // WHY: HTML bundles need to fetch their content. Always allow the bundle origin
   // in connect-src so the HTML fetch works, even in offline mode.
+  // React bundles need esm.sh for dynamic module imports.
   let connectSrc: string;
   if (mode === "allow-https") {
     connectSrc = "connect-src 'self' https:";
-  } else if (bundleOrigin) {
+  } else if (isHtmlRuntime && bundleOrigin) {
     // INVARIANT: Allow only the bundle origin for HTML fetches in offline mode
     connectSrc = `connect-src ${bundleOrigin}`;
+  } else if (!isHtmlRuntime) {
+    // React bundles need esm.sh for module resolution even in offline mode
+    connectSrc = `connect-src 'self' https://esm.sh`;
   } else {
     connectSrc = "connect-src 'none'";
   }
@@ -148,10 +152,39 @@ export function buildSandboxFrameSrcDoc({
       })();
     </script>`;
     } else {
-      // React/JS bundles load as scripts and self-bootstrap
-      bundleLoadScript = `<script nonce="${nonce}" defer src="${bundleUrl}"></script>`;
+      // React/JS bundles load as ES modules with import map for React resolution
+      bundleLoadScript = `<script nonce="${nonce}" type="module" src="${bundleUrl}"></script>`;
     }
   }
+
+  // WHY: React bundles are ES modules that import from 'react', 'react-dom', etc.
+  // Import maps resolve these bare specifiers to esm.sh CDN which provides proper ES modules.
+  // HTML bundles don't need React, so we skip the import map.
+  // INVARIANT: Keep this list aligned with commonly used libraries users might import.
+  const reactImportMap = isHtmlRuntime
+    ? ""
+    : `<script type="importmap" nonce="${nonce}">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18",
+    "react/": "https://esm.sh/react@18/",
+    "react-dom": "https://esm.sh/react-dom@18",
+    "react-dom/": "https://esm.sh/react-dom@18/",
+    "lucide-react": "https://esm.sh/lucide-react@0.460",
+    "recharts": "https://esm.sh/recharts@2",
+    "recharts/": "https://esm.sh/recharts@2/",
+    "d3": "https://esm.sh/d3@7",
+    "d3/": "https://esm.sh/d3@7/",
+    "three": "https://esm.sh/three@0.170",
+    "three/": "https://esm.sh/three@0.170/",
+    "clsx": "https://esm.sh/clsx@2",
+    "framer-motion": "https://esm.sh/framer-motion@11",
+    "framer-motion/": "https://esm.sh/framer-motion@11/",
+    "motion": "https://esm.sh/framer-motion@11",
+    "motion/": "https://esm.sh/framer-motion@11/"
+  }
+}
+</script>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -175,6 +208,7 @@ export function buildSandboxFrameSrcDoc({
         background: transparent;
       }
     </style>
+    ${reactImportMap}
     <script nonce="${nonce}" src="${manifest.runtimeAssets.guardUrl}"></script>
     <script nonce="${nonce}" src="${manifest.runtimeAssets.bridgeUrl}"></script>
     <script nonce="${nonce}">
