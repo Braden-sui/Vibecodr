@@ -1,10 +1,11 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { artifactsApi, capsulesApi } from "@/lib/api";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
 import { useRuntimeSession } from "@/lib/runtime/useRuntimeSession";
+import type { RuntimeEvent } from "@/lib/runtime/runtimeSession";
 
 export interface FeedRuntimePreviewProps {
   artifactId: string;
@@ -21,6 +22,18 @@ export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRunti
     forwardedRef
   ) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const runtimeSessionLogger = useCallback(
+      (event: RuntimeEvent) => {
+        if (event.type === "run_timeout" || event.type === "boot_timeout") {
+          console.warn("[feed_preview] runtime session event", {
+            artifactId,
+            capsuleId,
+            event,
+          });
+        }
+      },
+      [artifactId, capsuleId]
+    );
 
     useImperativeHandle<HTMLIFrameElement | null, HTMLIFrameElement | null>(
       forwardedRef,
@@ -39,14 +52,19 @@ export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRunti
       params,
       surface: "feed",
       autoStart: true,
-      maxBootMs: 0,
-      maxRunMs: 0,
       className,
       title: `Preview for ${capsuleId}`,
       frameRef: iframeRef,
       onReady,
       onError,
+      logger: runtimeSessionLogger,
     });
+
+    useEffect(() => {
+      if (state.status === "error" && state.error) {
+        onError?.(state.error);
+      }
+    }, [onError, state.error, state.status]);
 
     const combinedClassName = ["h-full", "w-full", "border-0", "bg-transparent", className]
       .filter(Boolean)

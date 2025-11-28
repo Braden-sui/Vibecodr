@@ -10,6 +10,7 @@ import {
   Activity,
   Share2,
   Gauge,
+  Code,
 } from "lucide-react";
 
 export interface PlayerControlsProps {
@@ -23,6 +24,7 @@ export interface PlayerControlsProps {
   onRestart: () => void;
   onKill: () => void;
   onShare: () => void;
+  onCopyEmbed?: () => void;
 }
 
 export function PlayerControls({
@@ -32,6 +34,7 @@ export function PlayerControls({
   onRestart,
   onKill,
   onShare,
+  onCopyEmbed,
 }: PlayerControlsProps) {
   return (
     <div className="flex items-center justify-between border-t bg-card p-3">
@@ -93,6 +96,12 @@ export function PlayerControls({
         <Separator orientation="vertical" className="h-6" />
 
         {/* Action Buttons */}
+        {onCopyEmbed && (
+          <Button variant="outline" size="sm" onClick={onCopyEmbed} className="gap-1">
+            <Code className="h-4 w-4" />
+            Copy embed
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={onShare} className="gap-1">
           <Share2 className="h-4 w-4" />
           Share

@@ -24,6 +24,7 @@ export interface PlayerShellProps {
   onRestart: () => void;
   onKill: () => void;
   onShare: () => void;
+  onCopyEmbed?: () => void;
   isLoading: boolean;
   loadError: string | null;
   onReady?: PlayerIframeProps["onReady"];
@@ -52,14 +53,15 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
     consoleCollapsed,
     onConsoleToggle,
     onClearConsole,
-    onRestart,
-    onKill,
-    onShare,
-    isLoading,
-    loadError,
-    onReady,
-    onLog,
-    onStats,
+  onRestart,
+  onKill,
+  onShare,
+  onCopyEmbed,
+  isLoading,
+  loadError,
+  onReady,
+  onLog,
+  onStats,
     onBoot,
     onError,
     onLoading,
@@ -103,6 +105,7 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
         onRestart={onRestart}
         onKill={onKill}
         onShare={onShare}
+        onCopyEmbed={onCopyEmbed}
       />
 
       <PlayerConsole

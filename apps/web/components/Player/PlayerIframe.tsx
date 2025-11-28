@@ -8,22 +8,19 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactElement,
 } from "react";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { artifactsApi, capsulesApi } from "@/lib/api";
 import { trackRuntimeEvent } from "@/lib/analytics";
-import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
-import { getRuntimeBudgets } from "./runtimeBudgets";
 import { getRuntimeErrorInfo } from "@/lib/runtime/errorMessages";
-import type { ClientRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
+import { RUNTIME_TELEMETRY_LIMIT, type RuntimeEvent } from "@/lib/runtime/runtimeSession";
 import { useRuntimeSession } from "@/lib/runtime/useRuntimeSession";
 
-export const RUNTIME_EVENT_LIMIT = 120;
+export const RUNTIME_EVENT_LIMIT = RUNTIME_TELEMETRY_LIMIT;
 export const RUNTIME_LOG_LIMIT = 200;
 
 export interface PlayerIframeProps {
@@ -113,9 +110,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
     const [errorMessage, setErrorMessage] = useState<string>("");
     const pauseStateRef = useRef<"paused" | "running">("running");
-    const bootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const bootStartRef = useRef<number | null>(null);
-    const hardKillTriggeredRef = useRef(false);
     const bundleUrl = useMemo(
       () => (artifactId ? artifactsApi.bundleSrc(artifactId) : capsulesApi.bundleSrc(capsuleId)),
       [artifactId, capsuleId]
@@ -125,11 +119,9 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       [artifactId, bundleUrl]
     );
     const heartbeatTrackedRef = useRef(false);
-    const runtimeEventCountRef = useRef(0);
-    const runtimeEventLimitHitRef = useRef(false);
     const runtimeLogCountRef = useRef(0);
     const runtimeLogLimitHitRef = useRef(false);
-    const telemetryArtifactIdRef = useRef<string | undefined>(artifactId);
+    const bootStartedAtRef = useRef<number | null>(null);
     const paramsRef = useRef(params);
     useEffect(() => {
       paramsRef.current = params;
@@ -139,65 +131,23 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         onLoading?.();
       }
     }, [onLoading, status]);
-    const resetRuntimeBudgets = useCallback(() => {
-      runtimeEventCountRef.current = 0;
-      runtimeEventLimitHitRef.current = false;
+    const resetRuntimeCounters = useCallback(() => {
       runtimeLogCountRef.current = 0;
       runtimeLogLimitHitRef.current = false;
       heartbeatTrackedRef.current = false;
-      hardKillTriggeredRef.current = false;
-      // Clear any pending boot timer
-      if (bootTimerRef.current) {
-        clearTimeout(bootTimerRef.current);
-        bootTimerRef.current = null;
-      }
-      bootStartRef.current = null;
+      bootStartedAtRef.current = null;
     }, []);
     useEffect(() => {
-      resetRuntimeBudgets();
-    }, [artifactId, capsuleId, resetRuntimeBudgets]);
-    const emitRuntimeEvent = useCallback(
-      (event: string, payload?: Record<string, unknown>) => {
-        const telemetryArtifactId = telemetryArtifactIdRef.current;
-        if (runtimeEventCountRef.current >= RUNTIME_EVENT_LIMIT) {
-          if (!runtimeEventLimitHitRef.current) {
-            runtimeEventLimitHitRef.current = true;
-            console.warn("E-VIBECODR-0524 runtime events capped for this session", {
-              capsuleId,
-              artifactId: telemetryArtifactId,
-            });
-            trackRuntimeEvent("runtime_events_capped", {
-              capsuleId,
-              artifactId: telemetryArtifactId,
-            });
-          }
-          return;
-        }
-
-        runtimeEventCountRef.current += 1;
-        trackRuntimeEvent(event, {
-          capsuleId,
-          artifactId: telemetryArtifactId,
-          ...(payload ?? {}),
-        });
-      },
-      [capsuleId]
-    );
-
-    // WHY: Store emitRuntimeEvent in a ref so handlers don't need it as a dependency.
-    // This prevents cascading re-renders when telemetryArtifactId changes.
-    const emitRuntimeEventRef = useRef(emitRuntimeEvent);
-    useEffect(() => {
-      emitRuntimeEventRef.current = emitRuntimeEvent;
-    }, [emitRuntimeEvent]);
+      resetRuntimeCounters();
+    }, [artifactId, capsuleId, resetRuntimeCounters]);
 
     const postOrigins = useMemo(() => {
       // INVARIANT: only allow explicit runtime origins; sandboxed runtimes use the null origin.
       return runnerOrigins.filter((origin): origin is string => Boolean(origin));
     }, [runnerOrigins]);
 
-    // INVARIANT: These handlers use emitRuntimeEventRef to avoid dependency on emitRuntimeEvent.
-    // This prevents the runtime frame effect from re-running when telemetryArtifactId changes.
+    // INVARIANT: These handlers use emitRuntimeEventRef to avoid re-registering effects
+    // when the telemetry emitter changes.
     const handleSandboxReady = useCallback(() => {
       emitRuntimeEventRef.current("runtime_frame_loaded");
     }, []);
@@ -227,27 +177,55 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       [onError]
     );
 
-    const { runtimeFrame, state: runtimeSessionState } = useRuntimeSession({
+    const runtimeSessionLogger = useCallback(
+      (event: RuntimeEvent) => {
+        trackRuntimeEvent("runtime_session_event", {
+          surface: "player",
+          capsuleId,
+          artifactId: artifactId ?? null,
+          eventType: event.type,
+          status: event.type === "state" ? event.status : undefined,
+          error: event.type === "state" ? event.error ?? null : undefined,
+          durationMs: "durationMs" in event ? event.durationMs : undefined,
+        });
+      },
+      [artifactId, capsuleId]
+    );
+
+    const { runtimeFrame, state: runtimeSessionState, session } = useRuntimeSession({
       artifactId: artifactId ?? "",
       capsuleId,
       bundleUrl,
       params: paramsRef.current,
       surface: "player",
       autoStart: Boolean(artifactId),
-      maxBootMs: 0,
-      maxRunMs: 0,
       className: "h-full w-full border-0",
       title: "Vibe Runner",
       frameRef: iframeRef,
       onReady: handleSandboxReady,
       onError: handleSandboxError,
       onPolicyViolation: handlePolicyViolation,
+      logger: runtimeSessionLogger,
     });
-    const runtimeManifest = runtimeSessionState.manifest;
+
+    const emitRuntimeEvent = useCallback(
+      (event: string, payload?: Record<string, unknown>) => {
+        session.emitTelemetry(event, payload);
+      },
+      [session]
+    );
+
+    // WHY: Store emitRuntimeEvent in a ref so handlers stay stable inside effects.
+    const emitRuntimeEventRef = useRef(emitRuntimeEvent);
+    useEffect(() => {
+      emitRuntimeEventRef.current = emitRuntimeEvent;
+    }, [emitRuntimeEvent]);
 
     useEffect(() => {
-      telemetryArtifactIdRef.current = runtimeManifest?.artifactId ?? artifactId;
-    }, [artifactId, runtimeManifest]);
+      if (runtimeSessionState.status === "loading") {
+        bootStartedAtRef.current = Date.now();
+      }
+    }, [runtimeSessionState.status]);
 
     useEffect(() => {
       if (runtimeSessionState.status === "loading") {
@@ -260,15 +238,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
         setStatus("error");
         setErrorMessage(message);
         emitRuntimeEventRef.current("runtime_manifest_error", {
-          capsuleId,
-          artifactId,
           error: message,
         });
         onError?.(message);
       }
     }, [
-      artifactId,
-      capsuleId,
       onError,
       onLoading,
       runtimeSessionState.error,
@@ -314,7 +288,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       () => ({
         postMessage: (type: string, payload?: unknown) => sendToIframe(type, payload),
         restart: () => {
-          resetRuntimeBudgets();
+          resetRuntimeCounters();
           const sent = sendToIframe("restart");
           if (!sent) {
             const iframe = iframeRef.current;
@@ -328,7 +302,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return sent;
         },
         kill: () => {
-          resetRuntimeBudgets();
+          resetRuntimeCounters();
           const sent = sendToIframe("kill");
           if (!sent) {
             const iframe = iframeRef.current;
@@ -340,7 +314,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return sent;
         },
       }),
-      [bundleUrl, resetRuntimeBudgets, sendToIframe]
+      [bundleUrl, resetRuntimeCounters, sendToIframe]
     );
 
     useEffect(() => {
@@ -379,30 +353,20 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           return;
         }
         const payload = message.payload;
-        const telemetryBase = {
-          capsuleId,
-          artifactId: telemetryArtifactIdRef.current,
-        };
+        const currentArtifactId = runtimeSessionState.manifest?.artifactId ?? artifactId ?? null;
 
         switch (type) {
           case "ready": {
-            // Clear boot timeout on successful ready
-            if (bootTimerRef.current) {
-              clearTimeout(bootTimerRef.current);
-              bootTimerRef.current = null;
-            }
             setStatus("ready");
             const bootTime = getBootTime(payload);
-            // Log boot latency for tuning
-            const actualBootTime = bootStartRef.current
-              ? Date.now() - bootStartRef.current
+            const actualBootTime = bootStartedAtRef.current
+              ? Date.now() - bootStartedAtRef.current
               : bootTime;
             if (bootTime != null) {
               onBoot?.({ bootTimeMs: bootTime });
             }
             onReady?.();
             emitRuntimeEvent("runtime_ready", {
-              ...telemetryBase,
               bootTime: bootTime ?? null,
               actualBootTime: actualBootTime ?? null,
             });
@@ -412,7 +376,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
           case "heartbeat": {
             if (!heartbeatTrackedRef.current) {
               heartbeatTrackedRef.current = true;
-              emitRuntimeEvent("runtime_heartbeat", telemetryBase);
+              emitRuntimeEvent("runtime_heartbeat");
             }
             break;
           }
@@ -424,11 +388,10 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
                   runtimeLogLimitHitRef.current = true;
                   console.warn("E-VIBECODR-0525 runtime logs capped for this session", {
                     capsuleId,
-                    artifactId: telemetryArtifactIdRef.current,
+                    artifactId: currentArtifactId,
                     cappedAt: RUNTIME_LOG_LIMIT,
                   });
                   emitRuntimeEvent("runtime_logs_capped", {
-                    ...telemetryBase,
                     cappedAt: RUNTIME_LOG_LIMIT,
                   });
                 }
@@ -446,17 +409,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             break;
 
           case "error": {
-            // Clear boot timeout on error - the runtime reported a failure
-            if (bootTimerRef.current) {
-              clearTimeout(bootTimerRef.current);
-              bootTimerRef.current = null;
-            }
             const message = getErrorMessage(payload) ?? "An error occurred";
             setStatus("error");
             setErrorMessage(message);
             onError?.(message);
             emitRuntimeEvent("runtime_error", {
-              ...telemetryBase,
               message,
               code: (isRecord(payload) && typeof payload.code === "string" ? payload.code : undefined) ?? undefined,
             });
@@ -469,7 +426,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
             setErrorMessage(violationMessage);
             onError?.(violationMessage);
             emitRuntimeEvent("runtime_policy_violation", {
-              ...telemetryBase,
               message: violationMessage,
               code,
             });
@@ -485,7 +441,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
 
               // Log capability check results for debugging/monitoring
               emitRuntimeEvent("runtime_capability_check", {
-                ...telemetryBase,
                 available,
                 unavailable,
                 warnings,
@@ -495,12 +450,11 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
               if (available.includes("parentOriginAccess")) {
                 console.error("E-VIBECODR-0527 SECURITY WARNING: sandbox misconfiguration detected", {
                   capsuleId,
-                  artifactId: telemetryArtifactIdRef.current,
+                  artifactId: currentArtifactId,
                   warnings,
                   message: "Capsule has access to parent origin - sandbox may not be properly configured",
                 });
                 emitRuntimeEvent("runtime_security_warning", {
-                  ...telemetryBase,
                   type: "sandbox_misconfiguration",
                   message: "Parent origin accessible from sandboxed iframe",
                 });
@@ -519,11 +473,13 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     }, [
       capsuleId,
       emitRuntimeEvent,
+      artifactId,
       onBoot,
       onError,
       onLog,
       onReady,
       onStats,
+      runtimeSessionState.manifest,
       runnerOrigins,
     ]);
 
@@ -539,79 +495,6 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
     useEffect(() => {
       onErrorRef.current = onError;
     }, [onError]);
-
-    // SOTP Decision: Hard kill at 6s for WebContainer, 5s for client-static
-    // INVARIANT: Uses refs for emitRuntimeEvent and telemetryArtifactId to avoid dependency loop.
-    const startBootTimer = useCallback(
-      (isWebContainer: boolean) => {
-        // Clear any existing timer
-        if (bootTimerRef.current) {
-          clearTimeout(bootTimerRef.current);
-        }
-
-        bootStartRef.current = Date.now();
-        const budgets = getRuntimeBudgets();
-        const hardKillMs = isWebContainer
-          ? budgets.webContainerBootHardKillMs
-          : budgets.clientStaticBootMs;
-
-        bootTimerRef.current = setTimeout(() => {
-          if (hardKillTriggeredRef.current) return;
-          hardKillTriggeredRef.current = true;
-
-          const bootDuration = bootStartRef.current
-            ? Date.now() - bootStartRef.current
-            : hardKillMs;
-
-          console.error("E-VIBECODR-0526 runtime boot timeout exceeded, triggering hard kill", {
-            capsuleId,
-            artifactId: telemetryArtifactIdRef.current,
-            bootDuration,
-            hardKillMs,
-            isWebContainer,
-          });
-
-          emitRuntimeEventRef.current("runtime_boot_timeout", {
-            capsuleId,
-            artifactId: telemetryArtifactIdRef.current,
-            bootDuration,
-            hardKillMs,
-            isWebContainer,
-          });
-
-          // Hard kill: navigate iframe to blank
-          const iframe = iframeRef.current;
-          if (iframe) {
-            iframe.src = "about:blank";
-          }
-
-          setStatus("error");
-          setErrorMessage(
-            `Runtime failed to start within ${Math.round(hardKillMs / 1000)}s. Please try again.`
-          );
-          onError?.(`Boot timeout: runtime did not respond within ${Math.round(hardKillMs / 1000)}s`);
-        }, hardKillMs);
-      },
-      [capsuleId, onError]
-    );
-
-    useEffect(() => {
-      if (!runtimeManifest || !artifactId) {
-        return;
-      }
-      setStatus("loading");
-      setErrorMessage("");
-      emitRuntimeEventRef.current("runtime_manifest_loaded", {
-        capsuleId,
-        artifactId: runtimeManifest.artifactId ?? artifactId,
-        runtimeVersion: runtimeManifest.runtimeVersion,
-        runtimeType: runtimeManifest.type,
-        bundleDigest: runtimeManifest.bundle.digest,
-        bundleSizeBytes: runtimeManifest.bundle.sizeBytes,
-      });
-      const isWebContainer = false;
-      startBootTimer(isWebContainer);
-    }, [artifactId, capsuleId, runtimeManifest, startBootTimer]);
 
     useEffect(() => {
       const onVisibility = () => {

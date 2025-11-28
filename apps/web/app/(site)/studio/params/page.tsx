@@ -36,7 +36,7 @@ type ParamDraft = {
 
 type RuntimeBudgetReason = "boot_timeout" | "run_timeout" | "concurrency_limit";
 
-const RUNTIME_BUDGETS = getRuntimeBudgets();
+const RUNTIME_BUDGETS = getRuntimeBudgets("player");
 const CLIENT_STATIC_BOOT_BUDGET_MS = RUNTIME_BUDGETS.clientStaticBootMs;
 const WEB_CONTAINER_BOOT_BUDGET_MS = RUNTIME_BUDGETS.webContainerBootMs;
 const RUN_SESSION_BUDGET_MS = RUNTIME_BUDGETS.runSessionMs;
@@ -93,7 +93,7 @@ export default function StudioParams() {
 
   const releasePreviewSlot = useCallback(() => {
     if (runtimeSlotRef.current) {
-      releaseRuntimeSlot(runtimeSlotRef.current);
+      releaseRuntimeSlot(runtimeSlotRef.current, "player");
       runtimeSlotRef.current = null;
     }
   }, []);
@@ -242,7 +242,7 @@ export default function StudioParams() {
   const handlePreviewLoading = useCallback(() => {
     const runner = summary?.manifest.runner ?? null;
     if (!runtimeSlotRef.current) {
-      const reservation = reserveRuntimeSlot();
+      const reservation = reserveRuntimeSlot("player");
       runtimeSlotRef.current = reservation.allowed ? reservation.token : null;
       if (!reservation.allowed) {
         handlePreviewBudgetViolation("concurrency_limit", { activeCount: reservation.activeCount });
@@ -263,12 +263,12 @@ export default function StudioParams() {
   const handlePreviewReady = useCallback(() => {
     clearPreviewTimers();
     const runId = previewRunIdRef.current ?? createStableId("preview-run");
-    const confirmation = confirmRuntimeSlot(runtimeSlotRef.current ?? runId, runId);
+    const confirmation = confirmRuntimeSlot("player", runtimeSlotRef.current ?? runId, runId);
     if (!confirmation.allowed) {
       handlePreviewBudgetViolation("concurrency_limit", { activeCount: confirmation.activeCount });
       return;
     }
-    runtimeSlotRef.current = runId;
+    runtimeSlotRef.current = confirmation.token;
     previewRunIdRef.current = runId;
     budgetStateRef.current.runStartedAt = Date.now();
     runTimerRef.current = window.setTimeout(() => {

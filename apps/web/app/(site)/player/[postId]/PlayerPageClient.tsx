@@ -43,6 +43,7 @@ import {
 } from "@vibecodr/shared";
 import { usePageMeta } from "@/lib/seo";
 import { PlayerRecipesTab, type PlayerRecipeView } from "@/components/Player/PlayerRecipesTab";
+import { buildEmbedCode } from "@/lib/embed";
 
 type PlayerPageClientProps = {
   postId: string;
@@ -53,7 +54,7 @@ const LOG_SAMPLE_RATE = 0.2;
 const LOG_BATCH_TARGET = 10;
 const PERF_SAMPLE_RATE = 0.25;
 const PERF_EVENT_MIN_INTERVAL_MS = 2000;
-const RUNTIME_BUDGETS = getRuntimeBudgets();
+const RUNTIME_BUDGETS = getRuntimeBudgets("player");
 const CLIENT_STATIC_BOOT_BUDGET_MS = RUNTIME_BUDGETS.clientStaticBootMs;
 const WEB_CONTAINER_BOOT_BUDGET_MS = RUNTIME_BUDGETS.webContainerBootMs;
 const RUN_SESSION_BUDGET_MS = RUNTIME_BUDGETS.runSessionMs;
@@ -287,7 +288,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
   const releaseRuntimeSlotGuard = useCallback(() => {
     if (runtimeSlotRef.current) {
-      releaseRuntimeSlot(runtimeSlotRef.current);
+      releaseRuntimeSlot(runtimeSlotRef.current, "player");
       runtimeSlotRef.current = null;
     }
   }, []);
@@ -734,7 +735,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       runStartInFlightRef.current = true;
 
       if (!runtimeSlotRef.current) {
-        const reservation = reserveRuntimeSlot();
+        const reservation = reserveRuntimeSlot("player");
         if (!reservation.allowed) {
           runStartInFlightRef.current = false;
           handleBudgetViolation("concurrency_limit", {
@@ -891,8 +892,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         lastRunRef.current = session;
         finishedRunRef.current = null;
 
-        const confirmation = confirmRuntimeSlot(runtimeSlotRef.current ?? session.id, session.id);
-        runtimeSlotRef.current = confirmation.allowed ? session.id : runtimeSlotRef.current;
+        const confirmation = confirmRuntimeSlot("player", runtimeSlotRef.current ?? session.id, session.id);
+        runtimeSlotRef.current = confirmation.allowed ? confirmation.token : runtimeSlotRef.current;
         budgetStateRef.current.runStartedAt = session.startedAt;
         clearRunTimer();
         runTimerRef.current = window.setTimeout(() => {
@@ -935,7 +936,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
   const handleRuntimeLoading = useCallback(() => {
     if (!runtimeSlotRef.current) {
-      const reservation = reserveRuntimeSlot();
+      const reservation = reserveRuntimeSlot("player");
       runtimeSlotRef.current = reservation.allowed ? reservation.token : null;
       if (!reservation.allowed) {
         handleBudgetViolation("concurrency_limit", { activeCount: reservation.activeCount });
@@ -1395,6 +1396,53 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         });
     }
   };
+
+  const handleCopyEmbed = useCallback(async () => {
+    if (!post || post.type !== "app") {
+      return;
+    }
+    const currentOrigin =
+      typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+    if (!currentOrigin) {
+      toast({
+        title: "Embed unavailable",
+        description: "Unable to resolve the embed URL right now.",
+        variant: "error",
+      });
+      trackClientError("E-VIBECODR-0513", {
+        area: "player.embed",
+        postId,
+        reason: "missing_origin",
+      });
+      return;
+    }
+    const embedCode = buildEmbedCode(currentOrigin, postId);
+    try {
+      await navigator.clipboard.writeText(embedCode);
+      toast({
+        title: "Embed code copied",
+        description: "Paste this iframe into your site to embed the vibe.",
+        variant: "success",
+      });
+      trackEvent("embed_code_copied", {
+        surface: "player",
+        postId,
+        capsuleId: post.capsule?.id ?? null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      trackClientError("E-VIBECODR-0514", {
+        area: "player.embedClipboard",
+        postId,
+        message,
+      });
+      toast({
+        title: "Copy failed",
+        description: "Could not copy the embed snippet. Please try again.",
+        variant: "error",
+      });
+    }
+  }, [post, postId]);
 
   const handleRemix = useCallback(() => {
     if (!capsuleId) {
@@ -1882,6 +1930,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           onRestart={handleRestart}
           onKill={handleKill}
           onShare={handleShare}
+          onCopyEmbed={post?.type === "app" ? handleCopyEmbed : undefined}
           onReady={handleRunnerReady}
           onLoading={handleRuntimeLoading}
           onError={handleRuntimeError}

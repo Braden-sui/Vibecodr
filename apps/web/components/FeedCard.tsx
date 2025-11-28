@@ -27,6 +27,7 @@ import {
   Image as ImageIcon,
   Link2,
   FileText,
+  Code,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
@@ -46,8 +47,16 @@ import { budgeted } from "@/lib/perf";
 import { budgetedAsync } from "@/lib/perf";
 import { writePreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { loadRuntimeManifest } from "@/lib/runtime/loadRuntimeManifest";
-import { trackClientError } from "@/lib/analytics";
+import { trackClientError, trackEvent } from "@/lib/analytics";
 import { useReducedMotion } from "@/lib/useReducedMotion";
+import { buildEmbedCode } from "@/lib/embed";
+import {
+  confirmRuntimeSlot,
+  getRuntimeBudgets,
+  releaseRuntimeSlot,
+  reserveRuntimeSlot,
+  type RuntimeSlotReservation,
+} from "@/components/Player/runtimeBudgets";
 
 type PublicMetadata = {
   role?: string;
@@ -59,11 +68,7 @@ export interface FeedCardProps {
   onTagClick?: (tag: string) => void;
 }
 
-// Global concurrency cap for active previews
-let activePreviewCount = 0;
-const MAX_ACTIVE_PREVIEWS = 2;
-const PREVIEW_KILL_MS = 6_000;
-const PREVIEW_KILL_WARN_MS = 3_000;
+const FEED_RUNTIME_BUDGETS = getRuntimeBudgets("feed");
 
 // Global cap for manifest preloads to avoid stampedes
 let manifestPreloadsInFlight = 0;
@@ -125,16 +130,11 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const [isNearViewport, setIsNearViewport] = useState(false);
   const [_isWarmZoneActive, setIsWarmZoneActive] = useState(false);
   const preconnectHintedRef = useRef(false);
-  const clickRunIncrementRef = useRef(false);
   const pauseStateRef = useRef<"paused" | "running">("running");
   const lastIntersectionRatioRef = useRef(1);
   const [isModerating, setIsModerating] = useState(false);
-  const previewTimeoutRef = useRef<number | null>(null);
-  const previewCountdownIntervalRef = useRef<number | null>(null);
-  const previewBootDeadlineRef = useRef<number | null>(null);
-  const previewTimeoutWarnedRef = useRef(false);
-  const previewRetryRef = useRef(false);
-  const [bootCountdownMs, setBootCountdownMs] = useState<number | null>(null);
+  const previewSlotReservationRef = useRef<RuntimeSlotReservation | null>(null);
+  const previewSlotTokenRef = useRef<symbol | string | null>(null);
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
   const previewLogsRef = useRef<PreviewLogEntry[]>([]);
   const prefersReducedMotion = useReducedMotion();
@@ -161,86 +161,22 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     []
   );
 
-  const resetPreviewTimers = useCallback(() => {
-    if (previewTimeoutRef.current !== null) {
-      window.clearTimeout(previewTimeoutRef.current);
-      previewTimeoutRef.current = null;
+  const releasePreviewSlot = useCallback(() => {
+    if (previewSlotTokenRef.current) {
+      releaseRuntimeSlot(previewSlotTokenRef.current, "feed");
+    } else if (previewSlotReservationRef.current) {
+      releaseRuntimeSlot(previewSlotReservationRef.current.token, "feed");
     }
-    if (previewCountdownIntervalRef.current !== null) {
-      window.clearInterval(previewCountdownIntervalRef.current);
-      previewCountdownIntervalRef.current = null;
-    }
-    previewBootDeadlineRef.current = null;
-    previewTimeoutWarnedRef.current = false;
-    setBootCountdownMs(null);
+    previewSlotTokenRef.current = null;
+    previewSlotReservationRef.current = null;
   }, []);
-
-  useEffect(() => {
-    if (!isRunning || previewLoaded) {
-      resetPreviewTimers();
-      return;
-    }
-
-    const deadline = Date.now() + PREVIEW_KILL_MS;
-    previewBootDeadlineRef.current = deadline;
-    previewTimeoutWarnedRef.current = false;
-    setBootCountdownMs(PREVIEW_KILL_MS);
-
-    const handleBootTimeout = () => {
-      setPreviewErrorMessage(
-        "Preview stopped because it took too long to start. Open the player for a full run."
-      );
-      setIsRunning(false);
-      pushPreviewLog({
-        level: "error",
-        message: `Preview launch timed out after ${PREVIEW_KILL_MS}ms`,
-      });
-      if (clickRunIncrementRef.current) {
-        activePreviewCount = Math.max(0, activePreviewCount - 1);
-        clickRunIncrementRef.current = false;
-      }
-      if (!previewRetryRef.current) {
-        previewRetryRef.current = true;
-        window.setTimeout(() => {
-          previewRetryRef.current = false;
-        }, 500);
-      }
-      resetPreviewTimers();
-    };
-
-    previewTimeoutRef.current = window.setTimeout(handleBootTimeout, PREVIEW_KILL_MS);
-
-    const updateCountdown = () => {
-      if (!previewBootDeadlineRef.current) return;
-      const remaining = previewBootDeadlineRef.current - Date.now();
-      setBootCountdownMs(Math.max(0, remaining));
-      if (remaining <= PREVIEW_KILL_WARN_MS && remaining > 0 && !previewTimeoutWarnedRef.current) {
-        previewTimeoutWarnedRef.current = true;
-        toast({
-          title: "Preview stopping in 3s...",
-          description:
-            "Starting the preview is taking longer than expected. Open the player for a full run without limits.",
-          variant: "warning",
-        });
-      }
-    };
-
-    updateCountdown();
-    previewCountdownIntervalRef.current = window.setInterval(updateCountdown, 200);
-
-    return resetPreviewTimers;
-  }, [isRunning, previewLoaded, pushPreviewLog, resetPreviewTimers]);
 
   useEffect(() => {
     setPreviewErrorMessage(null);
     setPreviewLoaded(false);
     setIsRunning(false);
-    resetPreviewTimers();
-    if (clickRunIncrementRef.current) {
-      activePreviewCount = Math.max(0, activePreviewCount - 1);
-      clickRunIncrementRef.current = false;
-    }
-  }, [post.id, resetPreviewTimers]);
+    releasePreviewSlot();
+  }, [post.id, releasePreviewSlot]);
 
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
     if (typeof getToken !== "function") return undefined;
@@ -514,12 +450,9 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
 
   useEffect(() => {
     return () => {
-      if (clickRunIncrementRef.current) {
-        activePreviewCount = Math.max(0, activePreviewCount - 1);
-        clickRunIncrementRef.current = false;
-      }
+      releasePreviewSlot();
     };
-  }, []);
+  }, [releasePreviewSlot]);
 
   useEffect(() => {
     const node = cardRef.current;
@@ -663,19 +596,37 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
         `Preview exceeded ${isWebContainer ? "WebContainer" : "client-static"} budget: ${bootTime}ms`
       );
     }
-    if (clickRunIncrementRef.current) {
-      activePreviewCount = Math.max(0, activePreviewCount - 1);
-      clickRunIncrementRef.current = false;
+    if (previewSlotReservationRef.current) {
+      const runId = `feed-preview-${post.id}`;
+      const confirmation = confirmRuntimeSlot("feed", previewSlotReservationRef.current.token, runId);
+      if (!confirmation.allowed) {
+        const limitDescription =
+          confirmation.limit === 1
+            ? "Only one preview can run at a time. Open the player for a full run."
+            : `Only ${confirmation.limit} previews can run at once. Open the player for a full run.`;
+        setPreviewErrorMessage(limitDescription);
+        setIsRunning(false);
+        pushPreviewLog({
+          level: "error",
+          message: limitDescription,
+        });
+        releasePreviewSlot();
+        return;
+      }
+      previewSlotTokenRef.current = confirmation.token;
+      previewSlotReservationRef.current = null;
     }
     if (!previewLoaded) {
       setPreviewLoaded(true);
     }
-  }, [isWebContainer, previewLoaded]);
+  }, [isWebContainer, post.id, previewLoaded, pushPreviewLog, releasePreviewSlot]);
 
   const handlePreviewError = useCallback(
     (message?: string) => {
-      const normalizedMessage =
-        message || "This vibe failed to load here. Open the player for a full run.";
+      const defaultTimeoutMessage = `This preview stopped after ${Math.round(
+        FEED_RUNTIME_BUDGETS.runSessionMs / 1000
+      )}s. Open the player for a full run.`;
+      const normalizedMessage = message || defaultTimeoutMessage;
       if (typeof console !== "undefined" && typeof console.error === "function") {
         console.error("[feed_preview] runtime error", {
           postId: post.id,
@@ -690,31 +641,15 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
         level: "error",
         message: normalizedMessage,
       });
-      resetPreviewTimers();
-      if (clickRunIncrementRef.current) {
-        activePreviewCount = Math.max(0, activePreviewCount - 1);
-        clickRunIncrementRef.current = false;
-      }
+      releasePreviewSlot();
     },
-    [artifactId, capsuleId, post.id, pushPreviewLog, resetPreviewTimers]
+    [artifactId, capsuleId, post.id, pushPreviewLog, releasePreviewSlot]
   );
 
   // Handle click to run
   const handleClickToRun = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    // Check concurrency cap
-    if (activePreviewCount >= MAX_ACTIVE_PREVIEWS && !isRunning) {
-      // Redirect to full player if too many active previews
-      toast({
-        title: "Preview limit reached",
-        description: "Only two inline previews can run at once. Opening the player instead.",
-        variant: "warning",
-      });
-      window.location.href = `/player/${post.id}`;
-      return;
-    }
 
     if (!artifactId) {
       toast({
@@ -726,15 +661,30 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
       return;
     }
 
+    releasePreviewSlot();
+
+    const reservation = reserveRuntimeSlot("feed");
+    if (!reservation.allowed) {
+      const description =
+        reservation.limit === 1
+          ? "Only one inline preview can run at once. Opening the player instead."
+          : `Only ${reservation.limit} inline previews can run at once. Opening the player instead.`;
+      toast({
+        title: "Preview limit reached",
+        description,
+        variant: "warning",
+      });
+      setPreviewErrorMessage(description);
+      window.location.href = `/player/${post.id}`;
+      return;
+    }
+
+    previewSlotReservationRef.current = reservation;
+    previewSlotTokenRef.current = reservation.token;
     prebootStartRef.current = Date.now();
     setPreviewErrorMessage(null);
     setPreviewLoaded(false);
-    resetPreviewTimers();
     setIsRunning(true);
-    if (!previewLoaded) {
-      activePreviewCount++;
-      clickRunIncrementRef.current = true;
-    }
   };
 
   // Optimistic UI state for like
@@ -909,6 +859,54 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
     }
   };
 
+  const handleCopyEmbed = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isApp) return;
+
+    const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+    if (!origin) {
+      toast({
+        title: "Embed unavailable",
+        description: "Could not resolve the embed URL. Please try again.",
+        variant: "error",
+      });
+      trackClientError("E-VIBECODR-0504", {
+        area: "feed.embed",
+        postId: post.id,
+        reason: "missing_origin",
+      });
+      return;
+    }
+
+    const embedCode = buildEmbedCode(origin, post.id);
+    try {
+      await navigator.clipboard.writeText(embedCode);
+      toast({
+        title: "Embed copied",
+        description: "Paste this iframe on your site to embed the vibe.",
+        variant: "success",
+      });
+      trackEvent("embed_code_copied", {
+        surface: "feed_card",
+        postId: post.id,
+        capsuleId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      trackClientError("E-VIBECODR-0505", {
+        area: "feed.embedClipboard",
+        postId: post.id,
+        message,
+      });
+      toast({
+        title: "Copy failed",
+        description: "Unable to copy the embed snippet. Try again.",
+        variant: "error",
+      });
+    }
+  };
+
   // Note: Animation is handled by parent container using CSS animate-in classes
   // to prevent re-animation when switching tabs or navigating
   return (
@@ -941,28 +939,6 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                     onReady={handlePreviewReady}
                     onError={handlePreviewError}
                   />
-                  {bootCountdownMs !== null && !previewLoaded && (
-                    <div
-                      className="pointer-events-none absolute bottom-3 right-3 z-30 rounded-xl border bg-background/90 px-3 py-2 shadow-sm backdrop-blur"
-                      data-testid="preview-boot-countdown"
-                    >
-                      <p className="text-xs font-semibold leading-tight">Starting preview</p>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <span>{Math.max(0, Math.ceil(bootCountdownMs / 1000))}s to timeout</span>
-                        <div className="relative h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="absolute inset-y-0 left-0 bg-primary transition-[width] duration-200"
-                            style={{
-                              width: `${Math.min(
-                                100,
-                                Math.max(0, ((PREVIEW_KILL_MS - bootCountdownMs) / PREVIEW_KILL_MS) * 100)
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1218,6 +1194,11 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
 
         <div className="flex gap-2">
           <ReportButton targetType="post" targetId={post.id} variant="icon" />
+          {isApp && (
+            <Button variant="ghost" size="icon" onClick={handleCopyEmbed} aria-label="Copy embed code">
+              <Code className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={handleShare}>
             <Share2 className="h-4 w-4" />
           </Button>
