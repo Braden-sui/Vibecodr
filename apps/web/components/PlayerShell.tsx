@@ -9,10 +9,12 @@ import {
   type PlayerIframeHandle,
   type PlayerIframeProps,
 } from "@/components/Player/PlayerIframe";
+import type { RunnerType } from "@vibecodr/shared/manifest";
 
 export interface PlayerShellProps {
   capsuleId?: string;
   artifactId?: string;
+  runnerType?: RunnerType;
   params?: Record<string, unknown>;
   postId: string;
   isRunning: boolean;
@@ -45,6 +47,7 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
   {
     capsuleId,
     artifactId,
+    runnerType,
     params,
     postId,
     isRunning,
@@ -78,6 +81,7 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
             ref={ref}
             capsuleId={capsuleId}
             artifactId={artifactId}
+            runnerType={runnerType}
             params={params}
             onReady={onReady}
             onLog={onLog}

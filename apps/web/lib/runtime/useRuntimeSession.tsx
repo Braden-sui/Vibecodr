@@ -23,11 +23,17 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
   const { frameRef: externalFrameRef, onReady, onError, onPolicyViolation } = config;
   const iframeRef = externalFrameRef ?? useRef<HTMLIFrameElement>(null);
   const surfaceBudgets = useMemo(() => getRuntimeBudgets(config.surface), [config.surface]);
-  const maxBootMs = config.maxBootMs ?? surfaceBudgets.clientStaticBootMs;
+  const resolvedRunner = config.runnerType ?? "client-static";
+  const maxBootMs =
+    config.maxBootMs ??
+    (resolvedRunner === "webcontainer"
+      ? surfaceBudgets.webContainerBootHardKillMs
+      : surfaceBudgets.clientStaticBootMs);
   const maxRunMs = config.maxRunMs ?? surfaceBudgets.runSessionMs;
   const sessionRef = useRef(
     createRuntimeSession({
       ...config,
+      runnerType: config.runnerType,
       maxBootMs,
       maxRunMs,
       autoStart: false,
@@ -45,6 +51,7 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
   useEffect(() => {
     const next = createRuntimeSession({
       ...config,
+      runnerType: config.runnerType,
       maxBootMs,
       maxRunMs,
       telemetryEmitter: config.telemetryEmitter ?? trackRuntimeEvent,
@@ -58,7 +65,7 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
     prev.dispose();
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.artifactId, config.surface, config.logger, maxBootMs, maxRunMs]);
+  }, [config.artifactId, config.surface, config.runnerType, config.logger, maxBootMs, maxRunMs]);
 
   // Build runtime frame when manifest is ready
   const runtimeFrame = useMemo(() => {
@@ -83,7 +90,16 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
     };
     return loadRuntime(manifest.type, args);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.bundleUrl, config.className, config.title, onError, onPolicyViolation, onReady, sessionState.manifest]);
+  }, [
+    config.bundleUrl,
+    config.className,
+    config.title,
+    config.runnerType,
+    onError,
+    onPolicyViolation,
+    onReady,
+    sessionState.manifest,
+  ]);
 
   return {
     session: sessionRef.current,

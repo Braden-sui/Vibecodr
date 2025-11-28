@@ -66,6 +66,7 @@ type PublicMetadata = {
 export interface FeedCardProps {
   post: FeedPost;
   onTagClick?: (tag: string) => void;
+  onPostModerated?: (postId: string, action: "quarantine" | "remove") => void;
 }
 
 const FEED_RUNTIME_BUDGETS = getRuntimeBudgets("feed");
@@ -102,7 +103,7 @@ function resolveRunnerOrigins(capsuleId?: string, artifactId?: string | null): s
   return Array.from(origins);
 }
 
-export function FeedCard({ post, onTagClick }: FeedCardProps) {
+export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
   const navigate = useNavigate();
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -133,6 +134,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
   const pauseStateRef = useRef<"paused" | "running">("running");
   const lastIntersectionRatioRef = useRef(1);
   const [isModerating, setIsModerating] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
   const previewSlotReservationRef = useRef<RuntimeSlotReservation | null>(null);
   const previewSlotTokenRef = useRef<symbol | string | null>(null);
   const [authzState, setAuthzState] = useState<"unknown" | "unauthenticated" | "forbidden" | "authorized">("unknown");
@@ -141,6 +143,10 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
 
   useEffect(() => {
     previewLogsRef.current = [];
+  }, [post.id]);
+
+  useEffect(() => {
+    setIsHidden(false);
   }, [post.id]);
 
   useEffect(() => {
@@ -259,7 +265,15 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
         return;
       }
 
-      window.location.reload();
+      toast({
+        title: action === "remove" ? "Post removed" : "Post quarantined",
+        description: "The post was moderated and removed from your feed.",
+        variant: "success",
+      });
+      releasePreviewSlot();
+      setIsRunning(false);
+      setIsHidden(true);
+      onPostModerated?.(post.id, action);
     } catch (error) {
       console.error("Moderation action failed:", error);
       toast({ title: "Failed", description: error instanceof Error ? error.message : "Moderation action failed", variant: "error" });
@@ -909,6 +923,10 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
 
   // Note: Animation is handled by parent container using CSS animate-in classes
   // to prevent re-animation when switching tabs or navigating
+  if (isHidden) {
+    return null;
+  }
+
   return (
     <VibeCard
       ref={cardRef}
@@ -935,6 +953,7 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
                     ref={iframeRef}
                     artifactId={String(artifactId)}
                     capsuleId={capsuleId}
+                    runnerType={post.capsule?.runner ?? undefined}
                     className="h-full w-full"
                     onReady={handlePreviewReady}
                     onError={handlePreviewError}
@@ -998,7 +1017,13 @@ export function FeedCard({ post, onTagClick }: FeedCardProps) {
           {isModeratorOrAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isModerating}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={isModerating}
+                  aria-label="Moderation actions"
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>

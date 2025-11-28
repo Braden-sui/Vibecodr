@@ -1915,15 +1915,16 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       {/* Main Player Area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Player */}
-        <PlayerShell
-          ref={iframeHandleRef}
-          capsuleId={post?.capsule?.id}
-          artifactId={post?.capsule?.artifactId ?? undefined}
-          params={capsuleParams}
-          postId={postId}
-          isRunning={isRunning}
-          stats={stats}
-          consoleEntries={consoleEntries}
+          <PlayerShell
+            ref={iframeHandleRef}
+            capsuleId={post?.capsule?.id}
+            artifactId={post?.capsule?.artifactId ?? undefined}
+            runnerType={post?.capsule?.runner ?? undefined}
+            params={capsuleParams}
+            postId={postId}
+            isRunning={isRunning}
+            stats={stats}
+            consoleEntries={consoleEntries}
           consoleCollapsed={isConsoleCollapsed}
           onConsoleToggle={() => setIsConsoleCollapsed((prev) => !prev)}
           onClearConsole={handleClearConsole}

@@ -27,8 +27,16 @@ vi.mock("@vibecodr/shared", () => ({
 }));
 
 vi.mock("@/components/FeedCard", () => ({
-  FeedCard: ({ post }: { post: { title: string } }) => (
-    <div data-testid="discover-card">{post.title}</div>
+  FeedCard: ({
+    post,
+    onPostModerated,
+  }: {
+    post: { title: string };
+    onPostModerated?: (postId: string, action: "quarantine" | "remove") => void;
+  }) => (
+    <div data-testid="discover-card" data-moderated={Boolean(onPostModerated)}>
+      {post.title}
+    </div>
   ),
 }));
 

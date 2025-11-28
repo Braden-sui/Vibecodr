@@ -227,6 +227,10 @@ export default function FeedPage() {
     trackEvent("composer_post_added_to_feed", { postId: newPost.id, type: newPost.type });
   };
 
+  const handlePostModerated = (postId: string) => {
+    setPosts((prev) => prev.filter((post) => post.id !== postId));
+  };
+
   const heroPost = !feedError && posts.length > 0 ? posts[0] : null;
   const heroHref = heroPost
     ? heroPost.type === "app"
@@ -254,7 +258,7 @@ export default function FeedPage() {
           key={post.id}
           className="animate-in fade-in slide-in-from-bottom-2 duration-300"
         >
-          <FeedCard post={post} onTagClick={handleFeedTagClick} />
+          <FeedCard post={post} onTagClick={handleFeedTagClick} onPostModerated={handlePostModerated} />
         </div>
       ))}
     </div>

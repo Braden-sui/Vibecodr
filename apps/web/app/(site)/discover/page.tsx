@@ -153,6 +153,10 @@ export default function DiscoverPage() {
     handleTagSelect(normalized);
   };
 
+  const handlePostModerated = (postId: string) => {
+    setPosts((prev) => prev.filter((post) => post.id !== postId));
+  };
+
   const renderSkeleton = () => (
     <div className="grid gap-4 md:grid-cols-2">
       {[1, 2, 3, 4].map((i) => (
@@ -221,7 +225,12 @@ export default function DiscoverPage() {
       ) : posts.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2">
           {posts.map((post) => (
-            <FeedCard key={post.id} post={post} onTagClick={handleCardTagClick} />
+            <FeedCard
+              key={post.id}
+              post={post}
+              onTagClick={handleCardTagClick}
+              onPostModerated={handlePostModerated}
+            />
           ))}
         </div>
       ) : (

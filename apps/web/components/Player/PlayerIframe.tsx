@@ -14,6 +14,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { artifactsApi, capsulesApi } from "@/lib/api";
 import { trackRuntimeEvent } from "@/lib/analytics";
 import { getRuntimeErrorInfo } from "@/lib/runtime/errorMessages";
+import type { RunnerType } from "@vibecodr/shared/manifest";
 import type { PolicyViolationEvent } from "@/lib/runtime/types";
 import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
@@ -25,6 +26,7 @@ export const RUNTIME_LOG_LIMIT = 200;
 
 export interface PlayerIframeProps {
   capsuleId: string;
+  runnerType?: RunnerType;
   params?: Record<string, unknown>;
   onReady?: () => void;
   onLoading?: () => void;
@@ -103,7 +105,18 @@ function resolveRunnerOrigins(bundleUrl: string | null | undefined, includeNullO
 
 export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
   function PlayerIframe(
-    { capsuleId, params = {}, onReady, onLoading, onLog, onStats, onBoot, onError, artifactId },
+    {
+      capsuleId,
+      runnerType,
+      params = {},
+      onReady,
+      onLoading,
+      onLog,
+      onStats,
+      onBoot,
+      onError,
+      artifactId,
+    },
     ref
   ) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -197,6 +210,7 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       capsuleId,
       bundleUrl,
       params: paramsRef.current,
+      runnerType,
       surface: "player",
       autoStart: Boolean(artifactId),
       className: "h-full w-full border-0",

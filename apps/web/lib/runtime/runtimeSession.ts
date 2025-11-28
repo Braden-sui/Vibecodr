@@ -1,5 +1,8 @@
 "use client";
 
+import { getRuntimeBudgets } from "@/components/Player/runtimeBudgets";
+import type { RunnerType } from "@vibecodr/shared/manifest";
+
 import { loadRuntimeManifest, type ClientRuntimeManifest } from "./loadRuntimeManifest";
 
 export const RUNTIME_TELEMETRY_LIMIT = 120;
@@ -14,6 +17,7 @@ export type RuntimeSessionConfig = {
   bundleUrl?: string;
   params?: Record<string, unknown>;
   surface: RuntimeSurface;
+  runnerType?: RunnerType | "client-static" | "webcontainer";
   autoStart?: boolean;
   maxBootMs?: number;
   maxRunMs?: number;
@@ -67,16 +71,18 @@ export type RuntimeTelemetryPayload = {
   budgets: RuntimeBudgets;
 } & Record<string, unknown>;
 
-function defaultBootBudget(surface: RuntimeSurface): number {
-  if (surface === "feed") return 6_000;
-  if (surface === "embed") return 7_000;
-  return 30_000; // player can be slightly more lenient
-}
+function resolveBudgets(config: RuntimeSessionConfig): RuntimeBudgets {
+  const surfaceBudgets = getRuntimeBudgets(config.surface);
+  const runner = (config.runnerType ?? "client-static") as RunnerType | "client-static" | "webcontainer";
+  const bootBudget =
+    config.maxBootMs ??
+    (runner === "webcontainer" ? surfaceBudgets.webContainerBootHardKillMs : surfaceBudgets.clientStaticBootMs);
+  const runBudget = config.maxRunMs ?? surfaceBudgets.runSessionMs;
 
-function defaultRunBudget(surface: RuntimeSurface): number {
-  if (surface === "feed") return 6_000;
-  if (surface === "embed") return 30_000;
-  return 120_000; // player
+  return {
+    bootMs: bootBudget,
+    runMs: runBudget,
+  };
 }
 
 function generateId(): string {
@@ -96,10 +102,7 @@ export function createRuntimeSession(config: RuntimeSessionConfig): RuntimeSessi
   let telemetryCount = 0;
   let telemetryCapped = false;
 
-  const budgets: RuntimeBudgets = {
-    bootMs: config.maxBootMs ?? defaultBootBudget(config.surface),
-    runMs: config.maxRunMs ?? defaultRunBudget(config.surface),
-  };
+  const budgets: RuntimeBudgets = resolveBudgets(config);
 
   const state: RuntimeSessionState = {
     status: "idle",

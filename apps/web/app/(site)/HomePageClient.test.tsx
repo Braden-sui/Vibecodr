@@ -21,7 +21,14 @@ vi.mock("@/lib/analytics", () => ({
 }));
 
 vi.mock("@/components/FeedCard", () => ({
-  FeedCard: ({ post, onTagClick }: { post: { title: string }; onTagClick?: (tag: string) => void }) => (
+  FeedCard: ({
+    post,
+    onTagClick,
+  }: {
+    post: { title: string };
+    onTagClick?: (tag: string) => void;
+    onPostModerated?: (postId: string, action: "quarantine" | "remove") => void;
+  }) => (
     <div data-testid="feed-card">
       {post.title}
       {onTagClick && (

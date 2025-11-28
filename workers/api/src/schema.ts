@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { PostTypeSchema, postTypes } from "@vibecodr/shared";
@@ -105,28 +105,39 @@ export const artifactManifests = sqliteTable("artifact_manifests", {
 });
 
 // Posts table - unified vibes with typed subcategories
-export const posts = sqliteTable("posts", {
-  id: text("id").primaryKey(),
-  authorId: text("author_id")
-    .notNull()
-    .references(() => users.id),
-  type: text("type", { enum: postTypes }).notNull(),
-  capsuleId: text("capsule_id").references(() => capsules.id),
-  reportMd: text("report_md"), // Markdown content for reports
-  coverKey: text("cover_key"), // R2 key for cover image
-  title: text("title").notNull(),
-  description: text("description"),
-  tags: text("tags"), // JSON array
-  visibility: text("visibility", { enum: ["public", "unlisted", "private"] })
-    .notNull()
-    .default("public"),
-  quarantined: integer("quarantined").default(0),
-  likesCount: integer("likes_count").default(0),
-  commentsCount: integer("comments_count").default(0),
-  runsCount: integer("runs_count").default(0),
-  remixesCount: integer("remixes_count").default(0),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
-});
+export const posts = sqliteTable(
+  "posts",
+  {
+    id: text("id").primaryKey(),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id),
+    type: text("type", { enum: postTypes }).notNull(),
+    capsuleId: text("capsule_id").references(() => capsules.id),
+    reportMd: text("report_md"), // Markdown content for reports
+    coverKey: text("cover_key"), // R2 key for cover image
+    title: text("title").notNull(),
+    description: text("description"),
+    tags: text("tags"), // JSON array
+    visibility: text("visibility", { enum: ["public", "unlisted", "private"] })
+      .notNull()
+      .default("public"),
+    quarantined: integer("quarantined").default(0),
+    likesCount: integer("likes_count").default(0),
+    commentsCount: integer("comments_count").default(0),
+    runsCount: integer("runs_count").default(0),
+    remixesCount: integer("remixes_count").default(0),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+  },
+  (table) => ({
+    feedIndex: index("idx_posts_feed_visibility_quarantined_created_at").on(
+      table.visibility,
+      table.quarantined,
+      table.createdAt
+    ),
+    authorIndex: index("idx_posts_author_created_at").on(table.authorId, table.createdAt),
+  })
+);
 
 // Runs table - tracks capsule executions
 export const runs = sqliteTable("runs", {
@@ -205,6 +216,8 @@ export const follows = sqliteTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.followerId, table.followeeId] }),
+    followerLookupIdx: index("idx_follows_follower_followee").on(table.followerId, table.followeeId),
+    followeeReverseIdx: index("idx_follows_followee_follower").on(table.followeeId, table.followerId),
   })
 );
 
@@ -239,6 +252,7 @@ export const likes = sqliteTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.userId, table.postId] }),
+    postLookupIdx: index("idx_likes_post").on(table.postId),
   })
 );
 

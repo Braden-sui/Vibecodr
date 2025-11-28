@@ -6,10 +6,12 @@ import { getRuntimeBundleNetworkMode } from "@/lib/runtime/networkMode";
 import { RUNTIME_IFRAME_PERMISSIONS, RUNTIME_IFRAME_SANDBOX } from "@/lib/runtime/sandboxPolicies";
 import { useRuntimeSession } from "@/lib/runtime/useRuntimeSession";
 import type { RuntimeEvent } from "@/lib/runtime/runtimeSession";
+import type { RunnerType } from "@vibecodr/shared/manifest";
 
 export interface FeedRuntimePreviewProps {
   artifactId: string;
   capsuleId: string;
+  runnerType?: RunnerType;
   params?: Record<string, unknown>;
   className?: string;
   onReady?: () => void;
@@ -18,7 +20,7 @@ export interface FeedRuntimePreviewProps {
 
 export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRuntimePreviewProps>(
   function FeedRuntimePreview(
-    { artifactId, capsuleId, params, className, onReady, onError },
+    { artifactId, capsuleId, runnerType, params, className, onReady, onError },
     forwardedRef
   ) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -49,6 +51,7 @@ export const FeedRuntimePreview = forwardRef<HTMLIFrameElement | null, FeedRunti
       artifactId,
       capsuleId,
       bundleUrl,
+      runnerType,
       params,
       surface: "feed",
       autoStart: true,

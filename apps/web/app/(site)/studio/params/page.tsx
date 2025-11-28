@@ -368,6 +368,7 @@ export default function StudioParams() {
               key={previewKey}
               capsuleId={summary.capsuleId}
               artifactId={artifactId ?? summary.manifest.artifactId ?? undefined}
+              runnerType={summary.manifest.runner}
               params={capsuleParams}
               postId={summary.capsuleId}
               isRunning={isPreviewRunning}

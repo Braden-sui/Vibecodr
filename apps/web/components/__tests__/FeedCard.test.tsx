@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { FeedCard } from "../FeedCard";
-import { capsulesApi } from "@/lib/api";
+import { capsulesApi, moderationApi } from "@/lib/api";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 
 const mockUseUser = vi.fn(() => ({ user: { id: "viewer-1" }, isSignedIn: true }));
@@ -22,6 +22,10 @@ vi.mock("@clerk/clerk-react", () => ({
 
 vi.mock("@/lib/toast", () => ({
   toast: (...args: any[]) => toastMock(...args),
+}));
+
+vi.mock("@/lib/runtime/loadRuntimeManifest", () => ({
+  loadRuntimeManifest: vi.fn(async () => ({})),
 }));
 
 const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
@@ -125,9 +129,13 @@ describe("FeedCard", () => {
     },
     createdAt: "2025-01-01T00:00:00Z",
   };
+  const previewCapablePost = {
+    ...mockPost,
+    capsule: { ...mockPost.capsule, artifactId: "artifact-1", runner: "react-jsx" as const },
+  };
 
   it("should render post title and description", () => {
-    renderWithRouter(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={previewCapablePost} />);
 
     expect(screen.getByText("Test App")).toBeInTheDocument();
     expect(screen.getByText("A test application")).toBeInTheDocument();
@@ -164,7 +172,7 @@ describe("FeedCard", () => {
     // Immediate successful manifest for prewarm
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as any;
 
-    renderWithRouter(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={previewCapablePost} />);
 
     const ioInstances = (window as any).__mockIOInstances as MockIntersectionObserver[];
     const viewObserver = ioInstances.find(
@@ -203,7 +211,7 @@ describe("FeedCard", () => {
   it("should pause when tab hidden and resume when visible again", async () => {
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) })) as any;
 
-    renderWithRouter(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={previewCapablePost} />);
 
     const ioInstances = (window as any).__mockIOInstances as MockIntersectionObserver[];
     const viewObserver = ioInstances.find(
@@ -236,7 +244,7 @@ describe("FeedCard", () => {
   it("shows a boot countdown, warns at 3s remaining, and surfaces a timeout message", async () => {
     vi.useFakeTimers();
 
-    renderWithRouter(<FeedCard post={mockPost} />);
+    renderWithRouter(<FeedCard post={previewCapablePost} />);
 
     fireEvent.click(screen.getByText("Run Preview"));
 
@@ -327,6 +335,35 @@ describe("FeedCard", () => {
     fireEvent.click(tagButton);
 
     expect(onTagClick).toHaveBeenCalledWith("test");
+  });
+
+  it("calls onPostModerated and hides the card after a successful moderation action", async () => {
+    const onPostModerated = vi.fn();
+    const moderateSpy = vi
+      .spyOn(moderationApi, "moderatePost")
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as any);
+    mockUseUser.mockReturnValue({
+      user: { id: "viewer-1", publicMetadata: { isModerator: true } },
+      isSignedIn: true,
+    });
+
+    try {
+      renderWithRouter(<FeedCard post={mockPost} onPostModerated={onPostModerated} />);
+
+      const trigger = screen.getByRole("button", { name: "Moderation actions" });
+      fireEvent.click(trigger);
+
+      const quarantineItem = await screen.findByText("Quarantine post");
+      await act(async () => {
+        fireEvent.click(quarantineItem);
+      });
+
+      await waitFor(() => expect(moderateSpy).toHaveBeenCalled());
+      await waitFor(() => expect(onPostModerated).toHaveBeenCalledWith("post1", "quarantine"));
+      await waitFor(() => expect(screen.queryByText("Test App")).not.toBeInTheDocument());
+    } finally {
+      moderateSpy.mockRestore();
+    }
   });
 
   it("should handle like button click", async () => {

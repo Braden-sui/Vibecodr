@@ -31,11 +31,12 @@ const EMBED_MIN_HEIGHT = 200;
 const EMBED_MAX_HEIGHT = 900;
 const OEMBED_RATE_LIMIT = 60;
 const EMBED_RATE_LIMIT = 120;
+// Keep in sync with apps/web/lib/runtime/sandboxPolicies.ts
 export const EMBED_IFRAME_SANDBOX = "allow-scripts";
 export const EMBED_IFRAME_ALLOW =
-  "accelerometer 'none'; autoplay 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
 export const EMBED_PERMISSIONS_POLICY_HEADER =
-  "accelerometer=(); autoplay=(); camera=(); display-capture=(); encrypted-media=(); fullscreen=(self); geolocation=(); gyroscope=(); microphone=(); midi=(); payment=(); usb=()";
+  "accelerometer=(); camera=(); geolocation=(); gyroscope=(); microphone=(); payment=(); usb=()";
 
 function buildEmbedContentSecurityPolicy(styleNonce?: string): string {
   const styleSrc = ["'self'"];

@@ -14,8 +14,9 @@
 
   const EMBED_BASE_URL = 'https://vibecodr.space/e';
   // SECURITY: allow-scripts only; allow-same-origin removed per SOTP audit (sandbox escape risk)
+  // Keep in sync with apps/web/lib/runtime/sandboxPolicies.ts
   const EMBED_IFRAME_SANDBOX = 'allow-scripts';
-  const EMBED_IFRAME_ALLOW = "accelerometer 'none'; autoplay 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  const EMBED_IFRAME_ALLOW = "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; microphone 'none'; payment 'none'; usb 'none'";
 
   /**
    * Create an embed iframe
