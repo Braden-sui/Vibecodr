@@ -104,6 +104,10 @@ export async function bundleWithEsbuild(
       metafile: true,
       write: false,
       logLevel: "silent",
+      // WHY: Enable React 17+ automatic JSX transform so users don't need
+      // `import React from 'react'` in every file. This auto-imports the JSX runtime.
+      jsx: "automatic",
+      jsxImportSource: "react",
       plugins: [createEsbuildFilesystemPlugin(normalizedFiles, normalizedEntry)],
     });
   } catch (error) {

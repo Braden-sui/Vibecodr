@@ -133,4 +133,26 @@ describe("compileReactArtifact", () => {
       expect(result.code).not.toContain("foo = 42");
     }
   });
+
+  it("compiles JSX with only named React imports (no default import)", async () => {
+    // WHY: Users often use named imports without 'import React from react'.
+    // The automatic JSX transform should handle this correctly.
+    const code = makeCode([
+      "import { useState, useEffect } from 'react';",
+      "",
+      "export default function Counter() {",
+      "  const [count, setCount] = useState(0);",
+      "  useEffect(() => { console.log('mounted'); }, []);",
+      "  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;",
+      "}",
+    ]);
+
+    const result = await compileReactArtifact({ code, maxBytes: 1024 * 1024 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The bundled output should work without 'React' being explicitly imported
+      expect(result.code).toContain("useState");
+      expect(result.code).toContain("useEffect");
+    }
+  });
 });

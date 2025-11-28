@@ -615,14 +615,18 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
         success?: boolean;
         capsuleId?: string;
         error?: string;
+        details?: string;
         warnings?: unknown;
       };
 
       if (!publishResponse.ok || !publishData.success || !publishData.capsuleId) {
-        const message = publishData.error || "Failed to publish app. Please check your code and try again.";
+        // WHY: Include bundler error details when available to help users diagnose issues
+        const baseMessage = publishData.error || "Failed to publish app. Please check your code and try again.";
+        const detailSuffix = publishData.details ? `: ${publishData.details}` : "";
+        const message = `${baseMessage}${detailSuffix}`;
         console.error("Inline code publish failed:", message);
         setAppError(message);
-        setAppProgress({ status: "error", active: "build", message });
+        setAppProgress({ status: "error", active: "build", message: baseMessage });
         trackEvent("composer_code_publish_failed", { appMode: "code", runner: "webcontainer" });
         return;
       }

@@ -588,15 +588,18 @@ export async function createRuntimeArtifactForCapsule(params: {
         httpMetadata: { contentType: "application/javascript" },
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("E-VIBECODR-0501 runtime artifact bundle failed", {
         capsuleId,
         artifactId,
         runner: manifest.runner,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
       });
       throw new PublishCapsuleError(500, {
         error: "Failed to build runtime artifact",
         code: "E-VIBECODR-0501",
+        // WHY: Surface bundler error details to help users diagnose JSX/import issues
+        details: errorMessage,
       });
     }
   } else {

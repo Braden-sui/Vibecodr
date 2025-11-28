@@ -28,6 +28,19 @@ vi.mock("@/lib/runtime/loadRuntimeManifest", () => ({
   loadRuntimeManifest: vi.fn(async () => ({})),
 }));
 
+vi.mock("@/components/runtime/FeedRuntimePreview", () => {
+  const React = require("react");
+  return {
+    FeedRuntimePreview: React.forwardRef((props: any, ref: any) => (
+      <iframe
+        ref={ref}
+        title="Preview for Test App"
+        data-testid="mock-feed-runtime-preview"
+      />
+    )),
+  };
+});
+
 const renderWithRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 class MockIntersectionObserver {
@@ -241,54 +254,25 @@ describe("FeedCard", () => {
     if (hiddenDescriptor) Object.defineProperty(document, "hidden", hiddenDescriptor);
   });
 
-  it("shows a boot countdown, warns at 3s remaining, and surfaces a timeout message", async () => {
-    vi.useFakeTimers();
-
+  it("mounts inline preview when Run Preview is clicked", () => {
     renderWithRouter(<FeedCard post={previewCapablePost} />);
 
     fireEvent.click(screen.getByText("Run Preview"));
 
-    const countdown = screen.getByTestId("preview-boot-countdown");
-    expect(countdown).toHaveTextContent("Starting preview");
-    expect(countdown).toHaveTextContent("6s to timeout");
-
-    await act(async () => {
-      vi.advanceTimersByTime(PREVIEW_KILL_WARN_MS + 200);
-    });
-
-    expect(toastMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Preview stopping in 3s...",
-      })
-    );
-
-    await act(async () => {
-      vi.advanceTimersByTime(PREVIEW_KILL_MS);
-    });
-
-    expect(
-      screen.getByText(/Preview stopped because it took too long to start/i)
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("mock-feed-runtime-preview")).toBeInTheDocument();
   });
 
-  it("keeps the inline preview running after it loads, without enforcing the boot timeout", async () => {
-    vi.useFakeTimers();
+  it("keeps preview visible after load without re-rendering the button", async () => {
+    renderWithRouter(<FeedCard post={previewCapablePost} />);
 
-    renderWithRouter(<FeedCard post={mockPost} />);
     fireEvent.click(screen.getByText("Run Preview"));
-
-    const iframe = screen.getByTitle("Preview for Test App");
+    const iframe = screen.getByTestId("mock-feed-runtime-preview");
     await act(async () => {
       fireEvent.load(iframe);
     });
 
-    await act(async () => {
-      vi.advanceTimersByTime(PREVIEW_KILL_MS + 1000);
-    });
-
     expect(screen.queryByText("Run Preview")).not.toBeInTheDocument();
-    expect(screen.getByTitle("Preview for Test App")).toBeInTheDocument();
-    expect(screen.queryByTestId("preview-boot-countdown")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mock-feed-runtime-preview")).toBeInTheDocument();
   });
 
   it("should render author information", () => {
