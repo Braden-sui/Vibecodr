@@ -24,6 +24,7 @@
     "cleanup:nodes": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force\""
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/node": "^20.19.25",
     "ajv": "^6.12.6",
     "husky": "^9.1.7",
