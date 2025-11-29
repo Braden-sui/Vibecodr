@@ -54,9 +54,8 @@ const LOG_SAMPLE_RATE = 0.2;
 const LOG_BATCH_TARGET = 10;
 const PERF_SAMPLE_RATE = 0.25;
 const PERF_EVENT_MIN_INTERVAL_MS = 2000;
+// Budget values used for UI display only; actual enforcement is in runtimeSession
 const RUNTIME_BUDGETS = getRuntimeBudgets("player");
-const CLIENT_STATIC_BOOT_BUDGET_MS = RUNTIME_BUDGETS.clientStaticBootMs;
-const WEB_CONTAINER_BOOT_BUDGET_MS = RUNTIME_BUDGETS.webContainerBootMs;
 const RUN_SESSION_BUDGET_MS = RUNTIME_BUDGETS.runSessionMs;
 const MAX_CONCURRENT_RUNNERS = RUNTIME_BUDGETS.maxConcurrentRunners;
 
@@ -80,21 +79,6 @@ type PublicMetadata = {
   isModerator?: boolean;
 } | null;
 
-function isClientStaticRunnerType(runner?: string | null): boolean {
-  if (!runner) return true;
-  const normalized = runner.toLowerCase();
-  return normalized === "client-static" || normalized === "html";
-}
-
-function resolveBootBudgetMs(runner?: string | null): number {
-  if (isClientStaticRunnerType(runner)) {
-    return CLIENT_STATIC_BOOT_BUDGET_MS;
-  }
-  if (runner && runner.toLowerCase() === "webcontainer") {
-    return WEB_CONTAINER_BOOT_BUDGET_MS;
-  }
-  return CLIENT_STATIC_BOOT_BUDGET_MS;
-}
 export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState({ fps: 0, memory: 0, bootTime: 0 });
@@ -123,13 +107,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const pendingRunStartRef = useRef<Promise<RunSession | null> | null>(null);
   const runtimeSlotRef = useRef<symbol | string | null>(null);
   const authHeaderRef = useRef<string | null>(null);
-  const bootTimerRef = useRef<number | null>(null);
-  const runTimerRef = useRef<number | null>(null);
-  const budgetStateRef = useRef<{ bootStartedAt: number | null; runStartedAt: number | null; budgetViolated: boolean }>({
-    bootStartedAt: null,
-    runStartedAt: null,
-    budgetViolated: false,
-  });
+  // Boot/run timers are now managed by runtimeSession; budgetViolated tracks if we've already handled a violation
+  const budgetViolatedRef = useRef(false);
   const pendingLogBatchRef = useRef<PendingAnalyticsLog[]>([]);
   const flushLogsTimeoutRef = useRef<number | null>(null);
   const lastPerfEventRef = useRef<number>(0);
@@ -267,25 +246,6 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     }
   }, [actorId, authzState, isUnquarantining, post]);
 
-  const clearBootTimer = useCallback(() => {
-    if (bootTimerRef.current) {
-      clearTimeout(bootTimerRef.current);
-      bootTimerRef.current = null;
-    }
-  }, []);
-
-  const clearRunTimer = useCallback(() => {
-    if (runTimerRef.current) {
-      clearTimeout(runTimerRef.current);
-      runTimerRef.current = null;
-    }
-  }, []);
-
-  const clearBudgetTimers = useCallback(() => {
-    clearBootTimer();
-    clearRunTimer();
-  }, [clearBootTimer, clearRunTimer]);
-
   const releaseRuntimeSlotGuard = useCallback(() => {
     if (runtimeSlotRef.current) {
       releaseRuntimeSlot(runtimeSlotRef.current, "player");
@@ -293,12 +253,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     }
   }, []);
 
-  const resetBudgetState = useCallback(() => {
-    budgetStateRef.current = {
-      bootStartedAt: null,
-      runStartedAt: null,
-      budgetViolated: false,
-    };
+  const resetBudgetViolated = useCallback(() => {
+    budgetViolatedRef.current = false;
   }, []);
 
   const flushLogBatch = useCallback(
@@ -499,9 +455,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
   const finalizeRunSession = useCallback(
     (status: "completed" | "failed", errorMessage?: string) => {
-      clearBudgetTimers();
       releaseRuntimeSlotGuard();
-      resetBudgetState();
+      resetBudgetViolated();
       const session = currentRunRef.current;
       const currentPost = post;
       const capsule = currentPost?.capsule;
@@ -607,7 +562,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           });
         });
     },
-    [buildAuthInit, clearBudgetTimers, flushLogBatch, post, releaseRuntimeSlotGuard, resetBudgetState]
+    [buildAuthInit, flushLogBatch, post, releaseRuntimeSlotGuard, resetBudgetViolated]
   );
 
   const sendAbandonBeacon = useCallback(() => {
@@ -654,11 +609,10 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       reason: RuntimeBudgetReason,
       context?: { limitMs?: number; observedMs?: number; activeCount?: number }
     ) => {
-      if (budgetStateRef.current.budgetViolated) {
+      if (budgetViolatedRef.current) {
         return;
       }
-      budgetStateRef.current.budgetViolated = true;
-      clearBudgetTimers();
+      budgetViolatedRef.current = true;
       const run = currentRunRef.current ?? lastRunRef.current;
       const capsule = post?.capsule;
       const baseProperties = {
@@ -712,7 +666,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       setIsRunning(false);
       setStats({ fps: 0, memory: 0, bootTime: 0 });
     },
-    [clearBudgetTimers, finalizeRunSession, post]
+    [finalizeRunSession, post]
   );
 
   const startRunSession = useCallback(async (): Promise<RunSession | null> => {
@@ -894,14 +848,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
 
         const confirmation = confirmRuntimeSlot("player", runtimeSlotRef.current ?? session.id, session.id);
         runtimeSlotRef.current = confirmation.allowed ? confirmation.token : runtimeSlotRef.current;
-        budgetStateRef.current.runStartedAt = session.startedAt;
-        clearRunTimer();
-        runTimerRef.current = window.setTimeout(() => {
-          handleBudgetViolation("run_timeout", {
-            limitMs: RUN_SESSION_BUDGET_MS,
-            observedMs: RUN_SESSION_BUDGET_MS,
-          });
-        }, RUN_SESSION_BUDGET_MS);
+        // Run timeout is now handled by runtimeSession via onRunTimeout callback
 
         if (!confirmation.allowed) {
           handleBudgetViolation("concurrency_limit", {
@@ -921,7 +868,6 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           message,
         });
         releaseRuntimeSlotGuard();
-        clearRunTimer();
         return null;
       } finally {
         runStartInFlightRef.current = false;
@@ -932,7 +878,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     const result = await startPromise;
     pendingRunStartRef.current = null;
     return result;
-  }, [buildAuthInit, clearRunTimer, handleBudgetViolation, post, releaseRuntimeSlotGuard]);
+  }, [buildAuthInit, handleBudgetViolation, post, releaseRuntimeSlotGuard]);
 
   const handleRuntimeLoading = useCallback(() => {
     if (!runtimeSlotRef.current) {
@@ -943,30 +889,18 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         return;
       }
     }
-    budgetStateRef.current.budgetViolated = false;
-    budgetStateRef.current.bootStartedAt = Date.now();
-    budgetStateRef.current.runStartedAt = null;
-    clearBudgetTimers();
-    const bootBudgetMs = resolveBootBudgetMs(post?.capsule?.runner ?? null);
-    if (Number.isFinite(bootBudgetMs) && bootBudgetMs > 0) {
-      bootTimerRef.current = window.setTimeout(() => {
-        handleBudgetViolation("boot_timeout", {
-          limitMs: bootBudgetMs,
-          observedMs: bootBudgetMs,
-        });
-      }, bootBudgetMs);
-    }
+    // Reset budget violation flag; boot/run timeouts are now handled by runtimeSession
+    budgetViolatedRef.current = false;
     setIsRunning(true);
     void (async () => {
       const session = await startRunSession();
       if (!session) {
-        clearBudgetTimers();
         releaseRuntimeSlotGuard();
         setIsRunning(false);
-        resetBudgetState();
+        resetBudgetViolated();
       }
     })();
-  }, [clearBudgetTimers, handleBudgetViolation, post?.capsule?.runner, releaseRuntimeSlotGuard, resetBudgetState, startRunSession]);
+  }, [handleBudgetViolation, releaseRuntimeSlotGuard, resetBudgetViolated, startRunSession]);
 
   useEffect(() => {
     return () => {
@@ -976,7 +910,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   }, [finalizeRunSession, flushLogBatch]);
 
   const handleRunnerReady = useCallback(() => {
-    clearBootTimer();
+    // Boot timeout is now handled by runtimeSession via onBootTimeout callback
     void (async () => {
       const session = await startRunSession();
       if (!session) {
@@ -985,17 +919,6 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         iframeHandleRef.current?.kill();
         return;
       }
-      const bootBudgetMs = resolveBootBudgetMs(post?.capsule?.runner ?? null);
-      if (budgetStateRef.current.bootStartedAt) {
-        const bootElapsed = Math.max(0, Date.now() - budgetStateRef.current.bootStartedAt);
-        if (bootElapsed > bootBudgetMs) {
-          handleBudgetViolation("boot_timeout", {
-            limitMs: bootBudgetMs,
-            observedMs: bootElapsed,
-          });
-          return;
-        }
-      }
       setIsRunning(true);
       lastPerfEventRef.current = 0;
       if (post?.capsule) {
@@ -1003,27 +926,21 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           postId: post.id,
           capsuleId: post.capsule.id,
           runner: post.capsule.runner,
-          });
-          trackRuntimeEvent("player_run_started", {
-            capsuleId: post.capsule.id,
-            artifactId: post.capsule.artifactId ?? null,
-            runtimeType: post.capsule.runner ?? null,
-            properties: { postId: post.id, runId: session.id },
-          });
+        });
+        trackRuntimeEvent("player_run_started", {
+          capsuleId: post.capsule.id,
+          artifactId: post.capsule.artifactId ?? null,
+          runtimeType: post.capsule.runner ?? null,
+          properties: { postId: post.id, runId: session.id },
+        });
       }
     })();
-  }, [clearBootTimer, handleBudgetViolation, post, startRunSession]);
+  }, [post, startRunSession]);
 
   const handleBootMetrics = useCallback(
     (metrics: { bootTimeMs: number }) => {
       setStats((prev) => ({ ...prev, bootTime: metrics.bootTimeMs }));
-      const bootBudgetMs = resolveBootBudgetMs(post?.capsule?.runner ?? null);
-      if (metrics.bootTimeMs > bootBudgetMs) {
-        handleBudgetViolation("boot_timeout", {
-          limitMs: bootBudgetMs,
-          observedMs: metrics.bootTimeMs,
-        });
-      }
+      // Boot timeout enforcement is now handled by runtimeSession via onBootTimeout
       if (post?.capsule) {
         const runId = currentRunRef.current?.id;
         trackEvent("player_boot_time", {
@@ -1042,7 +959,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
         });
       }
     },
-    [handleBudgetViolation, post]
+    [post]
   );
 
   const handleRuntimeError = useCallback(
@@ -1057,6 +974,27 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
       setStats({ fps: 0, memory: 0, bootTime: 0 });
     },
     [finalizeRunSession]
+  );
+
+  // Timeout callbacks from runtimeSession - these fire when the session timer detects a budget violation
+  const handleBootTimeout = useCallback(
+    (durationMs: number) => {
+      handleBudgetViolation("boot_timeout", {
+        limitMs: durationMs,
+        observedMs: durationMs,
+      });
+    },
+    [handleBudgetViolation]
+  );
+
+  const handleRunTimeout = useCallback(
+    (durationMs: number) => {
+      handleBudgetViolation("run_timeout", {
+        limitMs: durationMs,
+        observedMs: durationMs,
+      });
+    },
+    [handleBudgetViolation]
   );
 
   useEffect(() => {
@@ -1938,6 +1876,8 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
           onLog={handleConsoleLog}
           onStats={handleStatsUpdate}
           onBoot={handleBootMetrics}
+          onBootTimeout={handleBootTimeout}
+          onRunTimeout={handleRunTimeout}
           isLoading={isLoading}
           loadError={error}
         />

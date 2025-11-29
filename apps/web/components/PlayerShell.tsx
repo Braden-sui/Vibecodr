@@ -35,6 +35,10 @@ export interface PlayerShellProps {
   onBoot?: PlayerIframeProps["onBoot"];
   onError?: PlayerIframeProps["onError"];
   onLoading?: PlayerIframeProps["onLoading"];
+  /** Called when runtimeSession boot timeout fires. */
+  onBootTimeout?: PlayerIframeProps["onBootTimeout"];
+  /** Called when runtimeSession run timeout fires. */
+  onRunTimeout?: PlayerIframeProps["onRunTimeout"];
 }
 
 function computePlaceholder(loadError: string | null, isLoading: boolean) {
@@ -56,18 +60,20 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
     consoleCollapsed,
     onConsoleToggle,
     onClearConsole,
-  onRestart,
-  onKill,
-  onShare,
-  onCopyEmbed,
-  isLoading,
-  loadError,
-  onReady,
-  onLog,
-  onStats,
+    onRestart,
+    onKill,
+    onShare,
+    onCopyEmbed,
+    isLoading,
+    loadError,
+    onReady,
+    onLog,
+    onStats,
     onBoot,
     onError,
     onLoading,
+    onBootTimeout,
+    onRunTimeout,
   },
   ref
 ) {
@@ -89,6 +95,8 @@ export const PlayerShell = forwardRef<PlayerIframeHandle, PlayerShellProps>(func
             onBoot={onBoot}
             onError={onError}
             onLoading={onLoading}
+            onBootTimeout={onBootTimeout}
+            onRunTimeout={onRunTimeout}
           />
         ) : (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed bg-background/80">

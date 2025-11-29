@@ -28,6 +28,21 @@ vi.mock("@/lib/runtime/loadRuntimeManifest", () => ({
   loadRuntimeManifest: vi.fn(async () => ({})),
 }));
 
+vi.mock("@/components/ui/dropdown-menu", () => {
+  const React = require("react");
+  return {
+    DropdownMenu: ({ children }: any) => <div>{children}</div>,
+    DropdownMenuTrigger: ({ children }: any) => <>{children}</>,
+    DropdownMenuContent: ({ children }: any) => <div>{children}</div>,
+    DropdownMenuItem: ({ children, onClick, disabled }: any) => (
+      <button type="button" onClick={onClick} disabled={disabled}>
+        {children}
+      </button>
+    ),
+    DropdownMenuSeparator: () => <hr />,
+  };
+});
+
 vi.mock("@/components/runtime/FeedRuntimePreview", () => {
   const React = require("react");
   return {
@@ -144,7 +159,7 @@ describe("FeedCard", () => {
   };
   const previewCapablePost = {
     ...mockPost,
-    capsule: { ...mockPost.capsule, artifactId: "artifact-1", runner: "react-jsx" as const },
+    capsule: { ...mockPost.capsule, artifactId: "artifact-1", runner: "client-static" as const },
   };
 
   it("should render post title and description", () => {
@@ -326,8 +341,9 @@ describe("FeedCard", () => {
     const moderateSpy = vi
       .spyOn(moderationApi, "moderatePost")
       .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as any);
+    const moderatorUser = { id: "viewer-1", publicMetadata: { isModerator: true } } as any;
     mockUseUser.mockReturnValue({
-      user: { id: "viewer-1", publicMetadata: { isModerator: true } },
+      user: moderatorUser,
       isSignedIn: true,
     });
 

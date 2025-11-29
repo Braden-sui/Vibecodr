@@ -1,7 +1,7 @@
 # Runtime Budget Semantics
 
 **Version:** 1.0  
-**Last Updated:** 2025-11-24  
+**Last Updated:** 2025-11-26  
 **Status:** Canonical Definition
 
 ---
@@ -26,12 +26,12 @@ Runtime budgets control resource consumption for capsule execution. This documen
 
 | Budget Field | Default | Enforcement | Implementation | Status |
 |--------------|---------|-------------|----------------|--------|
-| `maxConcurrentRunners` | 2 | CAP | `reserveRuntimeSlot()` returns `allowed=false` | ✅ Implemented |
-| `clientStaticBootMs` | 5000 | KILL | `startBootTimer()` navigates to `about:blank` | ✅ Implemented |
-| `webContainerBootTargetMs` | 5000 | WARN | (TODO) Log + telemetry if exceeded | ❌ Not implemented |
-| `webContainerBootHardKillMs` | 6000 | KILL | `startBootTimer()` navigates to `about:blank` | ✅ Implemented |
-| `webContainerBootMs` | 5000 | - | **DEPRECATED** - use above two | ⚠️ Remove in v2 |
-| `runSessionMs` | 60000 | KILL | (TODO) Session timer to kill long-running | ❌ Not implemented |
+| `maxConcurrentRunners` | 2 | CAP | `reserveRuntimeSlot()` blocks when at capacity | Implemented |
+| `clientStaticBootMs` | 5000 | KILL | `startBootTimer()` navigates to `about:blank` | Implemented |
+| `webContainerBootTargetMs` | 5000 | WARN | (TODO) Log + telemetry if exceeded | Not implemented |
+| `webContainerBootHardKillMs` | 6000 | KILL | `startBootTimer()` navigates to `about:blank` | Implemented |
+| `webContainerBootMs` | 5000 | - | **DEPRECATED** - use above two | Remove in v2 |
+| `runSessionMs` | 60000 | KILL | `startRunTimer()` emits `run_timeout` and marks error | Implemented |
 
 ---
 
@@ -49,13 +49,9 @@ Limits how many runtime iframes can execute simultaneously across all surfaces (
 
 ```
 [User clicks "Run"]
-       │
-       ▼
 reserveRuntimeSlot()
-       │
-       ├─ activeSlots < limit ─► allowed=true, slot reserved
-       │
-       └─ activeSlots >= limit ─► allowed=false, show message
+  -> activeSlots < limit: allowed=true, slot reserved
+  -> activeSlots >= limit: allowed=false, show message
 ```
 
 **Code location:** `runtimeBudgets.ts:reserveRuntimeSlot()`
@@ -80,15 +76,11 @@ Maximum time allowed for a client-static runtime (react-jsx, html) to boot and s
 
 ```
 [Runtime loads]
-       │
-       ▼
 startBootTimer(isWebContainer=false)
-       │
-       ├─ ready message received ─► clearTimeout, show content
-       │
-       └─ 5000ms elapsed ─► KILL: iframe.src = "about:blank"
-                                  Show error message
-                                  Emit runtime_boot_timeout telemetry
+  -> ready message received: clearTimeout, show content
+  -> 5000ms elapsed: KILL: iframe.src = "about:blank"
+                      Show error message
+                      Emit runtime_boot_timeout telemetry
 ```
 
 **Code location:** `PlayerIframe.tsx:startBootTimer()`
@@ -109,22 +101,15 @@ Runtime failed to start within 5s. Please try again.
 
 p95 target for WebContainer boot time. Exceeding this logs a warning but does NOT kill the runtime.
 
-**Enforcement flow:**
+**Enforcement flow (planned):**
 
 ```
 [WebContainer loads]
-       │
-       ▼
 Track boot start time
-       │
-       ▼
 [ready message received]
-       │
-       ├─ bootTime <= 5000ms ─► normal (no action)
-       │
-       └─ bootTime > 5000ms ─► WARN: console.warn
-                                     Emit runtime_boot_slow telemetry
-                                     (runtime continues)
+  -> bootTime <= 5000ms: normal (no action)
+  -> bootTime > 5000ms: WARN: console.warn
+                        Emit runtime_boot_slow telemetry
 ```
 
 **Code location:** TODO - not yet implemented
@@ -149,15 +134,11 @@ Hard deadline for WebContainer boot. Exceeding this terminates the runtime.
 
 ```
 [WebContainer loads]
-       │
-       ▼
 startBootTimer(isWebContainer=true)
-       │
-       ├─ ready message received ─► clearTimeout, show content
-       │
-       └─ 6000ms elapsed ─► KILL: iframe.src = "about:blank"
-                                  Show error message
-                                  Emit runtime_boot_timeout telemetry
+  -> ready message received: clearTimeout, show content
+  -> 6000ms elapsed: KILL: iframe.src = "about:blank"
+                      Show error message
+                      Emit runtime_boot_timeout telemetry
 ```
 
 **Code location:** `PlayerIframe.tsx:startBootTimer()`
@@ -172,35 +153,32 @@ Runtime failed to start within 6s. Please try again.
 
 ### 5. runSessionMs
 
-**Type:** KILL (TODO)  
+**Type:** KILL  
 **Default:** 60000ms (60s)  
 **Env var:** `VIBECODR_RUNTIME_SESSION_MS`
 
-Maximum time a capsule can run before being terminated. Prevents runaway sessions.
+Maximum time a capsule session can run before being terminated. The countdown begins on `start()` and guards against runaway sessions.
 
-**Enforcement flow (proposed):**
+**Enforcement flow (current):**
 
 ```
-[ready message received]
-       │
-       ▼
-startSessionTimer()
-       │
-       ├─ user navigates away ─► clearTimeout, cleanup
-       │
-       ├─ user clicks "Stop" ─► clearTimeout, cleanup
-       │
-       └─ 60000ms elapsed ─► KILL: iframe.src = "about:blank"
-                                   Show "Session ended" message
-                                   Emit runtime_session_timeout telemetry
+[start()]
+    startRunTimer()
+[stop()/dispose()/pause()]
+    clearTimeout(runTimer)
+[resume()]
+    startRunTimer()
+[runMs elapsed]
+    emit run_timeout
+    markError("Runtime session timed out.")
 ```
 
-**Code location:** TODO - not yet implemented
+**Code location:** `apps/web/lib/runtime/runtimeSession.ts:startRunTimer()`
 
 **User message on kill:**
 
 ```
-Session ended after 60 seconds. Click "Run" to restart.
+Runtime session timed out.
 ```
 
 ---
@@ -255,9 +233,9 @@ webContainerBootHardKillMs: 6000 // KILL at 6s
 
 | Event | When | Payload |
 |-------|------|---------|
-| `runtime_boot_timeout` | Hard kill triggered | `{ capsuleId, bootDuration, hardKillMs }` |
-| `runtime_boot_slow` | Soft target exceeded (TODO) | `{ capsuleId, bootDuration, targetMs }` |
-| `runtime_session_timeout` | Session limit hit (TODO) | `{ capsuleId, sessionDuration }` |
+| `runtime_boot_timeout` | Hard kill triggered | `{ durationMs, budgetMs, ...baseRuntimeTelemetry }` |
+| `runtime_boot_slow` | Soft target exceeded (TODO) | `{ bootDuration, targetMs, ...baseRuntimeTelemetry }` |
+| `runtime_run_timeout` | Session limit hit | `{ durationMs, budgetMs, ...baseRuntimeTelemetry }` |
 
 ---
 
@@ -267,5 +245,5 @@ webContainerBootHardKillMs: 6000 // KILL at 6s
 - [x] `clientStaticBootMs` KILL enforcement
 - [x] `webContainerBootHardKillMs` KILL enforcement
 - [ ] `webContainerBootTargetMs` WARN enforcement
-- [ ] `runSessionMs` KILL enforcement
+- [x] `runSessionMs` KILL enforcement
 - [ ] Remove deprecated `webContainerBootMs` in v2

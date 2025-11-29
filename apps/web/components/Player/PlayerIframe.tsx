@@ -34,6 +34,10 @@ export interface PlayerIframeProps {
   onStats?: (stats: { fps: number; memory: number }) => void;
   onBoot?: (metrics: { bootTimeMs: number }) => void;
   onError?: (message: string) => void;
+  /** Called when runtimeSession boot timeout fires. Parent should handle budget violation. */
+  onBootTimeout?: (durationMs: number) => void;
+  /** Called when runtimeSession run timeout fires. Parent should handle budget violation. */
+  onRunTimeout?: (durationMs: number) => void;
   artifactId?: string;
 }
 
@@ -115,6 +119,8 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       onStats,
       onBoot,
       onError,
+      onBootTimeout,
+      onRunTimeout,
       artifactId,
     },
     ref
@@ -219,6 +225,8 @@ export const PlayerIframe = forwardRef<PlayerIframeHandle, PlayerIframeProps>(
       onReady: handleSandboxReady,
       onError: handleSandboxError,
       onPolicyViolation: handlePolicyViolation,
+      onBootTimeout,
+      onRunTimeout,
       logger: runtimeSessionLogger,
     });
 

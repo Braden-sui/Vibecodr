@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadRuntime } from "./registry";
 import type { RuntimeLoaderArgs } from "./types";
-import { createRuntimeSession, type RuntimeSessionConfig, type RuntimeSessionState } from "./runtimeSession";
+import { createRuntimeSession, type RuntimeEvent, type RuntimeSessionConfig, type RuntimeSessionState } from "./runtimeSession";
 import { trackRuntimeEvent } from "@/lib/analytics";
 import { getRuntimeBudgets } from "@/components/Player/runtimeBudgets";
 
@@ -14,13 +14,17 @@ type UseRuntimeSessionConfig = RuntimeSessionConfig & {
   onReady?: () => void;
   onError?: (message: string) => void;
   onPolicyViolation?: RuntimeLoaderArgs["onPolicyViolation"];
+  /** Called when boot timeout is triggered by the session timer. */
+  onBootTimeout?: (durationMs: number) => void;
+  /** Called when run timeout is triggered by the session timer. */
+  onRunTimeout?: (durationMs: number) => void;
   telemetryEmitter?: RuntimeSessionConfig["telemetryEmitter"];
   telemetryLimit?: number;
   logger?: RuntimeSessionConfig["logger"];
 };
 
 export function useRuntimeSession(config: UseRuntimeSessionConfig) {
-  const { frameRef: externalFrameRef, onReady, onError, onPolicyViolation } = config;
+  const { frameRef: externalFrameRef, onReady, onError, onPolicyViolation, onBootTimeout, onRunTimeout } = config;
   const iframeRef = externalFrameRef ?? useRef<HTMLIFrameElement>(null);
   const surfaceBudgets = useMemo(() => getRuntimeBudgets(config.surface), [config.surface]);
   const resolvedRunner = config.runnerType ?? "client-static";
@@ -30,6 +34,28 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
       ? surfaceBudgets.webContainerBootHardKillMs
       : surfaceBudgets.clientStaticBootMs);
   const maxRunMs = config.maxRunMs ?? surfaceBudgets.runSessionMs;
+
+  // Store timeout callbacks in refs to avoid effect re-runs
+  const onBootTimeoutRef = useRef(onBootTimeout);
+  const onRunTimeoutRef = useRef(onRunTimeout);
+  useEffect(() => {
+    onBootTimeoutRef.current = onBootTimeout;
+    onRunTimeoutRef.current = onRunTimeout;
+  }, [onBootTimeout, onRunTimeout]);
+
+  // Wrap the user's logger to intercept timeout events and call callbacks
+  const wrappedLogger = useCallback(
+    (event: RuntimeEvent) => {
+      config.logger?.(event);
+      if (event.type === "boot_timeout") {
+        onBootTimeoutRef.current?.(event.durationMs);
+      } else if (event.type === "run_timeout") {
+        onRunTimeoutRef.current?.(event.durationMs);
+      }
+    },
+    [config.logger]
+  );
+
   const sessionRef = useRef(
     createRuntimeSession({
       ...config,
@@ -39,7 +65,7 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
       autoStart: false,
       telemetryEmitter: config.telemetryEmitter ?? trackRuntimeEvent,
       telemetryLimit: config.telemetryLimit,
-      logger: config.logger,
+      logger: wrappedLogger,
     })
   );
   const [sessionState, setSessionState] = useState<RuntimeSessionState>(sessionRef.current.getState());
@@ -56,7 +82,7 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
       maxRunMs,
       telemetryEmitter: config.telemetryEmitter ?? trackRuntimeEvent,
       telemetryLimit: config.telemetryLimit,
-      logger: config.logger,
+      logger: wrappedLogger,
     });
     const prev = sessionRef.current;
     sessionRef.current = next;
@@ -65,7 +91,7 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
     prev.dispose();
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.artifactId, config.surface, config.runnerType, config.logger, maxBootMs, maxRunMs]);
+  }, [config.artifactId, config.surface, config.runnerType, wrappedLogger, maxBootMs, maxRunMs]);
 
   // Build runtime frame when manifest is ready
   const runtimeFrame = useMemo(() => {
@@ -106,5 +132,7 @@ export function useRuntimeSession(config: UseRuntimeSessionConfig) {
     state: sessionState,
     iframeRef,
     runtimeFrame,
+    /** Boot and run budgets resolved for this surface/runner combination */
+    budgets: { bootMs: maxBootMs, runMs: maxRunMs },
   };
 }

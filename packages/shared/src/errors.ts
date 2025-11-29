@@ -564,6 +564,30 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Embedding failed. Please retry.",
     logMessage: "oEmbed generation failed",
   },
+  "E-VIBECODR-0614": {
+    code: "E-VIBECODR-0614",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Run update failed. Please retry.",
+    logMessage: "markRunFailed update failed",
+  },
+  "E-VIBECODR-0615": {
+    code: "E-VIBECODR-0615",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Run telemetry probe failed. Please retry.",
+    logMessage: "Run schema probe failed",
+  },
+  "E-VIBECODR-0616": {
+    code: "E-VIBECODR-0616",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Run telemetry schema is missing fields.",
+    logMessage: "Run schema missing error column",
+  },
 
   // 05xx: feed, share, reporting, runtime client UX
   "E-VIBECODR-0501": {
@@ -750,6 +774,30 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Runtime logs were capped for this session.",
     logMessage: "Runtime logs capped for this session",
   },
+  "E-VIBECODR-0526": {
+    code: "E-VIBECODR-0526",
+    category: "runtime",
+    httpStatus: 504,
+    severity: "error",
+    userMessage: "This app took too long to start. Please retry.",
+    logMessage: "Runtime boot timeout exceeded; hard kill issued",
+  },
+  "E-VIBECODR-0527": {
+    code: "E-VIBECODR-0527",
+    category: "runtime",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "This app was blocked due to a sandbox policy issue.",
+    logMessage: "Sandbox misconfiguration detected; blocking runtime",
+  },
+  "E-VIBECODR-0530": {
+    code: "E-VIBECODR-0530",
+    category: "runtime",
+    httpStatus: 200,
+    severity: "warning",
+    userMessage: "The app was stopped, but shutdown may not have completed cleanly.",
+    logMessage: "Kill message not sent but UI stopped runtime",
+  },
 
   // 07xx: studio import/export
   "E-VIBECODR-0701": {
@@ -853,6 +901,14 @@ const definitions: Record<string, ErrorDefinition> = {
     severity: "error",
     userMessage: "Studio runtime failed to load. Please retry.",
     logMessage: "Studio runtime load failed",
+  },
+  "E-VIBECODR-0902": {
+    code: "E-VIBECODR-0902",
+    category: "api",
+    httpStatus: 400,
+    severity: "error",
+    userMessage: "This remix would create a cycle. Please choose a different parent.",
+    logMessage: "Remix cycle detected",
   },
   "E-VIBECODR-0903": {
     code: "E-VIBECODR-0903",
@@ -1104,6 +1160,14 @@ const definitions: Record<string, ErrorDefinition> = {
     userMessage: "Profile failed to load. Please retry.",
     logMessage: "Profile load failed",
   },
+  "E-VIBECODR-2002": {
+    code: "E-VIBECODR-2002",
+    category: "api",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Profile response was invalid. Please refresh.",
+    logMessage: "Invalid profile response shape",
+  },
 
   // 21xx: runtime execution
   "E-VIBECODR-2101": {
@@ -1259,6 +1323,22 @@ const definitions: Record<string, ErrorDefinition> = {
     severity: "warning",
     userMessage: "Post visibility check failed. Defaults applied.",
     logMessage: "Post visibility column check failed",
+  },
+  "E-VIBECODR-2202": {
+    code: "E-VIBECODR-2202",
+    category: "api",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Profile data is unavailable. Please retry.",
+    logMessage: "Invalid profile response",
+  },
+  "E-VIBECODR-2203": {
+    code: "E-VIBECODR-2203",
+    category: "api",
+    httpStatus: 500,
+    severity: "error",
+    userMessage: "Your apps are temporarily unavailable. Please retry.",
+    logMessage: "Invalid capsule response",
   },
 
   // 24xx: admin analytics

@@ -120,12 +120,10 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
   const isLongform = post.type === "longform";
   const detailHref = isApp ? `/player/${post.id}` : `/post/${post.id}`;
   const descriptionClamp = isLongform ? "line-clamp-3" : "line-clamp-2";
-  const [_isHovering, setIsHovering] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [previewErrorMessage, setPreviewErrorMessage] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const prebootStartRef = useRef<number>();
   const cardRef = useRef<HTMLDivElement>(null);
   const [isNearViewport, setIsNearViewport] = useState(false);
@@ -586,23 +584,6 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
     };
   }, [capsuleId, isApp, pushPreviewLog, runnerOrigins, warnMissingRunnerOrigins]);
 
-
-
-  // Handle hover enter with debounce
-  const handleMouseEnter = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setIsHovering(true);
-    }, 300); // 300ms debounce before preboot
-  };
-
-  // Handle hover leave
-  const handleMouseLeave = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    setIsHovering(false);
-  };
-
   const handlePreviewReady = useCallback(() => {
     const bootTime = Date.now() - (prebootStartRef.current || Date.now());
     if (bootTime > (isWebContainer ? 1500 : 1000)) {
@@ -666,12 +647,9 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
     e.stopPropagation();
 
     if (!artifactId) {
-      toast({
-        title: "Preview unavailable",
-        description: "Open the player to run this vibe without limits.",
-        variant: "warning",
-      });
-      window.location.href = `/player/${post.id}`;
+      // WHY: Don't auto-navigate - show inline message with button instead.
+      // Auto-navigation is jarring: loses scroll position and UI state.
+      setPreviewErrorMessage("Preview unavailable. Open in Player for full experience.");
       return;
     }
 
@@ -679,17 +657,13 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
 
     const reservation = reserveRuntimeSlot("feed");
     if (!reservation.allowed) {
+      // WHY: Don't auto-navigate - show inline message with button instead.
+      // Auto-navigation is jarring: loses scroll position and UI state.
       const description =
         reservation.limit === 1
-          ? "Only one inline preview can run at once. Opening the player instead."
-          : `Only ${reservation.limit} inline previews can run at once. Opening the player instead.`;
-      toast({
-        title: "Preview limit reached",
-        description,
-        variant: "warning",
-      });
+          ? "Only one inline preview can run at once."
+          : `Only ${reservation.limit} inline previews can run at once.`;
       setPreviewErrorMessage(description);
-      window.location.href = `/player/${post.id}`;
       return;
     }
 
@@ -935,8 +909,6 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
       {/* Cover/Preview Area (apps only) */}
       {isApp && (
         <div
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
           className="relative"
         >
           <Link to={detailHref} onClick={() => persistPreviewHandoff("cover")}>
@@ -974,8 +946,21 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
                     Run Preview
                   </Button>
                   {previewErrorMessage && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/5 px-6 text-center">
-                      <p className="text-sm font-semibold text-destructive">{previewErrorMessage}</p>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center">
+                      <p className="text-sm font-semibold text-white">{previewErrorMessage}</p>
+                      <Button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          navigate(`/player/${post.id}`);
+                        }}
+                        variant="secondary"
+                        size="sm"
+                        className="gap-2"
+                      >
+                        <ArrowRight className="h-4 w-4" />
+                        Open in Player
+                      </Button>
                     </div>
                   )}
                 </div>

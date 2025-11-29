@@ -1,14 +1,14 @@
 # Content Moderation States Specification
 
 **Version:** 1.0  
-**Last Updated:** 2025-11-24  
-**Status:** Canonical Definition
+**Last Updated:** 2025-11-28  
+**Status:** Canonical Definition (aligned to current code)
 
 ---
 
 ## Overview
 
-This document defines the three content safety states used across Vibecodr. All surfaces (API, web, moderation tools) MUST implement these states consistently.
+Three moderation states exist today. The Worker API and SPA both enforce them. This document reflects the behavior that actually ships in code.
 
 ---
 
@@ -23,7 +23,7 @@ This document defines the three content safety states used across Vibecodr. All 
 |--------|----------|
 | **Feed visibility** | Appears in all feeds (home, discover, following, profile) |
 | **Direct access** | Accessible via direct URL |
-| **Embed** | Embeddable on external sites |
+| **Embed** | Embeddable |
 | **Search** | Indexed and searchable |
 | **Owner notification** | None |
 | **Moderation queue** | Not queued |
@@ -35,31 +35,23 @@ This document defines the three content safety states used across Vibecodr. All 
 ### 2. QUARANTINE (`action: "quarantine"`)
 
 **Database:** `quarantined = 1`, `quarantine_reason` set, `quarantined_at` timestamp  
-**HTTP Response:** 200 OK (content returned but flagged)
+**HTTP Response:** 404 for non-moderators; 200 with `quarantined` flag for moderators
 
 | Aspect | Behavior |
 |--------|----------|
-| **Feed visibility** | **HIDDEN** from all public feeds |
-| **Direct access** | **ALLOWED** - owner and moderators can view via direct URL |
-| **Embed** | **BLOCKED** - returns 403 for embed requests |
-| **Search** | **EXCLUDED** from search results |
-| **Owner notification** | Show banner: "This content is under review" |
+| **Feed visibility** | Hidden from all feeds (including moderators) |
+| **Direct access — posts** | 404 for everyone except moderators (owners do **not** bypass today) |
+| **Direct access — capsules** | Allowed for owner or moderator; 404 for others |
+| **Manifest/bundle** | Requires a non-quarantined public post or moderator override; owners are blocked when every linked post is quarantined |
+| **Embed** | Blocked: embed/oEmbed returns 404 for quarantined posts |
+| **Search** | Excluded |
+| **Owner notification** | Not implemented |
 | **Moderation queue** | Appears in `/moderation/flagged` for review |
 
 **Triggers:**
-- Auto-quarantine on publish: suspicious patterns detected (see `QUARANTINE_PATTERNS`)
+- Auto-quarantine on publish: suspicious patterns detected (see `QUARANTINE_PATTERNS` in safety pipeline)
 - Manual moderation: `POST /moderation/posts/:id/action { action: "quarantine" }`
 - Report resolution: `POST /moderation/reports/:id/resolve { action: "quarantine" }`
-
-**Quarantine Patterns (medium confidence):**
-```javascript
-/child_process|exec|spawn|fork/i
-/fs\./i
-/eval|new Function/i
-/process\.env/i
-/fetch|axios|http\.request|net\.connect/i
-/atob\(|Buffer\.from\(.*base64/i
-```
 
 ---
 
@@ -79,60 +71,15 @@ This document defines the three content safety states used across Vibecodr. All 
 
 **Triggers:**
 - Hash blocklist match (known malicious hash in KV)
-- High-risk pattern match (see `BLOCK_PATTERNS`)
-
-**Block Patterns (high confidence, severe violations):**
-```javascript
-/stratum\+tcp|xmrig|cryptonight|coinhive/i  // Crypto-miners
-/while\s*\(true\)|for\s*\(\s*;\s*;\s*\)/i   // Infinite loops
-```
+- High-risk pattern match (see `BLOCK_PATTERNS` in safety pipeline)
 
 ---
 
-## State Transitions
+## State Transitions (current code paths)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      PUBLISH FLOW                           │
-└─────────────────────────────────────────────────────────────┘
-
-  [User uploads capsule]
-           │
-           ▼
-  ┌─────────────────┐
-  │  Safety Check   │
-  └─────────────────┘
-           │
-    ┌──────┼──────────┐
-    │      │          │
-    ▼      ▼          ▼
- ALLOW  QUARANTINE  BLOCK
-    │      │          │
-    ▼      ▼          ▼
- [Save]  [Save +    [Reject
-         flag=1]    403]
-
-
-┌─────────────────────────────────────────────────────────────┐
-│                    MODERATION FLOW                          │
-└─────────────────────────────────────────────────────────────┘
-
-  [ALLOW]  ──────────────────────────────────────►  [QUARANTINE]
-              POST /moderation/posts/:id/action
-              { action: "quarantine" }
-
-  [QUARANTINE]  ──────────────────────────────────►  [ALLOW]
-              POST /moderation/posts/:id/action
-              { action: "unquarantine" }
-
-  [QUARANTINE]  ──────────────────────────────────►  [DELETED]
-              POST /moderation/posts/:id/action
-              { action: "remove" }
-
-  [ALLOW]  ──────────────────────────────────────►  [DELETED]
-              POST /moderation/posts/:id/action
-              { action: "remove" }
-```
+- **Publish flow:** Upload → safety check → `allow | quarantine | block`. Quarantine sets flags and timestamps; block returns 403.
+- **Moderation flow:** Moderators call `POST /moderation/posts/:id/action` with `quarantine | unquarantine | remove`. Removes hard-delete; unquarantine clears the flag.
+- **Reports:** Moderators resolve reports with `dismiss | quarantine`; quarantine path uses the same action handler and audit logging.
 
 ---
 
@@ -142,33 +89,33 @@ This document defines the three content safety states used across Vibecodr. All 
 
 | Endpoint | Quarantined Content |
 |----------|---------------------|
-| `GET /posts` (home feed) | **Excluded** |
-| `GET /posts/discover` | **Excluded** for users, **Included** for mods |
-| `GET /posts?mode=following` | **Excluded** |
-| `GET /users/:id/posts` | **Excluded** |
-
-**Implementation:** All feed queries include `WHERE (quarantined IS NULL OR quarantined = 0)`
+| `GET /posts` (home feed) | Excluded for all |
+| `GET /posts/discover` | Excluded for all (moderators rely on `/moderation/*` instead) |
+| `GET /posts?mode=following` | Excluded for all |
+| `GET /users/:id/posts` | Excluded for all |
 
 ### Direct Access Endpoints
 
 | Endpoint | Quarantined Content |
 |----------|---------------------|
-| `GET /capsules/:id` | **Returned** only to owner/moderator with `moderation.state: "quarantine"`; **404** for others |
-| `GET /capsules/:id/verify` | **Returned** only to owner/moderator; includes `moderation.state`; **404** for others |
-| `GET /posts/:id` | **Returned** with `quarantined: true` flag |
-| `GET /capsules/:id/manifest` | **Returned** if owner or mod (see `authorizeCapsuleRequest`) |
-| `GET /artifacts/:id/bundle` | **Returned** (no quarantine check on raw bundle) |
+| `GET /capsules/:id` | Allowed for owner or moderator; 404 for others |
+| `GET /capsules/:id/verify` | Allowed for owner or moderator; 404 for others |
+| `GET /posts/:id` | 404 for non-moderators; moderators can fetch with `quarantined` flag |
+| `GET /capsules/:id/manifest` | Requires a non-quarantined public post or moderator override; owners cannot bypass when every linked post is quarantined |
+| `GET /capsules/:id/bundle` | Same gating as manifest via `authorizeCapsuleRequest` |
+| `GET /artifacts/:id/bundle` | No quarantine check (artifacts use their own policy status) |
 
-### Embed Endpoints
+### Embed and SEO Endpoints
 
 | Endpoint | Quarantined Content |
 |----------|---------------------|
-| `GET /e/:postId` | **403 Forbidden** |
-| `embed.js` iframe | **403 Forbidden** |
+| `GET /e/:postId` | Returns 404 when quarantined or author is suspended/shadow-banned |
+| `GET /oembed` | Returns 404 when target post is quarantined |
+| `GET /og-image/:postId` | Returns 404 when post is missing (quarantined posts are not reachable by id for non-mods) |
 
 ---
 
-## Moderation API
+## Moderation API (implemented)
 
 ### Quarantine a Post
 ```http
@@ -176,22 +123,16 @@ POST /moderation/posts/:postId/action
 Authorization: Bearer <mod_token>
 Content-Type: application/json
 
-{
-  "action": "quarantine",
-  "notes": "Suspicious network calls detected"
-}
+{ "action": "quarantine", "notes": "Suspicious network calls detected" }
 ```
 
-### Unquarantine a Post (Escape Hatch)
+### Unquarantine a Post
 ```http
 POST /moderation/posts/:postId/action
 Authorization: Bearer <mod_token>
 Content-Type: application/json
 
-{
-  "action": "unquarantine",
-  "notes": "False positive - fetch is for public API"
-}
+{ "action": "unquarantine", "notes": "False positive - fetch is for public API" }
 ```
 
 ### Remove a Post (Hard Delete)
@@ -200,83 +141,31 @@ POST /moderation/posts/:postId/action
 Authorization: Bearer <mod_token>
 Content-Type: application/json
 
-{
-  "action": "remove",
-  "notes": "Confirmed malicious after manual review"
-}
+{ "action": "remove", "notes": "Confirmed malicious after manual review" }
 ```
 
 ---
 
 ## Audit Trail
 
-All moderation actions are logged to `moderation_audit_log`:
-
-```sql
-CREATE TABLE moderation_audit_log (
-  id TEXT PRIMARY KEY,
-  moderator_id TEXT NOT NULL,
-  action TEXT NOT NULL,        -- 'quarantine' | 'unquarantine' | 'remove' | 'dismiss'
-  target_type TEXT NOT NULL,   -- 'post' | 'comment' | 'capsule'
-  target_id TEXT NOT NULL,
-  notes TEXT,
-  created_at INTEGER DEFAULT (strftime('%s', 'now'))
-);
-```
+All moderation actions are logged to `moderation_audit_log` with `action`, `target_type`, `target_id`, `notes`, and `moderator_id`.
 
 ---
 
 ## User-Visible Messages
 
-### On Publish (Quarantine)
-```
-Your vibe has been published but is currently under review.
-It won't appear in feeds until approved.
-You can still access it directly and share the link.
-```
-
-### On Publish (Block)
-```
-Unable to publish: Content rejected
-Reason: [reason from verdict]
-Error code: E-VIBECODR-SECURITY-BLOCK
-```
-
-### Owner Viewing Quarantined Content
-```
-⚠️ This content is under review
-It is not visible in public feeds.
-Contact support if you believe this is an error.
-```
+- **Quarantined post (moderator view):** Player page shows "This post is quarantined" with an unquarantine button for moderators.
+- **Owner banner:** Not implemented (owners currently receive 404 for quarantined posts).
+- **Publish block:** `"Unable to publish: Content rejected"` with `E-VIBECODR-SECURITY-BLOCK`.
 
 ---
 
 ## Gaps to Address
 
-### Current Gaps (Needs Implementation)
-
-1. **Capsule-level quarantine** - Currently only posts have `quarantined` column. Capsules set `quarantined` on publish but queries don't filter by it.
-
-2. **User notification** - No system to notify users when their content is quarantined or unquarantined.
-
-3. **Appeal flow** - No self-service appeal mechanism for quarantined content.
-
-4. **Embed blocking** - Embed endpoint needs explicit quarantine check.
-
-5. **Analytics dashboard** - No visibility into quarantine rates, false positive rates, or moderator actions.
-
-### Recommended Schema Addition
-
-```sql
--- Add to capsules table if not exists
-ALTER TABLE capsules ADD COLUMN quarantined INTEGER DEFAULT 0;
-ALTER TABLE capsules ADD COLUMN quarantine_reason TEXT;
-ALTER TABLE capsules ADD COLUMN quarantined_at INTEGER;
-
--- Index for efficient feed filtering
-CREATE INDEX IF NOT EXISTS idx_posts_quarantined ON posts(quarantined);
-CREATE INDEX IF NOT EXISTS idx_capsules_quarantined ON capsules(quarantined);
-```
+1. **Owner access/notification:** Owners cannot view quarantined posts; no banner or alert is sent.
+2. **User notification:** No system to notify users when content is quarantined or unquarantined.
+3. **Appeal flow:** No self-service appeal mechanism.
+4. **Analytics/dashboard:** No dashboard for quarantine rates, false positives, or moderator actions.
 
 ---
 
@@ -291,20 +180,22 @@ CREATE INDEX IF NOT EXISTS idx_capsules_quarantined ON capsules(quarantined);
 | `E-VIBECODR-0102` | Moderation quarantine action failed |
 | `E-VIBECODR-0103` | Direct quarantine failed |
 | `E-VIBECODR-0105` | Unquarantine failed |
+| `E-VIBECODR-0605` | Embed schema introspection failed |
+| `E-VIBECODR-0612` | Not embeddable (quarantined/private/suspended/shadow-banned) |
 
 ---
 
 ## Implementation Checklist
 
 - [x] `SafetyAction` type defined (`allow` | `quarantine` | `block`)
-- [x] Quarantine patterns vs block patterns separated
-- [x] Auto-quarantine on publish (`capsules.ts`)
-- [x] Feed filtering excludes quarantined posts (`posts.ts`)
-- [x] Moderation quarantine/unquarantine endpoints (`moderation.ts`)
+- [x] Quarantine vs block patterns separated
+- [x] Auto-quarantine on publish (`handlers/capsules.ts`)
+- [x] Feed filtering excludes quarantined posts (`handlers/posts.ts`, `handlers/profiles.ts`)
+- [x] Moderation quarantine/unquarantine/remove endpoints (`handlers/moderation.ts`)
 - [x] Audit log for moderation actions
-- [x] Capsule-level quarantine filtering
-- [ ] Embed endpoint quarantine check
-- [ ] User notification on quarantine
-- [ ] Owner-visible banner for quarantined content
+- [x] Capsule-level quarantine filtering (`capsule-access.ts`, manifest/bundle auth)
+- [x] Embed/oEmbed quarantine check (`handlers/embeds.ts`)
+- [ ] User notification on quarantine/unquarantine
+- [ ] Owner-visible banner or alternate owner access path
 - [ ] Appeal workflow
-- [ ] Capsule-level quarantine filtering
+- [ ] Quarantine analytics dashboard

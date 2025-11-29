@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, FormEvent, ChangeEvent, KeyboardEvent } from "react";
+import { useState, useRef, useCallback, FormEvent, ChangeEvent } from "react";
 import { motion } from "motion/react";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -24,64 +24,35 @@ import {
   CheckCircle2,
   Sparkles,
   Tag,
-  Check,
-  Minus,
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { redirectToSignIn } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
-import { postsApi, capsulesApi, coversApi, type FeedPost } from "@/lib/api";
+import { postsApi, coversApi, type FeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
 import { formatBytes } from "@/lib/zipBundle";
 import { useReducedMotion } from "@/lib/useReducedMotion";
-import { featuredTags, normalizeTag } from "@/lib/tags";
-import { ApiImportResponseSchema, toDraftCapsule } from "@vibecodr/shared";
+import { featuredTags } from "@/lib/tags";
 import { InlinePreviewFrame } from "@/components/runtime/InlinePreviewFrame";
+import { usePostComposer, MAX_TAGS, type VibeType } from "@/components/vibes/usePostComposer";
+import { AppImportProgress } from "@/components/vibes/AppImportProgress";
+import { AppSourceSelector } from "@/components/vibes/AppSourceSelector";
+import { useAppImport } from "@/components/vibes/useAppImport";
 
 export interface VibesComposerProps {
   onPostCreated?: (post: FeedPost) => void;
   className?: string;
 }
 
-type VibeType = FeedPost["type"];
-type AppComposerMode = "github" | "zip" | "code";
-type ImportStatus = "idle" | "processing" | "ready" | "error";
-type AppProgressStep = "select" | "upload" | "analyze" | "build" | "ready";
-
-type AppAttachment = {
-  capsuleId: string;
-  source: AppComposerMode;
-  title?: string | null;
-  warnings?: Array<{ path?: string; message: string } | string>;
-  fileName?: string | null;
-};
-
-type AppProgressState = {
-  status: ImportStatus;
-  active: AppProgressStep;
-  message?: string | null;
-};
-
-const MAX_TAGS = 3;
-
-const PROGRESS_STEPS: Array<{ key: AppProgressStep; label: string; helper?: string }> = [
-  { key: "select", label: "Source", helper: "Choose GitHub, ZIP, or inline code" },
-  { key: "upload", label: "Upload", helper: "Send files to the builder" },
-  { key: "analyze", label: "Analyze", helper: "Inspect manifest + dependencies" },
-  { key: "build", label: "Build", helper: "Bundle and prepare capsule" },
-  { key: "ready", label: "Ready", helper: "Attach app to your post" },
-];
-
-const PROGRESS_ORDER: AppProgressStep[] = PROGRESS_STEPS.map((step) => step.key);
-
 const formatErrorMessage = (value: unknown): string => {
   if (!value) return "";
   if (typeof value === "string") return value;
   if (value instanceof Error) return value.message;
   if (typeof value === "object") {
-    const maybe = (value as any).message;
-    if (typeof maybe === "string") return maybe;
+    if ("message" in value && typeof (value as { message?: unknown }).message === "string") {
+      return (value as { message: string }).message;
+    }
     try {
       return JSON.stringify(value);
     } catch {
@@ -99,27 +70,6 @@ const toWarningText = (warning: string | { path?: string; message: string }): st
   return warning.message;
 };
 
-const deriveStepState = (
-  step: AppProgressStep,
-  progress: AppProgressState,
-  isAttached: boolean,
-): "done" | "active" | "pending" | "error" => {
-  if (isAttached || progress.status === "ready") {
-    return "done";
-  }
-  if (progress.status === "error" && progress.active === step) {
-    return "error";
-  }
-  if (progress.status === "idle") {
-    return step === "select" ? "active" : "pending";
-  }
-  const activeIndex = PROGRESS_ORDER.indexOf(progress.active);
-  const stepIndex = PROGRESS_ORDER.indexOf(step);
-  if (stepIndex < activeIndex) return "done";
-  if (stepIndex === activeIndex) return progress.status === "processing" ? "active" : "pending";
-  return "pending";
-};
-
 /**
  * VibesComposer - Unified composer for social post types with a bounded app sub-flow.
  * Users pick a vibe type, then (for apps) complete an attach flow with its own progress rail.
@@ -128,49 +78,111 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const { user, isSignedIn } = useUser();
   const { getToken } = useAuth();
 
-  const [vibeType, setVibeType] = useState<VibeType>("thought");
-  const [appMode, setAppMode] = useState<AppComposerMode>("github");
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
-  const [tagInput, setTagInput] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
-
-  const [appAttachment, setAppAttachment] = useState<AppAttachment | null>(null);
-  const [appProgress, setAppProgress] = useState<AppProgressState>({
-    status: "idle",
-    active: "select",
-    message: null,
-  });
-  const [appError, setAppError] = useState<string | null>(null);
-
-  const [githubUrl, setGithubUrl] = useState("");
-  const [zipFile, setZipFile] = useState<File | null>(null);
-  const [zipSummary, setZipSummary] = useState<{ fileName: string; totalSize: number } | null>(null);
-  const [zipImportWarnings, setZipImportWarnings] = useState<Array<{ path?: string; message: string } | string>>([]);
-  const [code, setCode] = useState("");
-  const [allowStorage, setAllowStorage] = useState(false);
-  const [enableParam, setEnableParam] = useState(false);
-  const [paramLabel, setParamLabel] = useState("Intensity");
-  const [paramDefault, setParamDefault] = useState(50);
-  const [paramMin, setParamMin] = useState(0);
-  const [paramMax, setParamMax] = useState(100);
-  const [paramStep, setParamStep] = useState(1);
-
-  // Live preview state for code mode
-  const [debouncedCode, setDebouncedCode] = useState("");
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(true);
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [coverKey, setCoverKey] = useState<string | null>(null);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
 
+  const {
+    vibeType,
+    setVibeType,
+    isExpanded,
+    setIsExpanded,
+    title,
+    setTitle,
+    description,
+    setDescription,
+    linkUrl,
+    setLinkUrl,
+    tagInput,
+    setTagInput,
+    selectedTags,
+    addTag,
+    removeTag,
+    handleTagKeyDown,
+    clearTags,
+    resetPost,
+  } = usePostComposer();
+
+  const suggestTitleIfEmpty = useCallback(
+    (value: string) => {
+      if (!title.trim()) {
+        setTitle(value);
+      }
+    },
+    [setTitle, title],
+  );
+
+  const getTitleValue = useCallback(() => title, [title]);
+  const getDescriptionValue = useCallback(() => description, [description]);
+
+  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
+    if (typeof getToken !== "function") return undefined;
+    const token = await getToken({ template: "workers" });
+    if (!token) return undefined;
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  }, [getToken]);
+
+  const {
+    appMode,
+    handleAppModeChange,
+    appAttachment,
+    appProgress,
+    appError,
+    githubUrl,
+    setGithubUrl,
+    zipFile,
+    zipSummary,
+    zipImportWarnings,
+    code,
+    setCode,
+    allowStorage,
+    setAllowStorage,
+    enableParam,
+    setEnableParam,
+    paramLabel,
+    setParamLabel,
+    paramDefault,
+    setParamDefault,
+    paramMin,
+    setParamMin,
+    paramMax,
+    setParamMax,
+    paramStep,
+    setParamStep,
+    debouncedCode,
+    previewError,
+    showPreview,
+    setShowPreview,
+    isAppBusy,
+    hasAttachedApp,
+    zipInputRef,
+    handleZipSelect,
+    handleGithubImport,
+    handleZipImport,
+    buildInlineApp,
+    handlePreviewReady,
+    handlePreviewError,
+    clearZip,
+    resetInlineAdvanced,
+    resetAppFlow,
+    clearAttachment,
+  } = useAppImport({
+    buildAuthInit,
+    onRequireAuth: redirectToSignIn,
+    onTitleSuggestion: suggestTitleIfEmpty,
+    getTitle: getTitleValue,
+    getDescription: getDescriptionValue,
+    onComposerError: setComposerError,
+    onClearComposerError: () => setComposerError(null),
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const prefersReducedMotion = useReducedMotion();
   const isAppVibe = vibeType === "app";
@@ -181,72 +193,13 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const isGithubMode = isAppVibe && appMode === "github";
   const isZipMode = isAppVibe && appMode === "zip";
   const isCodeMode = isAppVibe && appMode === "code";
-  const isAppBusy = appProgress.status === "processing";
-  const hasAttachedApp = Boolean(appAttachment?.capsuleId);
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
-
-  // Debounce code changes for live preview (300ms delay)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedCode(code);
-      setPreviewError(null); // Clear error when code changes
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [code]);
-
-  // Preview handlers
-  const handlePreviewReady = useCallback(() => {
-    setPreviewError(null);
-  }, []);
-
-  const handlePreviewError = useCallback((message: string) => {
-    setPreviewError(message);
-  }, []);
-
-  const resetInlineAdvanced = () => {
-    setAllowStorage(false);
-    setEnableParam(false);
-    setParamLabel("Intensity");
-    setParamDefault(50);
-    setParamMin(0);
-    setParamMax(100);
-    setParamStep(1);
-  };
-
-  const resetAppFlow = () => {
-    setAppAttachment(null);
-    setAppProgress({ status: "idle", active: "select", message: null });
-    setAppError(null);
-    setGithubUrl("");
-    setZipFile(null);
-    setZipSummary(null);
-    setZipImportWarnings([]);
-    if (zipInputRef.current) {
-      zipInputRef.current.value = "";
-    }
-  };
 
   const resetComposer = () => {
-    setIsExpanded(false);
-    setTitle("");
-    setDescription("");
-    setLinkUrl("");
-    setSelectedTags([]);
-    setTagInput("");
+    resetPost();
     setCode("");
     resetInlineAdvanced();
     setComposerError(null);
-    setAppMode("github");
+    handleAppModeChange("github");
     resetAppFlow();
     setImagePreview(null);
     setCoverKey(null);
@@ -261,7 +214,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     const githubPattern = /https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+/i;
     if (githubPattern.test(value) && !isAppVibe) {
       setVibeType("app");
-      setAppMode("github");
+      handleAppModeChange("github");
       setGithubUrl(value);
       setIsExpanded(true);
       trackEvent("composer_mode_detected", { type: "app", appMode: "github" });
@@ -271,12 +224,10 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const handleVibeTypeChange = (nextType: VibeType) => {
     setVibeType(nextType);
     setComposerError(null);
-    setAppError(null);
 
     if (nextType !== "app") {
       resetAppFlow();
-      setSelectedTags([]);
-      setTagInput("");
+      clearTags();
     }
 
     if (nextType !== "link") {
@@ -284,51 +235,6 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
     }
 
     trackEvent("composer_mode_changed", { type: nextType });
-  };
-
-  const handleAppModeChange = (nextMode: AppComposerMode) => {
-    setAppMode(nextMode);
-    setAppAttachment(null);
-    setAppProgress({ status: "idle", active: "select", message: null });
-    setAppError(null);
-
-    if (nextMode !== "zip") {
-      setZipFile(null);
-      setZipSummary(null);
-      setZipImportWarnings([]);
-      if (zipInputRef.current) {
-        zipInputRef.current.value = "";
-      }
-    }
-
-    trackEvent("composer_app_mode_changed", { appMode: nextMode });
-  };
-
-  const addTag = (raw: string) => {
-    const normalized = normalizeTag(raw);
-    if (!normalized) {
-      setTagInput("");
-      return;
-    }
-
-    setSelectedTags((prev) => {
-      if (prev.includes(normalized) || prev.length >= MAX_TAGS) {
-        return prev;
-      }
-      return [...prev, normalized];
-    });
-    setTagInput("");
-  };
-
-  const removeTag = (tag: string) => {
-    setSelectedTags((prev) => prev.filter((t) => t !== tag));
-  };
-
-  const handleTagKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" || event.key === "," || event.key === " ") {
-      event.preventDefault();
-      addTag(tagInput);
-    }
   };
 
   const handleImageSelect = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -387,291 +293,6 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       setCoverKey(null);
     } finally {
       setIsUploadingCover(false);
-    }
-  };
-
-  const handleZipSelect = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith(".zip")) {
-      setComposerError("Please select a ZIP file");
-      return;
-    }
-
-    setZipFile(file);
-    setComposerError(null);
-    setAppError(null);
-    setZipSummary(null);
-    setZipImportWarnings([]);
-    setAppProgress({ status: "idle", active: "select", message: null });
-  };
-
-  const handleGithubImport = async () => {
-    const trimmedUrl = githubUrl.trim();
-    if (!trimmedUrl || isAppBusy) return;
-
-    setAppAttachment(null);
-    setAppError(null);
-    setZipImportWarnings([]);
-    setAppProgress({ status: "processing", active: "analyze", message: "Importing repository" });
-
-    try {
-      const init = await buildAuthInit();
-      const response = await capsulesApi.importGithub({ url: trimmedUrl }, init);
-
-      if (response.status === 401) {
-        redirectToSignIn();
-        setAppProgress({ status: "idle", active: "select", message: null });
-        return;
-      }
-
-      const raw = await response.json();
-      const parsed = ApiImportResponseSchema.safeParse(raw);
-
-      if (!parsed.success) {
-        const message = (raw as any)?.error || "Import failed. Please check the repository URL and try again.";
-        setAppError(message);
-        setAppProgress({ status: "error", active: "analyze", message });
-        trackEvent("composer_github_import_failed", { error: message });
-        return;
-      }
-
-      const draft = toDraftCapsule(parsed.data);
-      setAppAttachment({
-        capsuleId: draft.capsuleId,
-        source: "github",
-        title: draft.manifest?.title ?? trimmedUrl,
-        warnings: draft.warnings ?? [],
-      });
-      if (!title.trim() && draft.manifest?.title) {
-        setTitle(draft.manifest.title);
-      }
-      setAppProgress({ status: "ready", active: "ready", message: "Repository imported" });
-      trackEvent("composer_github_import_success", { capsuleId: draft.capsuleId });
-    } catch (err) {
-      console.error("Failed to import from GitHub:", err);
-      setAppError("Import failed. Please try again.");
-      setAppProgress({ status: "error", active: "analyze", message: "Import failed" });
-      trackEvent("composer_github_import_error");
-    }
-  };
-
-  const handleZipImport = async () => {
-    if (!zipFile || isAppBusy) return;
-
-    setAppAttachment(null);
-    setAppError(null);
-    setZipImportWarnings([]);
-    setAppProgress({ status: "processing", active: "upload", message: "Uploading ZIP" });
-
-    setZipSummary({
-      fileName: zipFile.name,
-      totalSize: zipFile.size,
-    });
-
-    try {
-      const init = await buildAuthInit();
-      const response = await capsulesApi.importZip(zipFile, init);
-
-      if (response.status === 401) {
-        redirectToSignIn();
-        setAppProgress({ status: "idle", active: "select", message: null });
-        return;
-      }
-
-      const raw = await response.json();
-      const parsed = ApiImportResponseSchema.safeParse(raw);
-
-      if (!parsed.success) {
-        const errorList = Array.isArray((raw as any)?.errors) ? (raw as any).errors : undefined;
-        if (errorList?.length) {
-          const errorMessages = errorList.map((e: any) => (typeof e === "string" ? e : e.message));
-          const message = `Validation failed: ${errorMessages.join(", ")}`;
-          setAppError(message);
-          setAppProgress({ status: "error", active: "analyze", message });
-          trackEvent("composer_zip_import_failed", { error: "server-validation" });
-          return;
-        }
-
-        const message = (raw as any)?.error || "Upload failed. Please check your ZIP and try again.";
-        setAppError(message);
-        setAppProgress({ status: "error", active: "upload", message });
-        trackEvent("composer_zip_import_failed", { error: message });
-        return;
-      }
-
-      const draft = toDraftCapsule(parsed.data);
-
-      setZipSummary({
-        fileName: zipFile.name,
-        totalSize: draft.totalSize,
-      });
-
-      setAppAttachment({
-        capsuleId: draft.capsuleId,
-        source: "zip",
-        title: draft.manifest?.title ?? zipFile.name,
-        warnings: draft.warnings ?? [],
-        fileName: zipFile.name,
-      });
-
-      if (!title.trim() && draft.manifest?.title) {
-        setTitle(draft.manifest.title);
-      }
-
-      setZipImportWarnings(draft.warnings ?? []);
-      setAppProgress({ status: "ready", active: "ready", message: "ZIP uploaded" });
-      trackEvent("composer_zip_import_success", { capsuleId: draft.capsuleId });
-      setZipFile(null);
-      if (zipInputRef.current) {
-        zipInputRef.current.value = "";
-      }
-    } catch (err) {
-      console.error("Failed to import ZIP:", err);
-      setAppError(
-        err instanceof Error ? err.message : "Upload failed. Please check your ZIP and try again.",
-      );
-      setAppProgress({ status: "error", active: "upload", message: "Upload failed" });
-      setZipSummary(null);
-      setZipImportWarnings([]);
-      trackEvent("composer_zip_import_error");
-    }
-  };
-
-  const buildInlineApp = async () => {
-    if (isAppBusy) return;
-    const trimmedCode = code.trim();
-    if (!trimmedCode) {
-      setAppError("Add code before building your app.");
-      return;
-    }
-
-    const manifestTitle = title.trim() || "Inline app";
-    setAppAttachment(null);
-    setAppError(null);
-    setAppProgress({ status: "processing", active: "build", message: "Building inline app" });
-
-    try {
-      const capabilities = allowStorage ? ({ storage: true } as { storage?: boolean }) : undefined;
-
-      let params:
-        | Array<{
-            name: string;
-            type: "slider";
-            label: string;
-            default: number;
-            min?: number;
-            max?: number;
-            step?: number;
-          }>
-        | undefined;
-
-      if (enableParam) {
-        const rawLabel = (paramLabel || "Param").trim();
-        const base = rawLabel.toLowerCase().replace(/[^a-z0-9_]+/g, "_");
-        const safeBase = base.length > 0 ? base : "param";
-        const name = /^[a-zA-Z_]/.test(safeBase) ? safeBase : `p_${safeBase}`;
-
-        params = [
-          {
-            name,
-            type: "slider",
-            label: rawLabel || "Intensity",
-            default: paramDefault,
-            min: paramMin,
-            max: paramMax,
-            step: paramStep,
-          },
-        ];
-      }
-
-      const manifest = {
-        version: "1.0",
-        runner: "webcontainer" as const,
-        entry: "entry.tsx",
-        title: manifestTitle,
-        description: description.trim() || undefined,
-        ...(capabilities && Object.keys(capabilities).length > 0 ? { capabilities } : {}),
-        ...(params && params.length > 0 ? { params } : {}),
-      };
-
-      const formData = new FormData();
-      const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-      const manifestFile = new File([manifestBlob], "manifest.json", { type: "application/json" });
-      formData.append("manifest", manifestFile);
-
-      const hasDefaultExport = /export\s+default\s+/.test(trimmedCode);
-      const hasReactImport = /import\s+React/.test(trimmedCode);
-      const wrappedSource = hasDefaultExport
-        ? trimmedCode
-        : `${hasReactImport ? "" : 'import React from "react";\n\n'}export default function App() {\n  return (\n    <>\n${trimmedCode}\n    </>\n  );\n}`;
-
-      const entryShim = `
-import React from "react";
-import ReactDOM from "react-dom/client";
-import UserApp from "./user-code";
-
-const root = document.getElementById("root") || document.body.appendChild(document.createElement("div"));
-const mount = ReactDOM.createRoot(root);
-mount.render(React.createElement(UserApp));
-
-if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") {
-  window.vibecodrBridge.ready({ capabilities: {} });
-}
-`;
-      const entryFile = new File([entryShim], "entry.tsx", { type: "text/tsx" });
-      formData.append("entry.tsx", entryFile);
-
-      const userFile = new File([wrappedSource], "user-code.tsx", { type: "text/tsx" });
-      formData.append("user-code.tsx", userFile);
-
-      const init = await buildAuthInit();
-      const publishResponse = await capsulesApi.publish(formData, init);
-
-      if (publishResponse.status === 401) {
-        redirectToSignIn();
-        setAppProgress({ status: "idle", active: "select", message: null });
-        return;
-      }
-
-      const publishData = (await publishResponse.json()) as {
-        success?: boolean;
-        capsuleId?: string;
-        error?: string;
-        details?: string;
-        warnings?: unknown;
-      };
-
-      if (!publishResponse.ok || !publishData.success || !publishData.capsuleId) {
-        // WHY: Include bundler error details when available to help users diagnose issues
-        const baseMessage = publishData.error || "Failed to publish app. Please check your code and try again.";
-        const detailSuffix = publishData.details ? `: ${publishData.details}` : "";
-        const message = `${baseMessage}${detailSuffix}`;
-        console.error("Inline code publish failed:", message);
-        setAppError(message);
-        setAppProgress({ status: "error", active: "build", message: baseMessage });
-        trackEvent("composer_code_publish_failed", { appMode: "code", runner: "webcontainer" });
-        return;
-      }
-
-      setAppAttachment({
-        capsuleId: publishData.capsuleId,
-        source: "code",
-        title: manifestTitle,
-        warnings: Array.isArray(publishData.warnings) ? (publishData.warnings as any) : [],
-      });
-      setAppProgress({ status: "ready", active: "ready", message: "Inline app attached" });
-      trackEvent("composer_code_publish_success", {
-        appMode: "code",
-        runner: "webcontainer",
-        capsuleId: publishData.capsuleId,
-      });
-    } catch (err) {
-      console.error("Failed to publish inline app:", err);
-      setAppError("Failed to publish app. Please check your code and try again.");
-      setAppProgress({ status: "error", active: "build", message: "Publish failed" });
-      trackEvent("composer_code_publish_error");
     }
   };
 
@@ -842,16 +463,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
     }
   };
 
-  const clearZip = () => {
-    setZipFile(null);
-    setZipSummary(null);
-    setZipImportWarnings([]);
-    setAppError(null);
-    if (zipInputRef.current) {
-      zipInputRef.current.value = "";
-    }
-  };
-
   if (!isSignedIn) {
     return (
       <motion.section
@@ -901,10 +512,6 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
     (!title.trim() && !isLinkVibe) ||
     (isAppVibe && !hasAttachedApp) ||
     (isImageVibe && !coverKey);
-
-  const progressForDisplay: AppProgressState = hasAttachedApp
-    ? { status: "ready" as const, active: "ready" as const, message: "App attached" }
-    : appProgress;
   return (
     <motion.section
       layout
@@ -963,11 +570,11 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                 <Code className="h-3 w-3" />
                 App
               </Button>
-              <Button
-                type="button"
-                variant={vibeType === "longform" ? "default" : "outline"}
-                size="sm"
-                className="gap-1"
+            <Button
+              type="button"
+              variant={vibeType === "longform" ? "default" : "outline"}
+              size="sm"
+              className="gap-1"
                 onClick={() => handleVibeTypeChange("longform")}
               >
                 <FileText className="h-3 w-3" />
@@ -975,38 +582,12 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
               </Button>
             </div>
             {isAppVibe && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant={appMode === "github" ? "default" : "outline"}
-                  size="sm"
-                  className="gap-1"
-                  onClick={() => handleAppModeChange("github")}
-                >
-                  <Github className="h-3 w-3" />
-                  GitHub
-                </Button>
-                <Button
-                  type="button"
-                  variant={appMode === "zip" ? "default" : "outline"}
-                  size="sm"
-                  className="gap-1"
-                  onClick={() => handleAppModeChange("zip")}
-                >
-                  <Upload className="h-3 w-3" />
-                  ZIP
-                </Button>
-                <Button
-                  type="button"
-                  variant={appMode === "code" ? "default" : "outline"}
-                  size="sm"
-                  className="gap-1"
-                  onClick={() => handleAppModeChange("code")}
-                >
-                  <Code className="h-3 w-3" />
-                  Code
-                </Button>
-              </div>
+              <AppSourceSelector
+                appMode={appMode}
+                onSelect={handleAppModeChange}
+                disabled={isSubmitting || isAppBusy}
+                className="mt-2"
+              />
             )}
 
             <div className="space-y-2">
@@ -1066,50 +647,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                         {hasAttachedApp && <Badge variant="secondary">App attached</Badge>}
                       </div>
 
-                      <div className="grid gap-2 rounded-md bg-muted/40 p-3">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-                          {PROGRESS_STEPS.map((step) => {
-                            const state = deriveStepState(step.key, progressForDisplay, hasAttachedApp);
-                            const isError = state === "error";
-                            const isDone = state === "done";
-                            const isActive = state === "active";
-                            const icon = isError ? (
-                              <AlertCircle className="h-4 w-4 text-destructive" />
-                            ) : isDone ? (
-                              <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-                            ) : isActive ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                            ) : (
-                              <Minus className="h-4 w-4 text-muted-foreground" />
-                            );
-
-                            return (
-                              <div
-                                key={step.key}
-                                className={cn(
-                                  "flex items-center gap-2 rounded-md border px-2 py-2",
-                                  isError
-                                    ? "border-destructive/50 bg-destructive/10"
-                                    : isDone
-                                      ? "border-green-500/40 bg-green-500/5"
-                                      : isActive
-                                        ? "border-primary/40 bg-primary/5"
-                                        : "border-muted bg-background",
-                                )}
-                              >
-                                {icon}
-                                <div className="min-w-0">
-                                  <p className="text-xs font-medium leading-tight">{step.label}</p>
-                                  <p className="text-[11px] text-muted-foreground leading-tight">{step.helper}</p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {progressForDisplay.message && (
-                          <p className="text-xs text-muted-foreground">{progressForDisplay.message}</p>
-                        )}
-                      </div>
+                      <AppImportProgress progress={appProgress} hasAttachedApp={hasAttachedApp} />
                       {isGithubMode && (
                         <div className="space-y-2 rounded-md border p-3">
                           <div className="flex items-center gap-2">
@@ -1439,11 +977,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => {
-                                  setAppAttachment(null);
-                                  setAppProgress({ status: "idle", active: "select", message: null });
-                                  setAppError(null);
-                                }}
+                                onClick={clearAttachment}
                                 className="gap-1"
                               >
                                 <RefreshCw className="h-4 w-4" />
@@ -1467,7 +1001,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                                 Attached app: {appAttachment?.title || "Untitled app"}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Source: {appAttachment?.source.toUpperCase()} � Capsule ID: {appAttachment?.capsuleId}
+                                Source: {appAttachment?.source.toUpperCase()} - Capsule ID: {appAttachment?.capsuleId}
                               </p>
                             </div>
                             <div className="flex gap-2">
@@ -1475,11 +1009,7 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => {
-                                  setAppAttachment(null);
-                                  setAppProgress({ status: "idle", active: "select", message: null });
-                                  setAppError(null);
-                                }}
+                                onClick={clearAttachment}
                               >
                                 Remove
                               </Button>
