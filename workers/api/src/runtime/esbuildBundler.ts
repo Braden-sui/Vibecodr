@@ -4,6 +4,7 @@ const ESBUILD_WASM_URL = "https://unpkg.com/esbuild-wasm@0.24.0/esbuild.wasm";
 const ESBUILD_PLUGIN_NAMESPACE = "capsule-files";
 const RESOLUTION_EXTENSIONS = ["", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".json"];
 const TEXT_LOADER_SET = new Set<Loader>(["js", "ts", "tsx", "jsx", "json", "css", "text"]);
+const TEXT_ENCODER = new TextEncoder();
 
 type EsbuildModule = typeof import("esbuild-wasm");
 type EsbuildWarning = {
@@ -92,8 +93,41 @@ export async function bundleWithEsbuild(
 
   let buildResult: BuildResult;
   try {
+    // WHY: The bundled code exports a default component but nothing mounts it.
+    // We create a virtual entry point that imports the user's code and auto-mounts it.
+    // This replaces the react-runtime.js bootstrap approach for ES module bundles.
+    // Supports both default and named exports - looks for default first, then any function.
+    const virtualEntryName = "__vibecodr_mount__.tsx";
+    const autoMountWrapper = `
+import * as React from 'react';
+import * as ReactDOM from 'react-dom/client';
+import * as UserModule from './${normalizedEntry}';
+
+(function mount() {
+  try {
+    // Support both default and named exports
+    const Component = UserModule.default || Object.values(UserModule).find(v => typeof v === 'function');
+    if (!Component) {
+      // No component to mount - this is a utility module, just run it
+      if (window.vibecodrBridge?.ready) window.vibecodrBridge.ready({});
+      return;
+    }
+    const container = document.getElementById('root') || document.body;
+    const root = ReactDOM.createRoot(container);
+    root.render(React.createElement(Component, { bridge: window.vibecodrBridge || null }));
+    if (window.vibecodrBridge?.ready) window.vibecodrBridge.ready({});
+  } catch(e) {
+    console.error('[vibecodr] mount error:', e);
+    if (window.vibecodrBridge?.error) window.vibecodrBridge.error(e.message, { code: 'E-VIBECODR-2101', phase: 'mount' });
+  }
+})();
+`;
+    // Add virtual entry point to files
+    const filesWithWrapper = new Map(normalizedFiles);
+    filesWithWrapper.set(virtualEntryName, TEXT_ENCODER.encode(autoMountWrapper));
+
     buildResult = await esbuild.build({
-      entryPoints: [normalizedEntry],
+      entryPoints: [virtualEntryName],
       bundle: true,
       platform: "browser",
       format: "esm",
@@ -108,7 +142,7 @@ export async function bundleWithEsbuild(
       // `import React from 'react'` in every file. This auto-imports the JSX runtime.
       jsx: "automatic",
       jsxImportSource: "react",
-      plugins: [createEsbuildFilesystemPlugin(normalizedFiles, normalizedEntry)],
+      plugins: [createEsbuildFilesystemPlugin(filesWithWrapper, virtualEntryName)],
     });
   } catch (error) {
     console.error("Bundling error:", error);

@@ -55,7 +55,29 @@ describe("compileReactArtifact", () => {
     }
   });
 
-  it("rejects unsupported bare imports", async () => {
+  it("accepts any npm package imports (dynamic import map)", async () => {
+    // WHY: We now allow ANY npm package - the sandbox is the security boundary.
+    // All bare imports are resolved via esm.sh at runtime.
+    const code = makeCode([
+      "import React from 'react';",
+      "import { format } from 'date-fns';",
+      "import _ from 'lodash';",
+      "import { create } from 'zustand';",
+      "export default function RuntimeArtifact() { return React.createElement('div'); }",
+    ]);
+
+    const result = await compileReactArtifact({ code, maxBytes: 1024 * 1024 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Verify imports are extracted for dynamic import map
+      expect(result.imports).toContain("react");
+      expect(result.imports).toContain("date-fns");
+      expect(result.imports).toContain("lodash");
+      expect(result.imports).toContain("zustand");
+    }
+  });
+
+  it("rejects Node.js builtin imports", async () => {
     const code = makeCode([
       "import fs from 'fs';",
       "export default function RuntimeArtifact() { return null; }",
@@ -65,7 +87,8 @@ describe("compileReactArtifact", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errorCode).toBe("E-VIBECODR-1103");
-      expect(result.details).toBeDefined();
+      expect(result.message).toContain("Node.js");
+      expect(result.details?.imports).toContain("fs");
     }
   });
 
@@ -85,7 +108,7 @@ describe("compileReactArtifact", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("rejects unsupported bare imports inside additional files", async () => {
+  it("rejects Node.js builtins inside additional files", async () => {
     const code = makeCode([
       "import Helper from './helper';",
       "export default function RuntimeArtifact() { return Helper; }",
@@ -115,6 +138,46 @@ describe("compileReactArtifact", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errorCode).toBe("E-VIBECODR-1103");
+    }
+  });
+
+  it("allows Node.js imports for webcontainer runtime", async () => {
+    // WHY: WebContainer is a Node.js-like VM environment for paying customers.
+    // It should allow Node.js imports that would be blocked in browser sandbox.
+    const code = makeCode([
+      "import fs from 'fs';",
+      "import path from 'path';",
+      "export default function NodeApp() { return fs.existsSync(path.join('.')); }",
+    ]);
+
+    const result = await compileReactArtifact({
+      code,
+      runnerType: "webcontainer",
+    });
+
+    // Should compile successfully - Node.js imports allowed in webcontainer
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Node.js imports should be in the imports list
+      expect(result.imports).toContain("fs");
+      expect(result.imports).toContain("path");
+    }
+  });
+
+  it("allows Node.js imports for worker-edge runtime", async () => {
+    const code = makeCode([
+      "import crypto from 'crypto';",
+      "export default function EdgeWorker() { return crypto.randomUUID(); }",
+    ]);
+
+    const result = await compileReactArtifact({
+      code,
+      runnerType: "worker-edge",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.imports).toContain("crypto");
     }
   });
 

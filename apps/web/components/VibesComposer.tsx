@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, FormEvent, ChangeEvent, KeyboardEvent } from "react";
+import { useState, useRef, useCallback, useEffect, FormEvent, ChangeEvent, KeyboardEvent } from "react";
 import { motion } from "motion/react";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -37,6 +37,7 @@ import { formatBytes } from "@/lib/zipBundle";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { featuredTags, normalizeTag } from "@/lib/tags";
 import { ApiImportResponseSchema, toDraftCapsule } from "@vibecodr/shared";
+import { InlinePreviewFrame } from "@/components/runtime/InlinePreviewFrame";
 
 export interface VibesComposerProps {
   onPostCreated?: (post: FeedPost) => void;
@@ -159,6 +160,11 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
   const [paramMax, setParamMax] = useState(100);
   const [paramStep, setParamStep] = useState(1);
 
+  // Live preview state for code mode
+  const [debouncedCode, setDebouncedCode] = useState("");
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [coverKey, setCoverKey] = useState<string | null>(null);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
@@ -188,6 +194,24 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
       },
     };
   };
+
+  // Debounce code changes for live preview (300ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCode(code);
+      setPreviewError(null); // Clear error when code changes
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [code]);
+
+  // Preview handlers
+  const handlePreviewReady = useCallback(() => {
+    setPreviewError(null);
+  }, []);
+
+  const handlePreviewError = useCallback((message: string) => {
+    setPreviewError(message);
+  }, []);
 
   const resetInlineAdvanced = () => {
     setAllowStorage(false);
@@ -1223,17 +1247,64 @@ if (window.vibecodrBridge && typeof window.vibecodrBridge.ready === "function") 
                       )}
                       {isCodeMode && (
                         <div className="space-y-2 rounded-md border p-3">
-                          <div className="flex items-center gap-2">
-                            <Code className="h-4 w-4" />
-                            <span className="text-sm font-medium">Inline App Code</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Code className="h-4 w-4" />
+                              <span className="text-sm font-medium">Inline App Code</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowPreview(!showPreview)}
+                              className="gap-1 text-xs"
+                            >
+                              {showPreview ? "Hide" : "Show"} Preview
+                            </Button>
                           </div>
-                          <Textarea
-                            placeholder="Write your app code here. HTML stays client-static; JS/TSX runs in the sandboxed runtime."
-                            value={code}
-                            onChange={(e) => setCode(e.target.value)}
-                            rows={10}
-                            disabled={isSubmitting || isAppBusy}
-                          />
+                          
+                          {/* Split view: code editor + live preview */}
+                          <div className={cn(
+                            "grid gap-3",
+                            showPreview ? "md:grid-cols-2" : "grid-cols-1"
+                          )}>
+                            {/* Code editor */}
+                            <div className="space-y-2">
+                              <Textarea
+                                placeholder={`// Write JSX code with live preview!\n// Example:\nexport default function App() {\n  return <h1>Hello, World!</h1>;\n}`}
+                                value={code}
+                                onChange={(e) => setCode(e.target.value)}
+                                rows={12}
+                                disabled={isSubmitting || isAppBusy}
+                                className="font-mono text-sm"
+                              />
+                            </div>
+                            
+                            {/* Live preview panel */}
+                            {showPreview && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-muted-foreground">Live Preview</span>
+                                  {previewError && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      Error
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="relative h-[280px] overflow-hidden rounded-md border bg-white">
+                                  <InlinePreviewFrame
+                                    code={debouncedCode}
+                                    onReady={handlePreviewReady}
+                                    onError={handlePreviewError}
+                                    className="h-full w-full"
+                                  />
+                                </div>
+                                {previewError && (
+                                  <p className="text-xs text-destructive">{previewError}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
 
                           <div className="mt-3 space-y-3 border-t pt-3">
                             <div>

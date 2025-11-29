@@ -21,6 +21,8 @@ export interface ClientRuntimeManifest {
   version: number;
   runtimeAssets: ClientRuntimeAssets;
   bundle: ClientRuntimeBundle;
+  /** List of npm packages to include in dynamic import map (resolved via esm.sh) */
+  imports?: string[];
   cspNonce?: string;
 }
 
@@ -33,6 +35,7 @@ interface WorkerRuntimeManifestResponse {
     artifactId?: string | number;
     type?: string;
     cspNonce?: string | null;
+    imports?: string[];
     runtime?: {
       version?: string;
       assets?: {
@@ -94,6 +97,7 @@ export async function loadRuntimeManifest(artifactId: string): Promise<ClientRun
 
   const bundle = serverManifest.bundle ?? {};
   const cspNonce = typeof serverManifest.cspNonce === "string" ? serverManifest.cspNonce : undefined;
+  const imports = Array.isArray(serverManifest.imports) ? serverManifest.imports : undefined;
 
   return {
     artifactId: String(data.artifactId ?? serverManifest.artifactId ?? artifactId),
@@ -110,6 +114,7 @@ export async function loadRuntimeManifest(artifactId: string): Promise<ClientRun
       sizeBytes: Number(bundle.sizeBytes ?? 0),
       digest: String(bundle.digest ?? ""),
     },
+    imports,
     cspNonce,
   };
 }

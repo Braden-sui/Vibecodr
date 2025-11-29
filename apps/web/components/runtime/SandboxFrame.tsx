@@ -50,6 +50,40 @@ function getBundleOrigin(bundleUrl: string | undefined): string | null {
   }
 }
 
+/**
+ * Build a dynamic import map from the list of npm packages discovered in the user's code.
+ * All packages are resolved via esm.sh CDN which converts npm packages to ES modules.
+ * WHY: This allows users to import ANY npm package without needing a manual allowlist.
+ */
+function buildDynamicImportMap(imports: string[], nonce: string): string {
+  if (imports.length === 0) {
+    // Fallback: always include react and react-dom for the auto-mount wrapper
+    imports = ["react", "react-dom"];
+  }
+
+  // Ensure react and react-dom are always included (required by auto-mount wrapper)
+  const packages = new Set(imports);
+  packages.add("react");
+  packages.add("react-dom");
+
+  // Build import map entries
+  const entries: string[] = [];
+  for (const pkg of packages) {
+    const esmUrl = `https://esm.sh/${pkg}`;
+    // Add both exact match and subpath pattern
+    entries.push(`    "${pkg}": "${esmUrl}"`);
+    entries.push(`    "${pkg}/": "${esmUrl}/"`);
+  }
+
+  return `<script type="importmap" nonce="${nonce}">
+{
+  "imports": {
+${entries.join(",\n")}
+  }
+}
+</script>`;
+}
+
 function buildSandboxCsp(nonce: string, bundleUrl?: string, isHtmlRuntime?: boolean): string {
   const mode = getRuntimeBundleNetworkMode();
   const bundleOrigin = getBundleOrigin(bundleUrl);
@@ -160,31 +194,10 @@ export function buildSandboxFrameSrcDoc({
   // WHY: React bundles are ES modules that import from 'react', 'react-dom', etc.
   // Import maps resolve these bare specifiers to esm.sh CDN which provides proper ES modules.
   // HTML bundles don't need React, so we skip the import map.
-  // INVARIANT: Keep this list aligned with commonly used libraries users might import.
+  // The manifest.imports array contains all npm packages discovered in the user's code.
   const reactImportMap = isHtmlRuntime
     ? ""
-    : `<script type="importmap" nonce="${nonce}">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18",
-    "react/": "https://esm.sh/react@18/",
-    "react-dom": "https://esm.sh/react-dom@18",
-    "react-dom/": "https://esm.sh/react-dom@18/",
-    "lucide-react": "https://esm.sh/lucide-react@0.460",
-    "recharts": "https://esm.sh/recharts@2",
-    "recharts/": "https://esm.sh/recharts@2/",
-    "d3": "https://esm.sh/d3@7",
-    "d3/": "https://esm.sh/d3@7/",
-    "three": "https://esm.sh/three@0.170",
-    "three/": "https://esm.sh/three@0.170/",
-    "clsx": "https://esm.sh/clsx@2",
-    "framer-motion": "https://esm.sh/framer-motion@11",
-    "framer-motion/": "https://esm.sh/framer-motion@11/",
-    "motion": "https://esm.sh/framer-motion@11",
-    "motion/": "https://esm.sh/framer-motion@11/"
-  }
-}
-</script>`;
+    : buildDynamicImportMap(manifest.imports ?? [], nonce);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -245,14 +258,21 @@ export const SandboxFrame = forwardRef<HTMLIFrameElement, SandboxFrameProps>(fun
 
   useImperativeHandle(forwardedRef, () => iframeRef.current as HTMLIFrameElement, []);
 
+  // Track if we've received a ready signal from the bridge
+  const bridgeReadyRef = useRef(false);
+
+  // Reset ready state when artifact changes
+  useEffect(() => {
+    bridgeReadyRef.current = false;
+  }, [manifest.artifactId]);
+
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
     const loadHandler = () => {
-      if (typeof onReady === "function") {
-        onReady();
-      }
+      // Don't fire onReady on iframe load - wait for bridge ready signal
+      // This ensures we only signal ready after the component mounts
     };
 
     const errorHandler = () => {
@@ -268,7 +288,58 @@ export const SandboxFrame = forwardRef<HTMLIFrameElement, SandboxFrameProps>(fun
       iframe.removeEventListener("load", loadHandler);
       iframe.removeEventListener("error", errorHandler);
     };
-  }, [onReady, onError]);
+  }, [onError]);
+
+  // WHY: Listen for postMessage from the bridge inside the iframe.
+  // The bridge sends "ready" when the component mounts and "error" if mounting fails.
+  // Without this, errors from the auto-mount wrapper are silently lost.
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+
+      // Only accept messages from our iframe
+      // Sandboxed iframes with srcdoc have null origin
+      if (event.source !== iframe.contentWindow) return;
+
+      const data = event.data;
+      if (!data || typeof data !== "object" || data.source !== "vibecodr-artifact-runtime") return;
+
+      const type = data.type;
+      const payload = data.payload;
+
+      switch (type) {
+        case "ready":
+          if (!bridgeReadyRef.current) {
+            bridgeReadyRef.current = true;
+            onReady?.();
+          }
+          break;
+
+        case "error": {
+          const message = typeof payload?.message === "string"
+            ? payload.message
+            : typeof payload === "string"
+              ? payload
+              : "Runtime error";
+          onError?.(message);
+          break;
+        }
+
+        case "policyViolation": {
+          const message = typeof payload?.message === "string"
+            ? payload.message
+            : "Policy violation";
+          const code = typeof payload?.code === "string" ? payload.code : undefined;
+          onPolicyViolation?.({ message, code });
+          break;
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [onReady, onError, onPolicyViolation]);
 
   const combinedClassName = ["block", "w-full", "h-full", "border-0", "bg-transparent", className]
     .filter(Boolean)

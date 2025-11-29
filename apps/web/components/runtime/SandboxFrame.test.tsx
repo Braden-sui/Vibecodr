@@ -47,7 +47,7 @@ describe("SandboxFrame", () => {
     expect(iframe.getAttribute("srcdoc")).toContain("window.vibecodrRuntimeOptions");
   });
 
-  it("fires ready and error callbacks", () => {
+  it("fires ready callback on bridge postMessage", () => {
     const onReady = vi.fn();
     const onError = vi.fn();
 
@@ -61,10 +61,61 @@ describe("SandboxFrame", () => {
       />
     );
 
-    const iframe = getByTitle("runtime-frame");
-    fireEvent.load(iframe);
-    expect(onReady).toHaveBeenCalled();
+    const iframe = getByTitle("runtime-frame") as HTMLIFrameElement;
 
+    // Simulate postMessage from bridge inside iframe
+    const messageEvent = new MessageEvent("message", {
+      data: { type: "ready", source: "vibecodr-artifact-runtime", payload: {} },
+      source: iframe.contentWindow,
+    });
+    window.dispatchEvent(messageEvent);
+
+    expect(onReady).toHaveBeenCalled();
+  });
+
+  it("fires error callback on bridge error postMessage", () => {
+    const onReady = vi.fn();
+    const onError = vi.fn();
+
+    const { getByTitle } = render(
+      <SandboxFrame
+        manifest={manifest}
+        bundleUrl="https://cdn.example/artifacts/bundle.js"
+        onReady={onReady}
+        onError={onError}
+        title="runtime-frame"
+      />
+    );
+
+    const iframe = getByTitle("runtime-frame") as HTMLIFrameElement;
+
+    // Simulate error postMessage from bridge
+    const messageEvent = new MessageEvent("message", {
+      data: {
+        type: "error",
+        source: "vibecodr-artifact-runtime",
+        payload: { message: "Component mount failed" },
+      },
+      source: iframe.contentWindow,
+    });
+    window.dispatchEvent(messageEvent);
+
+    expect(onError).toHaveBeenCalledWith("Component mount failed");
+  });
+
+  it("fires error callback on iframe error event", () => {
+    const onError = vi.fn();
+
+    const { getByTitle } = render(
+      <SandboxFrame
+        manifest={manifest}
+        bundleUrl="https://cdn.example/artifacts/bundle.js"
+        onError={onError}
+        title="runtime-frame"
+      />
+    );
+
+    const iframe = getByTitle("runtime-frame");
     const errorEvent = new Event("error", { bubbles: true, cancelable: true });
     iframe.dispatchEvent(errorEvent);
 
@@ -115,9 +166,15 @@ describe("SandboxFrame", () => {
       },
     };
 
+    // Add imports to manifest for dynamic import map
+    const manifestWithImports = {
+      ...reactManifest,
+      imports: ["react", "react-dom", "date-fns", "lodash"],
+    };
+
     const { getByTitle } = render(
       <SandboxFrame
-        manifest={reactManifest}
+        manifest={manifestWithImports}
         bundleUrl="https://cdn.example/artifacts/bundle.js"
         title="react-runtime-frame"
       />
@@ -125,12 +182,12 @@ describe("SandboxFrame", () => {
 
     const srcdoc = getByTitle("react-runtime-frame").getAttribute("srcdoc") || "";
 
-    // Verify import map is included with common libraries
+    // Verify import map is included with discovered packages (dynamic)
     expect(srcdoc).toContain("importmap");
-    expect(srcdoc).toContain("https://esm.sh/react@18");
-    expect(srcdoc).toContain("https://esm.sh/react-dom@18");
-    expect(srcdoc).toContain("https://esm.sh/lucide-react");
-    expect(srcdoc).toContain("https://esm.sh/framer-motion");
+    expect(srcdoc).toContain("https://esm.sh/react");
+    expect(srcdoc).toContain("https://esm.sh/react-dom");
+    expect(srcdoc).toContain("https://esm.sh/date-fns");
+    expect(srcdoc).toContain("https://esm.sh/lodash");
 
     // Verify bundle is loaded as ES module
     expect(srcdoc).toContain('type="module"');

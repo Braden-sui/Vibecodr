@@ -25,6 +25,8 @@ export interface RuntimeManifest {
     sizeBytes: number;
     digest: string;
   };
+  /** List of npm packages to include in the dynamic import map (resolved via esm.sh) */
+  imports?: string[];
   cspNonce?: string;
 }
 
@@ -35,6 +37,8 @@ export interface BuildRuntimeManifestInput {
   bundleSizeBytes: number;
   bundleDigest: string;
   runtimeVersion?: string;
+  /** List of npm packages discovered in the bundle (for dynamic import map) */
+  imports?: string[];
 }
 
 export function buildRuntimeManifest(input: BuildRuntimeManifestInput): RuntimeManifest {
@@ -58,5 +62,6 @@ export function buildRuntimeManifest(input: BuildRuntimeManifestInput): RuntimeM
       sizeBytes: input.bundleSizeBytes,
       digest: input.bundleDigest,
     },
+    imports: input.imports,
   };
 }
