@@ -9,8 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { LiveSession } from "./LiveSessionCard";
 import { trackEvent } from "@/lib/analytics";
 import { liveApi } from "@/lib/api";
-import { useAuth } from "@clerk/clerk-react";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { Plan, normalizePlan } from "@vibecodr/shared";
 
 interface Props {
@@ -25,18 +24,7 @@ export function LiveWaitlistDialog({ open, onOpenChange, session }: Props) {
   const [plan, setPlan] = useState<Plan>(Plan.FREE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const { getToken } = useAuth();
-
-  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }, [getToken]);
+  const buildAuthInit = useBuildAuthInit();
 
   const resetForm = () => {
     setEmail("");

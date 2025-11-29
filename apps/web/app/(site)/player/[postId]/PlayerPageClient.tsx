@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { type PlayerIframeHandle } from "@/components/Player/PlayerIframe";
 import { PlayerDrawer } from "@/components/Player/PlayerDrawer";
 import { ParamControls } from "@/components/Player/ParamControls";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/api";
 import { trackClientError, trackEvent, trackRuntimeEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
+import { useBuildAuthInit } from "@/lib/client-auth";
 import type { ManifestParam } from "@vibecodr/shared/manifest";
 import { readPreviewHandoff, type PreviewLogEntry } from "@/lib/handoff";
 import { budgeted } from "@/lib/perf";
@@ -116,7 +117,7 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
   const rateLimitCooldownUntilRef = useRef<number>(0);
   const handoffPrefillAppliedRef = useRef(false);
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const baseBuildAuthInit = useBuildAuthInit();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const metadata: PublicMetadata =
@@ -171,16 +172,16 @@ export default function PlayerPageClient({ postId }: PlayerPageClientProps) {
     canonicalUrl,
   });
 
+  // Wrap the centralized buildAuthInit to also cache the auth header for runtime use
   const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    authHeaderRef.current = `Bearer ${token}`;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
+    const init = await baseBuildAuthInit();
+    if (init?.headers) {
+      const headers = init.headers as Record<string, string>;
+      if (headers.Authorization) {
+        authHeaderRef.current = headers.Authorization;
+      }
+    }
+    return init;
   };
 
   const handleDrawerTabChange = useCallback(

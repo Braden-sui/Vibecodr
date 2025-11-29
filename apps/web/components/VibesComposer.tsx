@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, FormEvent, ChangeEvent } from "react";
 import { motion } from "motion/react";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { postsApi, coversApi, type FeedPost } from "@/lib/api";
 import { trackEvent } from "@/lib/analytics";
@@ -76,7 +76,6 @@ const toWarningText = (warning: string | { path?: string; message: string }): st
  */
 export function VibesComposer({ onPostCreated, className }: VibesComposerProps) {
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
 
   const [composerError, setComposerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,17 +115,7 @@ export function VibesComposer({ onPostCreated, className }: VibesComposerProps) 
 
   const getTitleValue = useCallback(() => title, [title]);
   const getDescriptionValue = useCallback(() => description, [description]);
-
-  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }, [getToken]);
+  const buildAuthInit = useBuildAuthInit();
 
   const {
     appMode,

@@ -29,6 +29,7 @@ type ProfilePostRow = {
   capsule_id?: string | null;
   manifest_json?: string | null;
   capsule_hash?: string | null;
+  quarantined?: number | null;
 };
 
 type CountRow = { post_id?: unknown; count?: unknown };
@@ -141,17 +142,22 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
     // Get posts with capsule info
     const authedUser = await verifyAuth(req, env);
     const isMod = !!(authedUser && isModeratorOrAdmin(authedUser));
+    const isOwnProfile = !!(authedUser && authedUser.userId === String(user.id));
 
     let query = `
       SELECT
         p.id, p.type, p.title, p.description, p.tags, p.cover_key, p.created_at,
+        p.quarantined,
         c.id as capsule_id, c.manifest_json, c.hash as capsule_hash
       FROM posts p
       LEFT JOIN capsules c ON p.capsule_id = c.id
       WHERE p.author_id = ?`;
 
-    // Hide quarantined posts from profile timelines for all viewers, including moderators/admins.
-    query += " AND (p.quarantined IS NULL OR p.quarantined = 0)";
+    // Authors can see their own quarantined posts; others cannot.
+    // This allows authors to know when their content has been moderated.
+    if (!isOwnProfile) {
+      query += " AND (p.quarantined IS NULL OR p.quarantined = 0)";
+    }
 
     query += " ORDER BY p.created_at DESC LIMIT ? OFFSET ?";
 
@@ -345,6 +351,9 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
         }
       }
 
+      // Include quarantined flag only for own posts that are quarantined
+      const isQuarantined = Number(row.quarantined ?? 0) === 1;
+
       return {
         id: row.id,
         type: row.type,
@@ -362,6 +371,8 @@ export const getUserPosts: Handler = async (req, env, ctx, params) => {
           runs: runsCount,
         },
         viewer,
+        // Only include quarantined field when true (for own profile view)
+        ...(isOwnProfile && isQuarantined ? { quarantined: true } : {}),
       };
     });
 

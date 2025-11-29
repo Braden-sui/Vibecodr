@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { capsulesApi, postsApi } from "@/lib/api";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import type { CapsuleDraft, DraftArtifact } from "./StudioShell";
 
 interface PublishTabProps {
@@ -35,7 +34,7 @@ type CheckStatus = "pass" | "warning" | "fail";
  */
 export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
   const navigate = useNavigate();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const [title, setTitle] = useState("My Awesome Vibe");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -124,17 +123,6 @@ export function PublishTab({ draft, onDraftChange }: PublishTabProps) {
   const hasWarnings = checks.some((check) => check.status === "warning") || capsuleWarnings.length > 0;
 
   const manifestWarnings = draft?.validationWarnings ?? [];
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   const addTag = () => {
     if (!tagInput.trim()) return;

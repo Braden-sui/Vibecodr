@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth, useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { adminApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Plan } from "@vibecodr/shared";
 import { Plan as PlanEnum } from "@vibecodr/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useBuildAuthInit } from "@/lib/client-auth";
 
 type AuthzState = "unknown" | "unauthenticated" | "forbidden" | "authorized";
 type PublicMetadata = { role?: string } | null;
@@ -18,7 +19,7 @@ const PLAN_OPTIONS: Plan[] = [PlanEnum.FREE, PlanEnum.CREATOR, PlanEnum.PRO, Pla
 
 export default function AdminPlansPage() {
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -37,17 +38,6 @@ export default function AdminPlansPage() {
   const [users, setUsers] = useState<
     Array<{ id: string; handle: string; name: string | null; plan: string; bio: string | null; email: string | null }>
   >([]);
-
-  const buildAuthInit = async (): Promise<RequestInit | null> => {
-    if (typeof getToken !== "function") return null;
-    const token = await getToken({ template: "workers" });
-    if (!token) return null;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   const handleSearch = async () => {
     setSearchError(null);

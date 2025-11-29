@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser, useAuth, useClerk } from "@clerk/clerk-react";
+import { useUser, useClerk } from "@clerk/clerk-react";
 import { Link } from "react-router-dom";
 import { Loader2, Save, User, Globe, Github, Twitter, LayoutTemplate } from "lucide-react";
 
@@ -19,14 +19,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { QuotaUsage } from "@/components/QuotaUsage";
 import { profileApi } from "@/lib/api";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import KineticHeader from "@/src/components/KineticHeader";
 
 export default function SettingsPage() {
   const { user, isSignedIn, isLoaded } = useUser();
-  const { getToken } = useAuth();
   const { openUserProfile } = useClerk();
+  const buildAuthInit = useBuildAuthInit();
   
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -87,17 +87,6 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, [user]);
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

@@ -6,6 +6,7 @@ import { requireCapsuleManifest } from "../capsule-manifest";
 import { requireUser } from "../auth";
 import { getUserPlan, Plan } from "../storage/quotas";
 import { json } from "../lib/responses";
+import { hashToShard } from "../lib/sharding";
 
 interface RateLimitState {
   count: number;
@@ -124,8 +125,25 @@ export function getBlockedAddressReason(hostnameInput: string): { message: strin
  */
 async function checkRateLimit(env: Env, capsuleId: string, host: string): Promise<{ allowed: boolean; resetAt?: number; remaining?: number }> {
   const key = `${RATE_LIMIT_KEY_PREFIX}${capsuleId}:${host}`;
-  const now = Date.now();
 
+  const doResult =
+    (await checkRateLimitDo(env, key, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SEC)) ??
+    null;
+  if (doResult) {
+    return {
+      allowed: doResult.allowed,
+      remaining: doResult.remaining,
+      resetAt: doResult.resetAt,
+    };
+  }
+
+  const d1Result = await checkD1RateLimit(env, key, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SEC);
+  if (!d1Result.allowed) {
+    return { allowed: false, remaining: d1Result.remaining, resetAt: d1Result.resetAt };
+  }
+
+  // Final fallback to KV/in-memory to avoid dropping requests when D1/DO are unavailable.
+  const now = Date.now();
   const state = await readRateLimitState(env, key);
 
   if (!state || now >= state.resetAt) {
@@ -219,6 +237,33 @@ async function checkD1RateLimit(env: Env, key: string, limit: number, windowSec 
   }
 }
 
+async function checkRateLimitDo(
+  env: Env,
+  key: string,
+  limit: number,
+  windowSec = RATE_LIMIT_WINDOW_SEC
+): Promise<DbRateLimitResult | null> {
+  if (!env.RATE_LIMIT_SHARD) return null;
+  const shardId = env.RATE_LIMIT_SHARD.idFromName(hashToShard(key));
+  const stub = env.RATE_LIMIT_SHARD.get(shardId);
+  try {
+    const res = await stub.fetch("https://do/rate-limit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, limit, windowSec }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { allowed: boolean; remaining: number; resetMs: number };
+    return { allowed: data.allowed, remaining: data.remaining, resetAt: data.resetMs };
+  } catch (err) {
+    console.error("E-VIBECODR-0310 rate limit DO failed (fallback to D1)", {
+      key,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 function getClientIp(req: Request): string | null {
   const cfIp = req.headers.get("cf-connecting-ip");
   if (cfIp && cfIp.trim()) return cfIp.trim();
@@ -304,14 +349,18 @@ export const netProxy: Handler = requireUser(async (req, env, _ctx, _params, use
       return json({ error: "Network proxy is disabled for free plan", code: "E-VIBECODR-0305" }, 403);
     }
 
-    const userRate = await checkD1RateLimit(env, `user:${capsule.owner_id}`, USER_RATE_LIMITS[plan]);
+    const userRate =
+      (await checkRateLimitDo(env, `user:${capsule.owner_id}`, USER_RATE_LIMITS[plan])) ??
+      (await checkD1RateLimit(env, `user:${capsule.owner_id}`, USER_RATE_LIMITS[plan]));
     if (!userRate.allowed) {
       return rateLimitExceeded("user", userRate, USER_RATE_LIMITS[plan]);
     }
 
     let ipRate: DbRateLimitResult | null = null;
     if (clientIp) {
-      ipRate = await checkD1RateLimit(env, `ip:${clientIp}`, IP_RATE_LIMIT);
+      ipRate =
+        (await checkRateLimitDo(env, `ip:${clientIp}`, IP_RATE_LIMIT)) ??
+        (await checkD1RateLimit(env, `ip:${clientIp}`, IP_RATE_LIMIT));
       if (!ipRate.allowed) {
         return rateLimitExceeded("ip", ipRate, IP_RATE_LIMIT);
       }

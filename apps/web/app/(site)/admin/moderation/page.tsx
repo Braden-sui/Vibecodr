@@ -7,13 +7,14 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { trackClientError, trackEvent } from "@/lib/analytics";
 import { moderationApi } from "@/lib/api";
+import { useBuildAuthInit } from "@/lib/client-auth";
 
 type ModerationReport = {
   id: string;
@@ -59,7 +60,7 @@ function buildResolveAuditNote(params: {
 
 export default function ModerationQueue() {
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -72,17 +73,6 @@ export default function ModerationQueue() {
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [authzState, setAuthzState] = useState<AuthzState>("unknown");
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   useEffect(() => {
     let cancelled = false;

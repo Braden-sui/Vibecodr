@@ -120,6 +120,7 @@ function createEnv(runtimeFlag: string): Env & { __rows?: DbRow[] } {
     CLERK_JWT_AUDIENCE: "",
     BUILD_COORDINATOR_DURABLE: {} as any,
     ARTIFACT_COMPILER_DURABLE: {} as any,
+    RATE_LIMIT_SHARD: {} as any,
     vibecodr_analytics_engine: {} as any,
     RUNTIME_ARTIFACTS_ENABLED: runtimeFlag,
   };

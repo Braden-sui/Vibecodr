@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { moderationApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { trackClientError } from "@/lib/analytics";
+import { useBuildAuthInit } from "@/lib/client-auth";
 
 type FlaggedItem = {
   id: string;
@@ -47,7 +48,7 @@ function buildAuditNotes(params: { action: "quarantine" | "remove"; item: Flagge
 
 export default function FlaggedPostsPage() {
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -59,17 +60,6 @@ export default function FlaggedPostsPage() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<FlaggedItem[]>([]);
   const [authzState, setAuthzState] = useState<AuthzState>("unknown");
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   useEffect(() => {
     let cancelled = false;

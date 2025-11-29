@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { moderationApi } from "@/lib/api";
+import { useBuildAuthInit } from "@/lib/client-auth";
 
 type AuditEntry = {
   id: string;
@@ -23,7 +24,7 @@ type PublicMetadata = {
 
 export default function ModerationAuditPage() {
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -31,17 +32,6 @@ export default function ModerationAuditPage() {
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<AuditEntry[]>([]);
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   useEffect(() => {
     if (!isAdmin) return;

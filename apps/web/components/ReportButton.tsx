@@ -20,12 +20,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { Flag, AlertTriangle } from "lucide-react";
 import { moderationApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
-import { useAuth } from "@clerk/clerk-react";
 
 interface ReportButtonProps {
   targetType: "post" | "comment";
@@ -48,18 +47,7 @@ export function ReportButton({ targetType, targetId, variant = "icon", className
   const [details, setDetails] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const { getToken } = useAuth();
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
+  const buildAuthInit = useBuildAuthInit();
 
   const handleSubmit = async () => {
     if (!reason) return;

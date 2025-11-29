@@ -30,11 +30,11 @@ import {
   Code,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { artifactsApi, capsulesApi, moderationApi, postsApi, usersApi } from "@/lib/api";
 import { ReportButton } from "@/components/ReportButton";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,7 +106,7 @@ function resolveRunnerOrigins(capsuleId?: string, artifactId?: string | null): s
 export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
   const navigate = useNavigate();
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -181,17 +181,6 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
     setIsRunning(false);
     releasePreviewSlot();
   }, [post.id, releasePreviewSlot]);
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -906,6 +895,16 @@ export function FeedCard({ post, onTagClick, onPostModerated }: FeedCardProps) {
       ref={cardRef}
       className="group relative overflow-hidden rounded-2xl vc-glass shadow-vc-soft transition-all duration-200 hover:shadow-vc-soft-lg p-0"
     >
+      {/* Quarantine banner - only shown to authors viewing their own quarantined posts */}
+      {post.quarantined && (
+        <div className="flex items-center gap-2 bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 text-sm">
+          <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <span className="text-amber-800 dark:text-amber-200">
+            <strong>Only you can see this.</strong> This post has been quarantined by moderation and is hidden from other users.
+          </span>
+        </div>
+      )}
+
       {/* Cover/Preview Area (apps only) */}
       {isApp && (
         <div

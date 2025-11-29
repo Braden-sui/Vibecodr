@@ -251,6 +251,7 @@ const createEnv = (): Env => {
     CLERK_JWT_AUDIENCE: "",
     BUILD_COORDINATOR_DURABLE: {} as any,
     ARTIFACT_COMPILER_DURABLE: artifactCompilerNs,
+    RATE_LIMIT_SHARD: {} as any,
     vibecodr_analytics_engine: {} as any,
     RUNTIME_ARTIFACTS_ENABLED: "true",
   };

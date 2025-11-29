@@ -8,15 +8,17 @@ import {
   ERROR_POST_STATS_UPDATE_FAILED,
 } from "./counters";
 
-const createEnv = (): Env => ({
-  DB: {
-    prepare: vi.fn().mockReturnThis(),
-    bind: vi.fn().mockReturnThis(),
-    run: vi.fn().mockResolvedValue(undefined),
-  } as any,
-  R2: {} as any,
-  ALLOWLIST_HOSTS: "[]",
-} as any);
+const createEnv = (overrides: Partial<Env> = {}): Env =>
+  ({
+    DB: {
+      prepare: vi.fn().mockReturnThis(),
+      bind: vi.fn().mockReturnThis(),
+      run: vi.fn().mockResolvedValue(undefined),
+    } as any,
+    R2: {} as any,
+    ALLOWLIST_HOSTS: "[]",
+    ...overrides,
+  } as any);
 
 describe("incrementPostStats", () => {
   it("no-ops when all deltas are zero or undefined", async () => {
@@ -49,6 +51,27 @@ describe("incrementPostStats", () => {
 
     await expect(incrementPostStats(env, "p1", { likesDelta: 1 })).rejects.toThrow("boom");
   });
+
+  it("routes updates to the counter DO when available", async () => {
+    const doFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body));
+      expect(payload.op).toBe("incrementPost");
+      expect(payload.shadow).toBe(false);
+      expect(payload.likesDelta).toBe(1);
+      return new Response(JSON.stringify({ ok: true }), { status: 202 });
+    });
+    const env = createEnv({
+      COUNTER_SHARD: {
+        idFromName: vi.fn((n: any) => n),
+        get: vi.fn(() => ({ fetch: doFetch })),
+      } as any,
+    });
+
+    await incrementPostStats(env, "p-do", { likesDelta: 1 });
+
+    expect(doFetch).toHaveBeenCalledTimes(1);
+    expect((env.DB as any).prepare).not.toHaveBeenCalled();
+  });
 });
 
 describe("incrementUserCounters", () => {
@@ -62,6 +85,26 @@ describe("incrementUserCounters", () => {
     const bindArgs = (env.DB as any).bind.mock.calls[0];
     expect(placeholderCount).toBe(bindArgs.length);
     expect(bindArgs).toEqual([2, -3, "u1"]);
+  });
+
+  it("falls back to DB when counter DO is in shadow mode", async () => {
+    const doFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body));
+      expect(payload.shadow).toBe(true);
+      return new Response(JSON.stringify({ ok: true }), { status: 202 });
+    });
+    const env = createEnv({
+      COUNTER_DO_MODE: "shadow",
+      COUNTER_SHARD: {
+        idFromName: vi.fn((n: any) => n),
+        get: vi.fn(() => ({ fetch: doFetch })),
+      } as any,
+    });
+
+    await incrementUserCounters(env, "u-shadow", { runsDelta: 1 });
+
+    expect(doFetch).toHaveBeenCalledTimes(1);
+    expect((env.DB as any).prepare).toHaveBeenCalledTimes(1);
   });
 });
 

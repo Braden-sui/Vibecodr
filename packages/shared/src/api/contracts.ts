@@ -57,6 +57,8 @@ export const ApiFeedPostSchema = z.object({
   stats: ApiPostStatsSchema,
   viewer: ApiFeedViewerStateSchema.optional(),
   score: z.number().optional(),
+  // Quarantine status - only present when viewing own quarantined posts
+  quarantined: z.boolean().optional(),
 });
 
 export const ApiFeedResponseSchema = z.object({

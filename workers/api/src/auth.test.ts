@@ -127,6 +127,7 @@ describe("verifyAuth", () => {
       CLERK_JWT_AUDIENCE: TEST_AUDIENCE,
       BUILD_COORDINATOR_DURABLE: {} as DurableObjectNamespace,
       ARTIFACT_COMPILER_DURABLE: {} as DurableObjectNamespace,
+      RATE_LIMIT_SHARD: {} as DurableObjectNamespace,
       vibecodr_analytics_engine: {} as AnalyticsEngineDataset,
       RUNTIME_ARTIFACTS_ENABLED: undefined,
       ...overrides,

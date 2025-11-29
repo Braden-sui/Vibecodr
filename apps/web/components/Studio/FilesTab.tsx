@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
+import { useBuildAuthInit } from "@/lib/client-auth";
 import { AlertCircle, CheckCircle2, FileCode, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ export function FilesTab({
   isHydrating = false,
 }: FilesTabProps) {
   const capsuleId = draft?.capsuleId;
-  const { getToken } = useAuth();
+  const defaultBuildAuthInit = useBuildAuthInit();
   const [files, setFiles] = useState<FileSummary[]>([]);
   const [totalSize, setTotalSize] = useState<number>(0);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -78,11 +78,8 @@ export function FilesTab({
     if (typeof buildAuthInitProp === "function") {
       return buildAuthInitProp();
     }
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return { headers: { Authorization: `Bearer ${token}` } };
-  }, [buildAuthInitProp, getToken]);
+    return defaultBuildAuthInit();
+  }, [buildAuthInitProp, defaultBuildAuthInit]);
 
   const refreshSummary = useCallback(async () => {
     if (!capsuleId) return;

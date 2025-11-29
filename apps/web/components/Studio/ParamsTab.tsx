@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import { Plus, Trash2, GripVertical, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ParamControls } from "@/components/Player/ParamControls";
 import { capsulesApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
+import { useBuildAuthInit } from "@/lib/client-auth";
 import { ApiUpdateManifestResponseSchema } from "@vibecodr/shared";
 import { paramSchema, type ManifestParam } from "@vibecodr/shared/manifest";
 import type { CapsuleDraft, StudioTab } from "./StudioShell";
@@ -47,7 +47,7 @@ export function ParamsTab({
 }: ParamsTabProps) {
   const capsuleId = draft?.capsuleId;
   const manifest = draft?.manifest;
-  const { getToken } = useAuth();
+  const defaultBuildAuthInit = useBuildAuthInit();
   const [params, setParams] = useState<ManifestParam[]>([]);
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -84,11 +84,8 @@ export function ParamsTab({
     if (typeof buildAuthInitProp === "function") {
       return buildAuthInitProp();
     }
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return { headers: { Authorization: `Bearer ${token}` } };
-  }, [buildAuthInitProp, getToken]);
+    return defaultBuildAuthInit();
+  }, [buildAuthInitProp, defaultBuildAuthInit]);
 
   useEffect(() => {
     if (manifest?.params) {

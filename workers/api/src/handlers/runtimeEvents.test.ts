@@ -15,7 +15,7 @@ import {
 } from "./runtimeEvents";
 import { ERROR_RUNTIME_ANALYTICS_FAILED } from "@vibecodr/shared";
 
-const makeEnv = () => {
+const makeEnv = (overrides: Partial<Env> = {}) => {
   const boundValues: any[][] = [];
   const db = {
     prepare: vi.fn(() => ({
@@ -39,6 +39,8 @@ const makeEnv = () => {
     CLERK_JWT_ISSUER: "test-issuer",
     BUILD_COORDINATOR_DURABLE: {} as any,
     ARTIFACT_COMPILER_DURABLE: {} as any,
+    RATE_LIMIT_SHARD: {} as any,
+    ...overrides,
   };
 
   return { env, boundValues };
@@ -106,6 +108,53 @@ describe("runtimeEvents rate limit store", () => {
 });
 
 describe("runtimeEvents recordRuntimeEvent", () => {
+  it("routes events to the DO shard when available and skips inline DB writes", async () => {
+    const { env } = makeEnv({
+      RUNTIME_EVENT_SHARD: {
+        idFromName: vi.fn((name: any) => name),
+        get: vi.fn(() => ({
+          fetch: vi.fn(async (_url: string, init: RequestInit) => {
+            const parsed = JSON.parse(String(init.body));
+            expect(parsed.event).toBe("capsule.runtime");
+            expect(parsed.id).toBeTruthy();
+            return new Response(JSON.stringify({ ok: true, buffered: 1 }), {
+              status: 202,
+              headers: { "content-type": "application/json" },
+            });
+          }),
+        })),
+      } as any,
+    });
+    const req = new Request("https://worker.test/api/runtime-events", {
+      method: "POST",
+      body: JSON.stringify({ event: "capsule.runtime", capsuleId: "cap-do" }),
+    });
+
+    const res = await recordRuntimeEvent(req, env, noopCtx, noopParams);
+    expect(res.status).toBe(202);
+    expect((env.DB as any).prepare).not.toHaveBeenCalled();
+  });
+
+  it("still persists inline when runtime event DO is in shadow mode", async () => {
+    const { env, boundValues } = makeEnv({
+      RUNTIME_EVENT_DO_MODE: "shadow",
+      RUNTIME_EVENT_SHARD: {
+        idFromName: vi.fn((name: any) => name),
+        get: vi.fn(() => ({
+          fetch: vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 202 })),
+        })),
+      } as any,
+    });
+    const req = new Request("https://worker.test/api/runtime-events", {
+      method: "POST",
+      body: JSON.stringify({ event: "capsule.runtime", capsuleId: "cap-shadow" }),
+    });
+
+    const res = await recordRuntimeEvent(req, env, noopCtx, noopParams);
+    expect(res.status).toBe(202);
+    expect(boundValues.length).toBe(1);
+  });
+
   it("rejects payloads that declare a body larger than the cap", async () => {
     const { env } = makeEnv();
     const req = new Request("https://worker.test/api/runtime-events", {
@@ -251,6 +300,7 @@ describe("buildRuntimeAnalyticsSummary", () => {
     CLERK_JWT_ISSUER: "test-issuer",
     BUILD_COORDINATOR_DURABLE: {} as any,
     ARTIFACT_COMPILER_DURABLE: {} as any,
+    RATE_LIMIT_SHARD: {} as any,
   });
 
   it("returns aggregated metrics for admin dashboards", async () => {

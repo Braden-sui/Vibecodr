@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { usePlanGate } from "@/lib/usePlanGate";
 import { Plan } from "@vibecodr/shared";
 import { Check, Zap, Star, Users } from "lucide-react";
+import { toast } from "@/lib/toast";
 
 type PlanCard = {
   id: Plan;
@@ -107,6 +108,19 @@ export default function PricingPage() {
   const isPaidSubscriber = currentPlan !== Plan.FREE;
   const currentPlanName = plans.find((p) => p.id === currentPlan)?.name ?? currentPlan;
 
+  const handleUpgradeClick = (plan: PlanCard) => {
+    if (plan.locked) {
+      // Team plan - contact sales
+      window.location.href = "mailto:sales@vibecodr.space?subject=Team%20Plan%20Inquiry";
+      return;
+    }
+    // Show coming soon toast for other upgrade paths
+    toast({
+      title: "Billing coming soon",
+      description: `Upgrades to ${plan.name} will be available soon. We'll notify you when self-service billing is ready.`,
+    });
+  };
+
   return (
     <div className="container mx-auto px-4 py-12">
       <div className="mb-12 text-center space-y-3">
@@ -127,7 +141,6 @@ export default function PricingPage() {
           const Icon = plan.icon;
           const isCurrent = currentPlan === plan.id;
           const buttonLabel = isCurrent ? "Current plan" : plan.cta;
-          const buttonDisabled = plan.locked || isCurrent || isLoading;
 
           return (
             <Card
@@ -172,7 +185,8 @@ export default function PricingPage() {
                 <Button
                   className="w-full"
                   variant={plan.popular || isCurrent ? "default" : "outline"}
-                  disabled={buttonDisabled}
+                  disabled={isCurrent || isLoading}
+                  onClick={() => !isCurrent && handleUpgradeClick(plan)}
                 >
                   {isLoading ? "Checking plan..." : buttonLabel}
                 </Button>

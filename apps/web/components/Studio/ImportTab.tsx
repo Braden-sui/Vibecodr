@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatBytes } from "@/lib/zipBundle";
 import { capsulesApi } from "@/lib/api";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { trackEvent } from "@/lib/analytics";
 import { ApiImportResponseSchema, type ApiImportResponse, toDraftCapsule } from "@vibecodr/shared";
 import type { Manifest } from "@vibecodr/shared/manifest";
@@ -52,7 +51,7 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
   >("idle");
   const [error, setError] = useState<string>("");
   const [isZipDragActive, setIsZipDragActive] = useState(false);
-  const { getToken } = useAuth();
+  const defaultBuildAuthInit = useBuildAuthInit();
   const [singleStatus, setSingleStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [singleError, setSingleError] = useState<string>("");
   const manifestWarnings = draft?.validationWarnings ?? [];
@@ -107,15 +106,8 @@ export function ImportTab({ draft, onDraftChange, onNavigateToTab, buildAuthInit
     if (typeof buildAuthInitProp === "function") {
       return buildAuthInitProp();
     }
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }, [buildAuthInitProp, getToken]);
+    return defaultBuildAuthInit();
+  }, [buildAuthInitProp, defaultBuildAuthInit]);
 
   const applyServerManifest = useCallback(
     (

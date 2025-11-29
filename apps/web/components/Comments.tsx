@@ -6,11 +6,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { toast } from "@/lib/toast";
 import { commentsApi, moderationApi } from "@/lib/api";
 import { trackClientError } from "@/lib/analytics";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 
 interface Comment {
   id: string;
@@ -65,7 +65,7 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
 
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const viewerId = currentUserId ?? (user?.id ?? undefined);
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
@@ -75,17 +75,6 @@ export function Comments({ postId, currentUserId, className }: CommentsProps) {
     !!user && isSignedIn && (role === "admin" || role === "moderator" || isModeratorFlag);
   const actorId = user?.id ?? null;
   const [authzState, setAuthzState] = useState<AuthzState>("unknown");
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   const fetchComments = useCallback(async () => {
     try {

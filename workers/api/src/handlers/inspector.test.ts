@@ -179,6 +179,7 @@ function makeEnv() {
       idFromName: vi.fn(() => ({ id: "stub" })),
       get: vi.fn(() => compileStub),
     } as any,
+    RATE_LIMIT_SHARD: {} as any,
     vibecodr_analytics_engine: {} as any,
   };
 

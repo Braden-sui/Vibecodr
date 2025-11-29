@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuth } from "@clerk/clerk-react";
+import { useBuildAuthInit } from "@/lib/client-auth";
 import { StudioNav } from "@/components/StudioNav";
 import { StudioShell, type StudioTab } from "@/components/Studio/StudioShell";
 import { ImportTab } from "@/components/Studio/ImportTab";
@@ -28,24 +28,13 @@ export default function StudioIndex() {
   const [draft, setDraft] = useState<CapsuleDraft | undefined>();
   const [isHydrating, setIsHydrating] = useState(false);
   const [hydrateError, setHydrateError] = useState<string | null>(null);
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
 
   const capsuleIdFromQuery = useMemo(() => searchParams.get("capsuleId") ?? null, [searchParams]);
   const showAdvanced = useMemo(
     () => searchParams.get("advanced") === "1" || Boolean(capsuleIdFromQuery),
     [capsuleIdFromQuery, searchParams]
   );
-
-  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }, [getToken]);
 
   useEffect(() => {
     if (!capsuleIdFromQuery || draft?.capsuleId === capsuleIdFromQuery) {

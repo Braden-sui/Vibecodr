@@ -51,12 +51,17 @@ CLERK_JWT_AUDIENCE = ""
 RUNTIME_ARTIFACTS_ENABLED = "true"
 CAPSULE_BUNDLE_NETWORK_MODE = "offline"
 SAFETY_BLOCKED_CODE_HASHES = "[\"a01194b6e7ef74996341fcaf2578a2487fb2170a5ce4e00f8667b91a34e6209d\",\"200b5b09099113e208a663fe2810cdad71a48617e30cc4bed13894c1117243e6\"]"
+RUNTIME_EVENT_DO_MODE = "primary"
+COUNTER_DO_MODE = "primary"
 
 # Durable Objects binding for BuildCoordinator
 [durable_objects]
 bindings = [
   { name = "BUILD_COORDINATOR_DURABLE", class_name = "BuildCoordinator" },
-  { name = "ARTIFACT_COMPILER_DURABLE", class_name = "ArtifactCompiler" }
+  { name = "ARTIFACT_COMPILER_DURABLE", class_name = "ArtifactCompiler" },
+  { name = "RATE_LIMIT_SHARD", class_name = "RateLimitShard" },
+  { name = "RUNTIME_EVENT_SHARD", class_name = "RuntimeEventShard" },
+  { name = "COUNTER_SHARD", class_name = "CounterShard" }
 ]
 
 # Durable Objects migration tag
@@ -67,6 +72,18 @@ new_sqlite_classes = ["BuildCoordinator"]
 [[migrations]]
 tag = "2025-11-14_artifact_compiler"
 new_sqlite_classes = ["ArtifactCompiler"]
+
+[[migrations]]
+tag = "2025-12-05_rate_limit_shard"
+new_sqlite_classes = ["RateLimitShard"]
+
+[[migrations]]
+tag = "2025-12-05_runtime_event_shard"
+new_sqlite_classes = ["RuntimeEventShard"]
+
+[[migrations]]
+tag = "2025-12-05_counter_shard"
+new_sqlite_classes = ["CounterShard"]
 
 # Workers Analytics Engine dataset binding
 [[analytics_engine_datasets]]

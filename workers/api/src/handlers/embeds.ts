@@ -234,7 +234,18 @@ export const oEmbedHandler: Handler = async (req, env) => {
     const authorName = post.author_name || (authorHandle ? `@${authorHandle}` : "Unknown creator");
     const authorUrl = authorHandle ? `${providerOrigin}/u/${authorHandle}` : providerOrigin;
 
-    const embedHtml = `<iframe src="${embedUrl}" width="${width}" height="${height}" title="${escapeHtml(title)}" loading="lazy" style="border:0; border-radius:12px; overflow:hidden;" frameborder="0" sandbox="${EMBED_IFRAME_SANDBOX}" allow="${EMBED_IFRAME_ALLOW}" referrerpolicy="no-referrer" allowfullscreen></iframe>`;
+    const embedHtml = `<iframe
+  src="${embedUrl}"
+  width="${width}"
+  height="${height}"
+  title="${escapeHtml(title)}"
+  loading="lazy"
+  sandbox="${EMBED_IFRAME_SANDBOX}"
+  allow="${EMBED_IFRAME_ALLOW}"
+  referrerpolicy="no-referrer"
+  style="border:0;border-radius:12px;max-width:100%;"
+  allowfullscreen
+></iframe>`;
 
     // oEmbed response
     return json({

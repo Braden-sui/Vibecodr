@@ -228,6 +228,8 @@ export type FeedPost = {
     followingAuthor?: boolean;
   };
   createdAt: string;
+  // Present only when viewing own quarantined posts
+  quarantined?: boolean;
 };
 
 export type RemixTreeResponse = ApiRemixTreeResponse;
@@ -317,6 +319,8 @@ export function mapApiFeedPostToFeedPost(apiPost: ApiFeedPost): FeedPost {
     },
     viewer,
     createdAt,
+    // Include quarantined flag when present (own profile view only)
+    ...(apiPost.quarantined === true ? { quarantined: true } : {}),
   };
 }
 

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAuth, useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { workerUrl } from "@/lib/api";
+import { useBuildAuthInit } from "@/lib/client-auth";
 
 type RuntimeAnalyticsSummaryRow = {
   eventName: string;
@@ -80,7 +81,7 @@ type PublicMetadata = {
 
 export default function AdminAnalyticsPage() {
   const { user, isSignedIn } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const metadata: PublicMetadata =
     typeof user?.publicMetadata === "object" ? (user.publicMetadata as PublicMetadata) : null;
   const role = metadata?.role;
@@ -93,17 +94,6 @@ export default function AdminAnalyticsPage() {
   const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
   const endpoints = summary?.health?.endpoints;
   const runtimeHealth = summary?.health?.runtime;
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +141,7 @@ export default function AdminAnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAdmin, isSignedIn, getToken]);
+  }, [isAdmin, isSignedIn, buildAuthInit]);
 
   useEffect(() => {
     if (summary && (!endpoints || !runtimeHealth)) {

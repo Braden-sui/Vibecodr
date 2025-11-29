@@ -5,6 +5,7 @@ import {
   ERROR_RUNTIME_ANALYTICS_SUMMARY_FAILED,
 } from "@vibecodr/shared";
 import { json } from "../lib/responses";
+import { hashToShard } from "../lib/sharding";
 
 type RateLimitState = {
   tokens: number;
@@ -26,6 +27,81 @@ export const RUNTIME_EVENT_PROPERTIES_MAX_BYTES = 32 * 1024;
 export const RUNTIME_EVENT_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+type RuntimeEventMode = "primary" | "shadow" | "off";
+
+type QueuedRuntimeEvent = {
+  id: string;
+  event: string;
+  capsuleId: string | null;
+  artifactId: string | null;
+  runnerType: string | null;
+  runtimeVersion: string | null;
+  code: string | null;
+  message: string | null;
+  properties: string | null;
+  timestampMs: number;
+};
+
+function getRuntimeEventMode(env: Env): RuntimeEventMode {
+  const raw = String(env.RUNTIME_EVENT_DO_MODE ?? "primary").trim().toLowerCase();
+  if (raw === "shadow") return "shadow";
+  if (raw === "off" || raw === "legacy" || raw === "disabled") return "off";
+  return "primary";
+}
+
+function getRuntimeEventStub(env: Env, shardKey: string): DurableObjectStub | null {
+  if (!env.RUNTIME_EVENT_SHARD) return null;
+  try {
+    const shardName = hashToShard(shardKey);
+    const id = env.RUNTIME_EVENT_SHARD.idFromName(shardName);
+    return env.RUNTIME_EVENT_SHARD.get(id);
+  } catch (err) {
+    console.error("E-VIBECODR-2137 runtime event DO shard resolve failed", {
+      shardKey,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+export async function enqueueRuntimeEvent(
+  env: Env,
+  event: QueuedRuntimeEvent
+): Promise<{ delivered: boolean; mode: RuntimeEventMode }> {
+  const mode = getRuntimeEventMode(env);
+  if (!env.RUNTIME_EVENT_SHARD || mode === "off") {
+    return { delivered: false, mode };
+  }
+
+  const shardKey = event.artifactId || event.capsuleId || event.event || "runtime-event";
+  const stub = getRuntimeEventStub(env, shardKey);
+  if (!stub) {
+    return { delivered: false, mode };
+  }
+
+  try {
+    const res = await stub.fetch("https://do/runtime-events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(event),
+    });
+    if (!res.ok) {
+      console.error("E-VIBECODR-2138 runtime event DO enqueue rejected", {
+        status: res.status,
+        shardKey,
+      });
+      return { delivered: false, mode };
+    }
+    return { delivered: true, mode };
+  } catch (err) {
+    console.error("E-VIBECODR-2138 runtime event DO enqueue failed", {
+      shardKey,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { delivered: false, mode };
+  }
+}
 
 function refillTokens(state: RateLimitState, now: number) {
   const delta = now - state.lastRefill;
@@ -631,53 +707,71 @@ export const recordRuntimeEvent: Handler = async (req, env) => {
     });
   }
 
-  const id = crypto.randomUUID();
-  try {
-    await env.DB.prepare(
-      `
-      INSERT INTO runtime_events (
-        id,
-        event_name,
-        capsule_id,
-        artifact_id,
-        runtime_type,
-        runtime_version,
-        code,
-        message,
-        properties,
-        created_at
+  const eventId = crypto.randomUUID();
+  const queuedEvent: QueuedRuntimeEvent = {
+    id: eventId,
+    event,
+    capsuleId: body.capsuleId || null,
+    artifactId: body.artifactId || null,
+    runnerType: body.runtimeType || null,
+    runtimeVersion: body.runtimeVersion || null,
+    code,
+    message,
+    properties: properties,
+    timestampMs: timestamp,
+  };
+
+  const dispatchResult = await enqueueRuntimeEvent(env, queuedEvent);
+  const shouldWriteInline = dispatchResult.mode === "shadow" || !dispatchResult.delivered;
+
+  if (shouldWriteInline) {
+    try {
+      await env.DB.prepare(
+        `
+        INSERT INTO runtime_events (
+          id,
+          event_name,
+          capsule_id,
+          artifact_id,
+          runtime_type,
+          runtime_version,
+          code,
+          message,
+          properties,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `
-    )
-      .bind(
-        id,
+        .bind(
+          queuedEvent.id,
+          queuedEvent.event,
+          queuedEvent.capsuleId,
+          queuedEvent.artifactId,
+          queuedEvent.runnerType,
+          queuedEvent.runtimeVersion,
+          queuedEvent.code,
+          queuedEvent.message,
+          queuedEvent.properties,
+          createdAt
+        )
+        .run();
+    } catch (error) {
+      console.error(ERROR_RUNTIME_ANALYTICS_FAILED, {
+        error: error instanceof Error ? error.message : String(error),
         event,
-        body.capsuleId || null,
-        body.artifactId || null,
-        body.runtimeType || null,
-        body.runtimeVersion || null,
-        code,
-        message,
-        properties,
-        createdAt
-      )
-      .run();
-  } catch (error) {
-    console.error(ERROR_RUNTIME_ANALYTICS_FAILED, {
-      error: error instanceof Error ? error.message : String(error),
-      event,
-      capsuleId: body.capsuleId,
-      artifactId: body.artifactId,
-    });
-    return json(
-      {
-        error: "Failed to record runtime event",
-        code: ERROR_RUNTIME_ANALYTICS_FAILED,
-        retryable: true,
-      },
-      500
-    );
+        capsuleId: body.capsuleId,
+        artifactId: body.artifactId,
+      });
+      return json(
+        {
+          error: "Failed to record runtime event",
+          code: ERROR_RUNTIME_ANALYTICS_FAILED,
+          retryable: true,
+        },
+        500
+      );
+    }
   }
 
   if (env.vibecodr_analytics_engine && typeof env.vibecodr_analytics_engine.writeDataPoint === "function") {

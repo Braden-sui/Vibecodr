@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@clerk/clerk-react";
+import { useBuildAuthInit } from "@/lib/client-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,9 @@ import { quotaApi } from "@/lib/api";
 import { Plan, UserQuotaResponseSchema, type UserQuotaResponse } from "@vibecodr/shared";
 
 export function QuotaUsage() {
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const [quota, setQuota] = useState<UserQuotaResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   const fetchQuota = async () => {
     try {

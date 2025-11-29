@@ -7,6 +7,11 @@ export interface Env {
   CLERK_JWT_AUDIENCE?: string;
   BUILD_COORDINATOR_DURABLE: DurableObjectNamespace;
   ARTIFACT_COMPILER_DURABLE: DurableObjectNamespace;
+  RATE_LIMIT_SHARD: DurableObjectNamespace;
+  RUNTIME_EVENT_SHARD?: DurableObjectNamespace;
+  COUNTER_SHARD?: DurableObjectNamespace;
+  RUNTIME_EVENT_DO_MODE?: string;
+  COUNTER_DO_MODE?: string;
   vibecodr_analytics_engine: AnalyticsEngineDataset;
   RUNTIME_ARTIFACTS_ENABLED?: string;
   CAPSULE_BUNDLE_NETWORK_MODE?: string;

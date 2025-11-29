@@ -47,6 +47,7 @@ function createEnv(): Env {
     CLERK_JWT_AUDIENCE: "",
     BUILD_COORDINATOR_DURABLE: {} as any,
     ARTIFACT_COMPILER_DURABLE: {} as any,
+    RATE_LIMIT_SHARD: {} as any,
     vibecodr_analytics_engine: {} as any,
   };
 }

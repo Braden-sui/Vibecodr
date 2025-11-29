@@ -5,6 +5,7 @@ import { useAuth } from "@clerk/clerk-react";
 import { Plan, hasFeature, hasPremiumAccess, type PlanFeatures } from "@vibecodr/shared";
 import { quotaApi } from "./api";
 import { trackClientError } from "./analytics";
+import { useBuildAuthInit } from "./client-auth";
 
 /**
  * Plan gate hook for checking premium feature access
@@ -23,21 +24,11 @@ export interface UsePlanGateResult {
 }
 
 export function usePlanGate(): UsePlanGateResult {
-  const { getToken, isSignedIn } = useAuth();
+  const { isSignedIn } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
   const [plan, setPlan] = useState<Plan>(Plan.FREE);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const buildAuthInit = useCallback(async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }, [getToken]);
 
   const fetchPlan = useCallback(async () => {
     if (!isSignedIn) {

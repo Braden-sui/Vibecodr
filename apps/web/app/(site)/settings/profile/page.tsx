@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser } from "@clerk/clerk-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import type {
   UpdateProfilePayload,
 } from "@/lib/profile/schema";
 import { blockRegistry, getBlockDefinition } from "@/lib/profile/blocks";
-import { redirectToSignIn } from "@/lib/client-auth";
+import { redirectToSignIn, useBuildAuthInit } from "@/lib/client-auth";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { Plan, normalizePlan } from "@vibecodr/shared";
@@ -232,7 +232,7 @@ function hslToHex(h: number, s: number, l: number): string {
 
 export default function ProfileSettingsPage() {
   const { user, isSignedIn, isLoaded } = useUser();
-  const { getToken } = useAuth();
+  const buildAuthInit = useBuildAuthInit();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -259,17 +259,6 @@ export default function ProfileSettingsPage() {
   const [capsuleOptions, setCapsuleOptions] = useState<Array<{ id: string; title: string | null }>>([]);
   const [capsulesLoading, setCapsulesLoading] = useState(false);
   const [capsulesError, setCapsulesError] = useState<string | null>(null);
-
-  const buildAuthInit = async (): Promise<RequestInit | undefined> => {
-    if (typeof getToken !== "function") return undefined;
-    const token = await getToken({ template: "workers" });
-    if (!token) return undefined;
-    return {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  };
 
   useEffect(() => {
     if (!isLoaded) return;
